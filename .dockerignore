@@ -1,0 +1,14 @@
+.git
+.env
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.py[cod]
+**/.coverage*
+**/.DS_Store
+**/*.log
+apps/web/node_modules
+apps/web/dist
+docs/opengraphrag-plan.md
+docs/implementation-strategy.md

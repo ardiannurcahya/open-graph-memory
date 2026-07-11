@@ -1,0 +1,24 @@
+services:
+  api:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: null
+    restart: unless-stopped
+    mem_limit: 256m
+  worker:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: null
+    restart: unless-stopped
+    mem_limit: 384m
+  web:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-web:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: null
+    restart: unless-stopped
+    mem_limit: 128m
+  postgres: {restart: unless-stopped, mem_limit: 320m}
+  redis: {restart: unless-stopped, mem_limit: 96m}
+  rustfs: {restart: unless-stopped, mem_limit: 160m}
+  qdrant: {restart: unless-stopped, mem_limit: 320m}
+  neo4j:
+    restart: unless-stopped
+    mem_limit: 512m
+    environment: {NEO4J_server_memory_heap_initial__size: 128m, NEO4J_server_memory_heap_max__size: 256m, NEO4J_server_memory_pagecache_size: 128m}

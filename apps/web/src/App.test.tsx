@@ -1,0 +1,1 @@
+import {render,screen} from "@testing-library/react";import {describe,it,expect} from "vitest";import {App} from "./App";describe("App",()=>{it("identifies product",()=>{render(<App/>);expect(screen.getByText(/foundation is online/i)).toBeInTheDocument()})});

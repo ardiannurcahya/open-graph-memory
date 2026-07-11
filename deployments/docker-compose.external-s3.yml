@@ -1,0 +1,3 @@
+services:
+ rustfs: {profiles: [local-storage]}
+ bucket-init: {profiles: [local-storage]}

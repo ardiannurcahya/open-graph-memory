@@ -1,0 +1,47 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: {version: "0.6.3", enable-cache: true}
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest
+  web:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: apps/web}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose -f deployments/docker-compose.yml config --quiet
+      - run: GHCR_NAMESPACE=example IMAGE_TAG=test docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml config --quiet
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: {version: "0.6.3", enable-cache: true}
+      - run: uv sync --frozen --extra dev
+      - run: uv run pip install pip-audit==2.7.3
+      - run: uv run pip-audit
+      - uses: aquasecurity/trivy-action@0.29.0
+        with: {scan-type: fs, scan-ref: ., severity: "CRITICAL,HIGH", exit-code: "1", ignore-unfixed: true}
