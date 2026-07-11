@@ -5,6 +5,7 @@ import structlog
 from fastapi import FastAPI
 
 from app.datasets import router as datasets_router
+from app.documents import router as documents_router
 from app.health import router
 
 
@@ -17,3 +18,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="OpenGraphRAG API", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
 app.include_router(datasets_router)
+app.include_router(documents_router)
