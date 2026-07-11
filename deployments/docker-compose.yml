@@ -32,16 +32,23 @@ services:
     entrypoint: ["/bin/sh", "/bootstrap/bootstrap.sh"]
     restart: "no"
     volumes: [./rustfs/bootstrap.sh:/bootstrap/bootstrap.sh:ro]
+  migrate:
+    build: {context: .., dockerfile: apps/api/Dockerfile}
+    command: alembic upgrade head
+    env_file: [../.env]
+    depends_on: {postgres: {condition: service_healthy}}
+    restart: "no"
   api:
     build: {context: .., dockerfile: apps/api/Dockerfile}
     env_file: [../.env]
-    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, qdrant: {condition: service_healthy}, neo4j: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}}
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, qdrant: {condition: service_healthy}, neo4j: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"], interval: 10s, timeout: 5s, retries: 8}
   worker:
-    build: {context: .., dockerfile: apps/api/Dockerfile}
-    command: celery -A app.worker.celery_app worker --loglevel=INFO --concurrency=1
+    build: {context: .., dockerfile: apps/worker/Dockerfile}
+    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}"]
     env_file: [../.env]
-    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}}
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
+    healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
   web:
     build: {context: .., dockerfile: apps/web/Dockerfile}
     environment: {CADDY_SITE_ADDRESS: "${CADDY_SITE_ADDRESS:-:80}"}

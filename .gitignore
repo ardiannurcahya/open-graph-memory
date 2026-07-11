@@ -11,6 +11,9 @@ __pycache__/
 .ruff_cache/
 apps/web/node_modules/
 apps/web/dist/
+*.tsbuildinfo
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
 .coverage
 .coverage.*
 htmlcov/

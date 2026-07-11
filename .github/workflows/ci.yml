@@ -25,6 +25,7 @@ jobs:
         with: {node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json}
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm test
       - run: npm run build
   compose:
@@ -34,10 +35,25 @@ jobs:
       - run: cp .env.example .env
       - run: docker compose -f deployments/docker-compose.yml config --quiet
       - run: GHCR_NAMESPACE=example IMAGE_TAG=test docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml config --quiet
+      - run: docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.external-s3.yml config --quiet
+  docker-builds:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: [apps/api/Dockerfile, apps/worker/Dockerfile, apps/web/Dockerfile]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f ${{ matrix.dockerfile }} .
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/runtime-gate.sh
   security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: ./scripts/security-gate.sh
       - uses: astral-sh/setup-uv@v5
         with: {version: "0.6.3", enable-cache: true}
       - run: uv sync --frozen --extra dev

@@ -4,31 +4,25 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
-permissions:
-  contents: read
-  packages: write
+permissions: {contents: read, packages: write}
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - image: api
-            dockerfile: apps/api/Dockerfile
-          - image: web
-            dockerfile: apps/web/Dockerfile
+          - {image: api, dockerfile: apps/api/Dockerfile}
+          - {image: worker, dockerfile: apps/worker/Dockerfile}
+          - {image: web, dockerfile: apps/web/Dockerfile}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/opengraphrag-${{ matrix.image }}
+          images: ghcr.io/${{ github.repository_owner }}/open-graph-memory-${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
