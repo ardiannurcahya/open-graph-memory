@@ -13,7 +13,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    status = sa.Enum("UPLOADED", "STORAGE_FAILED", name="document_status")
+    status = postgresql.ENUM(
+        "UPLOADED", "STORAGE_FAILED", name="document_status", create_type=False
+    )
     status.create(op.get_bind())
     op.create_table(
         "datasets",
