@@ -86,6 +86,29 @@ Alice Nguyen -> LEADS -> Atlas
     assert "[1]" not in result
 
 
+def test_chat_handles_inverse_build_and_multi_hop_relation_questions() -> None:
+    provider = DeterministicProvider()
+    context = """Evidence:
+[1] chunk_id=product
+Atlas -> BUILT_BY -> Acme Labs
+
+[2] chunk_id=followup
+Alice Nguyen -> LEADS -> Atlas
+"""
+    questions = (
+        ("What product did Acme Labs build?", ("[1]",)),
+        ("Which organization built the product led by Alice Nguyen?", ("[1]", "[2]")),
+    )
+    for question, citations in questions:
+        result = asyncio.run(
+            provider.chat(
+                [{"role": "system", "content": context}, {"role": "user", "content": question}]
+            )
+        ).text
+        assert "cannot answer" not in result.lower()
+        assert all(citation in result for citation in citations)
+
+
 def test_chat_refuses_relation_not_asserted_by_matching_entities() -> None:
     provider = DeterministicProvider()
     context = "Evidence:\n[1] chunk_id=a\nAcme Labs [Organization]\\nAtlas [Product]"

@@ -175,8 +175,11 @@ class DeterministicProvider:
         question_tokens = set(self._tokens(question))
         relation_terms = {
             "lead": "lead",
+            "leads": "lead",
+            "led": "lead",
             "built": "built",
             "build": "built",
+            "builds": "built",
             "employ": "employ",
             "advises": "advises",
             "advise": "advises",
@@ -193,7 +196,10 @@ class DeterministicProvider:
                     name, entity_type = match.groups()
                     type_names.setdefault(name.lower(), []).append((citation, entity_type))
         requested_types = question_tokens & {"person", "organization"}
-        if requested_types:
+        type_classification = bool(requested_types) and (
+            "or" in question_tokens or question.strip().lower().startswith("is ")
+        )
+        if type_classification:
             candidates = [
                 values
                 for name, values in type_names.items()
@@ -255,20 +261,23 @@ class DeterministicProvider:
         for citation, block in blocks:
             words = set(self._tokens(block))
             relations = [line for line in block.splitlines() if " -> " in line]
-            relation_words = set(self._tokens(" ".join(relations)))
+            relation_text = " ".join(relations).replace("_", " ")
+            relation_words = set(self._tokens(relation_text))
             if requested and (not relations or not requested.intersection(relation_words)):
                 continue
             score = len(terms.intersection(words)) + 2 * len(requested.intersection(relation_words))
             ranked.append((score, citation, relations[-1] if relations else block.splitlines()[-1]))
         ranked.sort(key=lambda item: (-item[0], int(item[1])))
         if selected is None and requested:
-            selected = [item for item in ranked if item[0] >= 3]
+            minimum_claim_score = 2 if len(requested) > 1 else 3
+            selected = [item for item in ranked if item[0] >= minimum_claim_score]
             entity_tokens = (
                 question_tokens
                 - set(relation_terms)
                 - {
                     "does",
                     "do",
+                    "did",
                     "who",
                     "what",
                     "which",
@@ -281,6 +290,13 @@ class DeterministicProvider:
                     "it",
                     "person",
                     "organization",
+                    "product",
+                    "built",
+                    "builds",
+                    "lead",
+                    "leads",
+                    "led",
+                    "by",
                 }
             )
             evidence_tokens = set(self._tokens(evidence))
@@ -288,7 +304,9 @@ class DeterministicProvider:
             # individual multi-hop claims naturally mention different endpoints.
             if not entity_tokens.issubset(evidence_tokens):
                 selected = []
-            covered = set().union(*(set(self._tokens(item[2])) for item in selected))
+            covered = set().union(
+                *(set(self._tokens(item[2].replace("_", " "))) for item in selected)
+            )
             selected = selected if requested.issubset(covered) else []
         elif selected is None:
             policy_question = "policy" in question_tokens
