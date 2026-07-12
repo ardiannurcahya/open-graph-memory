@@ -1,9 +1,9 @@
 """Add authoritative graph extraction persistence."""
+
 from collections.abc import Sequence
 
 from alembic import op
-
-from app.graph_models import (
+from app.graph_models import (  # noqa: E402
     CanonicalEntity,
     EntityAlias,
     EntityMergeHistory,
