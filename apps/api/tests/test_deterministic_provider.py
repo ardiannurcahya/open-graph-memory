@@ -61,6 +61,44 @@ def test_chat_answers_subject_role_requirement_and_version_questions() -> None:
         assert "cannot answer" not in result.lower()
 
 
+def test_chat_selects_supported_relation_claims_and_cites_each_claim() -> None:
+    provider = DeterministicProvider()
+    context = """Evidence:
+[1] chunk_id=people
+Acme Labs -> EMPLOYS -> Alice Nguyen
+
+[2] chunk_id=product
+Atlas -> BUILT_BY -> Acme Labs
+
+[3] chunk_id=followup
+Alice Nguyen -> LEADS -> Atlas
+"""
+    result = asyncio.run(
+        provider.chat(
+            [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "Who leads Atlas and who built Atlas?"},
+            ]
+        )
+    ).text
+    assert "Alice Nguyen -> LEADS -> Atlas [3]" in result
+    assert "Atlas -> BUILT_BY -> Acme Labs [2]" in result
+    assert "[1]" not in result
+
+
+def test_chat_refuses_relation_not_asserted_by_matching_entities() -> None:
+    provider = DeterministicProvider()
+    result = asyncio.run(
+        provider.chat(
+            [
+                {"role": "system", "content": "Evidence:\n[1] chunk_id=a\nAcme Labs [Organization]\\nAtlas [Product]"},
+                {"role": "user", "content": "Does Acme Labs own Atlas?"},
+            ]
+        )
+    ).text
+    assert "cannot answer" in result.lower()
+
+
 def test_chat_refuses_unsupported_wh_questions_despite_incidental_overlap() -> None:
     provider = DeterministicProvider()
     context = """Evidence:

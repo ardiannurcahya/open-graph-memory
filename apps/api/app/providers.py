@@ -153,22 +153,46 @@ class DeterministicProvider:
         }
         terms = {word for word in self._tokens(question) if word not in ignored}
         evidence = context.split("Evidence:\n", 1)[-1]
-        ranked: list[tuple[int, str]] = []
+        question_tokens = set(self._tokens(question))
+        relation_terms = {
+            "lead": "lead",
+            "built": "built",
+            "build": "built",
+            "employ": "employ",
+            "advises": "advises",
+            "advise": "advises",
+            "own": "own",
+        }
+        requested = {relation_terms[token] for token in question_tokens if token in relation_terms}
+        ranked: list[tuple[int, str, str]] = []
         for block in evidence.split("\n\n"):
             words = set(self._tokens(block))
-            ranked.append((len(terms.intersection(words)), block))
-        score, matching = max(ranked, default=(0, ""), key=lambda item: item[0])
-        # A single distinctive term is sufficient for terse questions, and policy
-        # questions commonly paraphrase a heading while sharing only its subject.
-        policy_question = "policy" in self._tokens(question)
-        required_score = 1 if len(terms) <= 1 or policy_question else 2
-        coverage = score / max(1, len(terms))
-        requirement_question = "require" in terms
-        supported = coverage >= 0.5 if requirement_question else score >= 3 or score == len(terms)
-        if score >= required_score and (required_score == 1 or supported) and matching:
-            citation = re.match(r"\[(\d+)]", matching)
-            index = citation.group(1) if citation else ""
-            answer = f"Based on the supplied evidence {matching.splitlines()[-1]} [{index}]."
+            relations = [line for line in block.splitlines() if " -> " in line]
+            relation_words = set(self._tokens(" ".join(relations)))
+            # Relation questions require an asserted relation, never a merely similar entity list.
+            if requested and (not relations or not requested.intersection(relation_words)):
+                continue
+            score = len(terms.intersection(words)) + 2 * len(requested.intersection(relation_words))
+            citation = re.match(r"\[(\d+)\]", block)
+            if citation:
+                ranked.append((score, citation.group(1), relations[-1] if relations else block.splitlines()[-1]))
+        ranked.sort(key=lambda item: (-item[0], int(item[1])))
+        if requested:
+            selected = [item for item in ranked if item[0] >= 3]
+            # A compound question must be supported by every requested relation.
+            covered = set().union(*(set(self._tokens(item[2])) for item in selected))
+            selected = selected if requested.issubset(covered) else []
+        else:
+            policy_question = "policy" in question_tokens
+            required_score = 1 if len(terms) <= 1 or policy_question else 2
+            coverage = ranked[0][0] / max(1, len(terms)) if ranked else 0
+            requirement_question = "require" in terms
+            supported = policy_question or (ranked and (ranked[0][0] >= 3 or ranked[0][0] == len(terms)))
+            supported = supported or (requirement_question and coverage >= 0.5)
+            selected = ranked[:1] if ranked and ranked[0][0] >= required_score and supported else []
+        if selected:
+            claims = " ".join(f"{claim} [{index}]." for _, index, claim in selected)
+            answer = f"Based on the supplied evidence {claims}"
         else:
             answer = "I cannot answer from the supplied evidence."
         return ChatResult(answer, Usage(len(context.split()), len(answer.split())))
