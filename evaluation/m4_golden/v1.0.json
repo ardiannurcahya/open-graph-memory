@@ -1,0 +1,26 @@
+{
+  "version": "v1.0",
+  "fixture": "evaluation/m3_golden/v1.0.json",
+  "cases": [
+    {"id": "m4-01", "class": "multi_hop", "question": "What does Alice Nguyen lead and who built it?", "answerable": true, "evidence_ids": ["acme-followup", "acme-product"]},
+    {"id": "m4-02", "class": "multi_hop", "question": "Which organization built the product led by Alice Nguyen?", "answerable": true, "evidence_ids": ["acme-followup", "acme-product"]},
+    {"id": "m4-03", "class": "graph_only", "question": "Who does Acme Labs employ?", "answerable": true, "evidence_ids": ["acme-people"]},
+    {"id": "m4-04", "class": "graph_only", "question": "What product did Acme Labs build?", "answerable": true, "evidence_ids": ["acme-product"]},
+    {"id": "m4-05", "class": "hybrid", "question": "Describe the connection between Alice Nguyen, Atlas, and Acme Labs.", "answerable": true, "evidence_ids": ["acme-followup", "acme-product"]},
+    {"id": "m4-06", "class": "hybrid", "question": "Who leads Atlas and who built Atlas?", "answerable": true, "evidence_ids": ["acme-followup", "acme-product"]},
+    {"id": "m4-07", "class": "vector_only", "question": "Which document names Atlas as a Product?", "answerable": true, "evidence_ids": ["acme-product"]},
+    {"id": "m4-08", "class": "vector_only", "question": "Which document calls Acme Labs an Organization?", "answerable": true, "evidence_ids": ["acme-people", "acme-product"]},
+    {"id": "m4-09", "class": "entity_alias", "question": "What does Alice lead?", "answerable": true, "evidence_ids": ["acme-followup"]},
+    {"id": "m4-10", "class": "entity_alias", "question": "Is Alice the same person as Alice Nguyen in this dataset?", "answerable": true, "evidence_ids": ["acme-people"]},
+    {"id": "m4-11", "class": "ambiguous", "question": "Which Jordan advises Acme Labs?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-12", "class": "ambiguous", "question": "Is Jordan a person or an organization?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-13", "class": "unsupported", "question": "Does Acme Labs own Atlas?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-14", "class": "unsupported", "question": "Who advises Acme Labs?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-15", "class": "unanswerable", "question": "What is Atlas release date?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-16", "class": "unanswerable", "question": "Who is the chief executive of Acme Labs?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-17", "class": "cycle", "question": "Starting at Atlas, what supported relations return to Atlas?", "answerable": true, "evidence_ids": ["acme-product", "acme-followup"]},
+    {"id": "m4-18", "class": "fanout", "question": "List all supported relations connected to Acme Labs.", "answerable": true, "evidence_ids": ["acme-people", "acme-product"]},
+    {"id": "m4-19", "class": "isolation", "question": "Does this dataset say Acme Labs employs Eve?", "answerable": false, "evidence_ids": []},
+    {"id": "m4-20", "class": "isolation", "question": "Who is employed by Acme Labs in this dataset?", "answerable": true, "evidence_ids": ["acme-people"]}
+  ]
+}
