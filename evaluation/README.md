@@ -23,6 +23,19 @@ python evaluation/evaluator.py --golden evaluation/golden/v1.0.json --prediction
 pytest -q evaluation/test_evaluator.py
 ```
 
+## Milestone 4 hybrid retrieval
+
+`m4_golden/v1.0.json` is a versioned 20-case question suite over the real M3 uploaded/indexed/extracted fixture. It covers multi-hop graph answers, vector-only and graph-only answers, hybrid evidence, aliases, ambiguous entities, unsupported and unanswerable questions, cross-tenant isolation, cycle behavior, and fanout bounds.
+
+Run the complete vertical slice with:
+
+```sh
+scripts/m4-runtime-gate.sh
+pytest -q evaluation/test_m4_evaluator.py
+```
+
+The gate invokes `POST /api/v1/query` for `vector_only`, `graph_only`, and `hybrid`, maps returned chunk IDs to stable fixture evidence IDs, confirms persisted `query_logs` traces, and scores Recall@5, evidence hits, citation correctness, answerability, fallback correctness, p50/p95 latency, and graph path budget. It also stops Neo4j and requires graph modes to return scoped vector fallback evidence. Generated JSONL and reports remain under ignored `artifacts/`. See [hybrid retrieval](../docs/hybrid-retrieval.md) for configuration and operations.
+
 ## Metric contract
 
 - `Recall@k`: fraction of expected evidence IDs present in the first `k` retrieved IDs, macro-averaged. Empty expected evidence scores 1 by definition.
