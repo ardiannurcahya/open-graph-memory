@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     s3_endpoint_url: str = "http://rustfs:9000"
     s3_access_key: str = "opengraphrag"
-    s3_secret_key: SecretStr = SecretStr("change-me-now")
+    s3_secret_key: SecretStr = SecretStr("change-me-object-secret")
     s3_bucket: str = "opengraphrag"
     s3_region: str = "us-east-1"
     s3_force_path_style: bool = True
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     admin_api_key: SecretStr = SecretStr("change-me-admin-key")
     upload_max_bytes: int = 25 * 1024 * 1024
     upload_spool_max_bytes: int = 1024 * 1024
+    outbox_poll_seconds: float = 1
     embedding_provider: str = "deterministic"
     chat_provider: str = "deterministic"
     graph_extractor_provider: str = "deterministic"
@@ -41,22 +42,33 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     qdrant_url: str = "http://qdrant:6333"
     qdrant_api_key: SecretStr = SecretStr("")
-    qdrant_collection: str = "opengraphrag_chunks"
-    outbox_poll_seconds: float = 2
+    qdrant_collection: str = "chunks"
+    retrieval_fusion: str = "rrf"
+    retrieval_rrf_k: int = 60
+    retrieval_vector_weight: float = 0.5
+    retrieval_graph_weight: float = 0.5
+    retrieval_graph_max_depth: int = 2
+    retrieval_graph_seed_limit: int = 8
+    retrieval_graph_fanout: int = 10
+    retrieval_graph_timeout_ms: int = 500
 
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":
         if self.upload_max_bytes < 1 or self.upload_spool_max_bytes < 1:
             raise ValueError("upload limits must be positive")
         valid = {"deterministic", "openai"}
-        if {
-            self.embedding_provider,
-            self.chat_provider,
-            self.graph_extractor_provider,
-        } - valid:
+        if {self.embedding_provider, self.chat_provider, self.graph_extractor_provider} - valid:
             raise ValueError("providers must be deterministic or openai")
         if self.embedding_dimensions < 1 or self.outbox_poll_seconds <= 0:
             raise ValueError("dimensions and outbox polling interval must be positive")
+        if self.retrieval_fusion not in {"rrf", "weighted"}:
+            raise ValueError("RETRIEVAL_FUSION must be rrf or weighted")
+        if self.retrieval_rrf_k < 1 or self.retrieval_graph_max_depth not in {1, 2}:
+            raise ValueError("retrieval RRF and graph depth limits are invalid")
+        if self.retrieval_graph_seed_limit < 1 or self.retrieval_graph_fanout < 1:
+            raise ValueError("graph seed and fanout limits must be positive")
+        if self.retrieval_graph_timeout_ms < 1:
+            raise ValueError("graph timeout must be positive")
         if (
             "openai" in {self.embedding_provider, self.chat_provider, self.graph_extractor_provider}
             and not self.openai_api_key.get_secret_value()
@@ -68,21 +80,11 @@ class Settings(BaseSettings):
             raise ValueError("GRAPH_EXTRACTOR_PROVIDER must be openai in production")
         if urlparse(self.openai_base_url).scheme != "https":
             raise ValueError("OPENAI_BASE_URL must use https in production")
-        graph_values = {
-            "OPENAI_API_KEY": self.openai_api_key.get_secret_value(),
-            "GRAPH_EXTRACTOR_MODEL": self.graph_extractor_model,
-            "GRAPH_EXTRACTOR_VERSION": self.graph_extractor_version,
-            "GRAPH_EXTRACTOR_PROMPT_VERSION": self.graph_extractor_prompt_version,
-        }
-        for name, value in graph_values.items():
-            if not value or any(marker in value.lower() for marker in _PLACEHOLDERS):
-                raise ValueError(f"{name} must be configured securely in production")
-        if len(self.openai_api_key.get_secret_value()) < 16:
-            raise ValueError("OPENAI_API_KEY must be a non-placeholder production secret")
         values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),
             "NEO4J_AUTH": self.neo4j_auth.get_secret_value(),
+            "OPENAI_API_KEY": self.openai_api_key.get_secret_value(),
         }
         for name, value in values.items():
             if len(value) < 16 or any(marker in value.lower() for marker in _PLACEHOLDERS):

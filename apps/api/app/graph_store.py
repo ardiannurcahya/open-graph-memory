@@ -4,9 +4,12 @@
 # ruff: noqa: E501
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
+
+if TYPE_CHECKING:
+    from app.retrieval import GraphEvidence
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,16 @@ class GraphStore(Protocol):
     async def project_document(self, projection: DocumentProjection) -> None: ...
     async def reconcile_dataset(self, project_id: str, dataset_id: str) -> None: ...
     async def delete_document(self, project_id: str, dataset_id: str, document_id: str) -> None: ...
+    async def traverse(
+        self,
+        project_id: str,
+        dataset_id: str,
+        seed_chunk_ids: list[str],
+        seed_entity_names: list[str],
+        max_depth: int,
+        fanout: int,
+        seed_limit: int,
+    ) -> list["GraphEvidence"]: ...
 
 
 class Neo4jGraphStore:
@@ -108,6 +121,24 @@ class Neo4jGraphStore:
         errors = response.json().get("errors", [])
         if errors:
             raise RuntimeError(str(errors[0].get("message", "Neo4j query failed")))
+
+    async def _records(
+        self, statement: str, parameters: dict[str, object]
+    ) -> list[dict[str, object]]:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                self.endpoint,
+                auth=self.auth,
+                json={"statements": [{"statement": statement, "parameters": parameters}]},
+            )
+        response.raise_for_status()
+        payload = response.json()
+        errors = payload.get("errors", [])
+        if errors:
+            raise RuntimeError(str(errors[0].get("message", "Neo4j query failed")))
+        result = payload.get("results", [{}])[0]
+        columns = result.get("columns", [])
+        return [dict(zip(columns, row["row"], strict=True)) for row in result.get("data", [])]
 
     async def bootstrap(self) -> None:
         for statement in (
@@ -226,3 +257,39 @@ class Neo4jGraphStore:
             "MATCH (e:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE NOT (:Chunk)-[:MENTIONS]->(e) AND NOT (:Relation)-[:SOURCE|TARGET]->(e) DETACH DELETE e",
             scope,
         )
+
+    async def traverse(
+        self,
+        project_id: str,
+        dataset_id: str,
+        seed_chunk_ids: list[str],
+        seed_entity_names: list[str],
+        max_depth: int,
+        fanout: int,
+        seed_limit: int,
+    ) -> list["GraphEvidence"]:
+        from app.retrieval import GraphEvidence
+
+        # Scope every node and bound seeds/results; a relation path cannot cross tenants.
+        statement = "MATCH (seed:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE seed.canonical_name IN $seed_entity_names OR EXISTS { MATCH (seed_chunk:Chunk {project_id: $project_id, dataset_id: $dataset_id})-[:MENTIONS]->(seed) WHERE seed_chunk.id IN $seed_chunk_ids } WITH seed ORDER BY seed.id LIMIT $seed_limit MATCH (seed)<-[:SOURCE]-(r:Relation {project_id: $project_id, dataset_id: $dataset_id})-[:TARGET]->(neighbor:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (e:Evidence {project_id: $project_id, dataset_id: $dataset_id, relation_id: r.id}) RETURN e.chunk_id AS chunk_id, r.id AS relation_id, seed.id AS seed_id, neighbor.id AS neighbor_id, e.confidence AS confidence ORDER BY r.id, e.chunk_id LIMIT $limit"
+        rows = await self._records(
+            statement,
+            {
+                "project_id": project_id,
+                "dataset_id": dataset_id,
+                "seed_chunk_ids": seed_chunk_ids,
+                "seed_entity_names": seed_entity_names,
+                "seed_limit": seed_limit,
+                "limit": fanout * seed_limit,
+            },
+        )
+        return [
+            GraphEvidence(
+                str(row["chunk_id"]),
+                float(str(row["confidence"])),
+                (str(row["seed_id"]), str(row["relation_id"]), str(row["neighbor_id"])),
+                (str(row["seed_id"]), str(row["neighbor_id"])),
+                (str(row["relation_id"]),),
+            )
+            for row in rows
+        ]
