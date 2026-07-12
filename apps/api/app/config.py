@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     retrieval_graph_max_depth: int = 2
     retrieval_graph_seed_limit: int = 8
     retrieval_graph_fanout: int = 10
-    retrieval_graph_timeout_ms: int = 500
+    retrieval_graph_timeout_ms: int = 2_000
 
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":
