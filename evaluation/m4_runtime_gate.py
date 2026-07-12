@@ -97,7 +97,9 @@ def main() -> int:
     golden = json.loads(args.golden.read_text(encoding="utf-8"))
     fixture_path = args.fixtures or Path(golden["fixture"])
     fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
-    primary_count = sum(item.get("tenant", "primary") == "primary" for item in fixtures["documents"])
+    primary_count = sum(
+        item.get("tenant", "primary") == "primary" for item in fixtures["documents"]
+    )
     assert primary_count > 5, "M4 fixture corpus must be larger than top_k"
     status, project = request(base, "POST", "/v1/projects", {"name": "m4-primary"}, admin)
     assert status == 201, project

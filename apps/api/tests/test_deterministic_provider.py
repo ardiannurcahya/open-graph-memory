@@ -88,10 +88,11 @@ Alice Nguyen -> LEADS -> Atlas
 
 def test_chat_refuses_relation_not_asserted_by_matching_entities() -> None:
     provider = DeterministicProvider()
+    context = "Evidence:\n[1] chunk_id=a\nAcme Labs [Organization]\\nAtlas [Product]"
     result = asyncio.run(
         provider.chat(
             [
-                {"role": "system", "content": "Evidence:\n[1] chunk_id=a\nAcme Labs [Organization]\\nAtlas [Product]"},
+                {"role": "system", "content": context},
                 {"role": "user", "content": "Does Acme Labs own Atlas?"},
             ]
         )

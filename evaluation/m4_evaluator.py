@@ -75,7 +75,9 @@ def evaluate(
                 {
                     "id": case_id,
                     "applicable": mode in case.get("applicable_modes", MODES),
-                    "recall_at_k": len(evidence & set(retrieved)) / len(evidence) if evidence else 1.0,
+                    "recall_at_k": len(evidence & set(retrieved)) / len(evidence)
+                    if evidence
+                    else 1.0,
                     "evidence_hit": bool(evidence & set(retrieved)) if evidence else True,
                     "citation_correct": set(cited).issubset(retrieved)
                     and (bool(cited) if answerable else not cited),

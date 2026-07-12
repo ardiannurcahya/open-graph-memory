@@ -175,7 +175,13 @@ class DeterministicProvider:
             score = len(terms.intersection(words)) + 2 * len(requested.intersection(relation_words))
             citation = re.match(r"\[(\d+)\]", block)
             if citation:
-                ranked.append((score, citation.group(1), relations[-1] if relations else block.splitlines()[-1]))
+                ranked.append(
+                    (
+                        score,
+                        citation.group(1),
+                        relations[-1] if relations else block.splitlines()[-1],
+                    )
+                )
         ranked.sort(key=lambda item: (-item[0], int(item[1])))
         if requested:
             selected = [item for item in ranked if item[0] >= 3]
@@ -187,7 +193,9 @@ class DeterministicProvider:
             required_score = 1 if len(terms) <= 1 or policy_question else 2
             coverage = ranked[0][0] / max(1, len(terms)) if ranked else 0
             requirement_question = "require" in terms
-            supported = policy_question or (ranked and (ranked[0][0] >= 3 or ranked[0][0] == len(terms)))
+            supported = policy_question or (
+                ranked and (ranked[0][0] >= 3 or ranked[0][0] == len(terms))
+            )
             supported = supported or (requirement_question and coverage >= 0.5)
             selected = ranked[:1] if ranked and ranked[0][0] >= required_score and supported else []
         if selected:
