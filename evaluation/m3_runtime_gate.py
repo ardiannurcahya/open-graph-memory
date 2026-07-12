@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from evaluation.runtime_gate import auth, compose, multipart, request, sql, wait_ready
+from runtime_gate import auth, compose, multipart, request, sql, wait_ready
 
 
 def wait_graph(base: str, headers: dict[str, str], document_ids: list[str]) -> None:
