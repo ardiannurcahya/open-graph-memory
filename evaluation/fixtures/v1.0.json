@@ -1,0 +1,24 @@
+{
+  "version": "v1.0",
+  "documents": [
+    {"evidence_id":"quickstart-health","text":"API liveness health endpoint is GET /health."},
+    {"evidence_id":"quickstart-ready","text":"API readiness endpoint is GET /ready."},
+    {"evidence_id":"architecture-rustfs","text":"RustFS serves source objects locally as the S3-compatible object store."},
+    {"evidence_id":"architecture-postgres","text":"PostgreSQL is the authoritative store for metadata."},
+    {"evidence_id":"architecture-redis","text":"Redis is the Celery broker and result backend."},
+    {"evidence_id":"architecture-projections","text":"Qdrant and Neo4j are rebuildable projections and are not authoritative."},
+    {"evidence_id":"architecture-caddy","text":"Caddy routes browser API calls to the API service."},
+    {"evidence_id":"quickstart-compose","text":"Start the local stack with docker compose up -d."},
+    {"evidence_id":"quickstart-openapi","text":"OpenAPI documentation is exposed at /api/docs."},
+    {"evidence_id":"deployment-prod-compose","text":"deployments/docker-compose.prod.yml defines production Compose services."},
+    {"evidence_id":"adr-dataset-isolation","text":"Datasets are isolated by mandatory project_id and dataset_id filters in PostgreSQL and Qdrant."},
+    {"evidence_id":"adr-indexing-state","text":"Indexing moves through queued, reading, parsing, chunking, embedding, persisting, and complete; failures are recorded and retries are idempotent."},
+    {"evidence_id":"adr-stable-identifiers","text":"Stable identifiers are formed from SHA-256 hashes of document ID, source hash, pipeline version, and chunk index."},
+    {"evidence_id":"upload-types","text":"Document upload accepts UTF-8 TXT, Markdown, HTML, CSV, and valid PDF files."},
+    {"evidence_id":"upload-dedup","text":"Duplicate uploads in a dataset are deduplicated by content hash and return the existing document."},
+    {"evidence_id":"architecture-celery","text":"Celery indexing jobs execute in the worker service."},
+    {"evidence_id":"adr-object-storage","text":"Source documents are stored once in S3-compatible object storage; PostgreSQL stores authoritative object keys and hashes."},
+    {"evidence_id":"adr-provider-capabilities","text":"Providers must support embeddings and chat completion with usage reporting; generated citations are validated."},
+    {"evidence_id":"project-python-version","text":"The project requires Python 3.13."}
+  ]
+}

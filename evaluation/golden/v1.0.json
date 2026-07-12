@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "version": "v1.0",
+  "description": "Representative product, operations, security, ingestion, retrieval, and negative RAG questions. Evidence IDs are stable fixture chunk IDs, not database IDs.",
+  "cases": [
+    {"id":"q01","question":"What is the API liveness endpoint?","answerable":true,"evidence_ids":["quickstart-health"]},
+    {"id":"q02","question":"What endpoint reports readiness?","answerable":true,"evidence_ids":["quickstart-ready"]},
+    {"id":"q03","question":"Which component serves source objects locally?","answerable":true,"evidence_ids":["architecture-rustfs"]},
+    {"id":"q04","question":"Which store is authoritative for metadata?","answerable":true,"evidence_ids":["architecture-postgres"]},
+    {"id":"q05","question":"What role does Redis have?","answerable":true,"evidence_ids":["architecture-redis"]},
+    {"id":"q06","question":"Are Qdrant projections rebuildable?","answerable":true,"evidence_ids":["architecture-projections"]},
+    {"id":"q07","question":"Are Neo4j projections authoritative?","answerable":true,"evidence_ids":["architecture-projections"]},
+    {"id":"q08","question":"How are API calls routed from the browser?","answerable":true,"evidence_ids":["architecture-caddy"]},
+    {"id":"q09","question":"What command starts the local stack?","answerable":true,"evidence_ids":["quickstart-compose"]},
+    {"id":"q10","question":"Where is OpenAPI exposed?","answerable":true,"evidence_ids":["quickstart-openapi"]},
+    {"id":"q11","question":"Which file defines production Compose services?","answerable":true,"evidence_ids":["deployment-prod-compose"]},
+    {"id":"q12","question":"How are datasets isolated?","answerable":true,"evidence_ids":["adr-dataset-isolation"]},
+    {"id":"q13","question":"What is the indexing state machine policy?","answerable":true,"evidence_ids":["adr-indexing-state"]},
+    {"id":"q14","question":"How are stable identifiers formed?","answerable":true,"evidence_ids":["adr-stable-identifiers"]},
+    {"id":"q15","question":"Which file types can document upload accept?","answerable":true,"evidence_ids":["upload-types"]},
+    {"id":"q16","question":"How are duplicate uploads handled?","answerable":true,"evidence_ids":["upload-dedup"]},
+    {"id":"q17","question":"Where do Celery jobs execute?","answerable":true,"evidence_ids":["architecture-celery"]},
+    {"id":"q18","question":"What is the object storage policy?","answerable":true,"evidence_ids":["adr-object-storage"]},
+    {"id":"q19","question":"What provider capabilities are required?","answerable":true,"evidence_ids":["adr-provider-capabilities"]},
+    {"id":"q20","question":"What Python version is required?","answerable":true,"evidence_ids":["project-python-version"]},
+    {"id":"q21","question":"What is the CEO's home address?","answerable":false,"evidence_ids":[]},
+    {"id":"q22","question":"What was revenue last quarter?","answerable":false,"evidence_ids":[]},
+    {"id":"q23","question":"Which GPU model runs production embeddings?","answerable":false,"evidence_ids":[]},
+    {"id":"q24","question":"What is the private API key?","answerable":false,"evidence_ids":[]}
+  ]
+}

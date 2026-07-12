@@ -24,6 +24,7 @@ htmlcov/
 build/
 dist/
 coverage/
+/artifacts/
 *.log
 .idea/
 .vscode/
