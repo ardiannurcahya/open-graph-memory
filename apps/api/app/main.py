@@ -8,6 +8,8 @@ from qdrant_client import AsyncQdrantClient
 from app.config import get_settings
 from app.datasets import router as datasets_router
 from app.documents import router as documents_router
+from app.graph_api import router as graph_router
+from app.graph_store import Neo4jGraphStore
 from app.health import router
 from app.projects import router as projects_router
 from app.providers import DeterministicProvider, OpenAIChatProvider, OpenAIEmbeddingProvider
@@ -44,6 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         qdrant, settings.qdrant_collection, settings.embedding_dimensions
     )
     await vector_store.setup()
+    graph_store = Neo4jGraphStore(settings.neo4j_url, settings.neo4j_auth.get_secret_value())
+    await graph_store.bootstrap()
     install_runtime(Runtime(embedding_provider, chat_provider, vector_store))
     try:
         yield
@@ -65,3 +69,4 @@ app.include_router(projects_router)
 app.include_router(datasets_router)
 app.include_router(documents_router)
 app.include_router(query_router)
+app.include_router(graph_router)
