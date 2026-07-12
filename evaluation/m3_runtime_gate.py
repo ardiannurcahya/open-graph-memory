@@ -95,14 +95,14 @@ def main() -> int:
         sql(
             args.compose_file,
             "select count(*) from graph_extraction_jobs "
-            f"where document_id in ({quoted}) and status = 'succeeded'",
+            f"where document_id in ({quoted}) and status = 'SUCCEEDED'",
         )
     ) == len(ids)
     assert int(
         sql(
             args.compose_file,
             "select count(*) from graph_extraction_runs "
-            f"where document_id in ({quoted}) and status = 'succeeded'",
+            f"where document_id in ({quoted}) and status = 'SUCCEEDED'",
         )
     ) >= len(ids)
     assert (
@@ -208,13 +208,10 @@ def main() -> int:
                 "exec",
                 "-T",
                 "neo4j",
-                "cypher-shell",
-                "-u",
-                "neo4j",
-                "-p",
-                os.getenv("NEO4J_AUTH", "neo4j/change-me-now").split("/", 1)[1],
-                "--format",
-                "plain",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
                 neo4j,
             ).splitlines()[-1]
         )

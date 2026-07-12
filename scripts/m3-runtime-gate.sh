@@ -9,7 +9,11 @@ export WEB_PORT="${M3_RUNTIME_PORT:-39094}"
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
-    $COMPOSE logs --no-color api worker dispatcher neo4j >&2 || true
+    $COMPOSE logs --no-color api worker graph-worker dispatcher neo4j >&2 || true
+    $COMPOSE exec -T postgres psql -U "${POSTGRES_USER:-opengraphrag}" -d "${POSTGRES_DB:-opengraphrag}" \
+      -c "select id, document_id, status, attempt, error_message from graph_extraction_jobs order by created_at;" >&2 || true
+    $COMPOSE exec -T postgres psql -U "${POSTGRES_USER:-opengraphrag}" -d "${POSTGRES_DB:-opengraphrag}" \
+      -c "select id, document_id, chunk_id, status, error_message from graph_extraction_runs order by created_at;" >&2 || true
   fi
   $COMPOSE down -v --remove-orphans
   exit "$status"
