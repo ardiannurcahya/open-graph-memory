@@ -284,21 +284,64 @@ def projection(
         project_id, dataset_id, "entity", "Acme", "Org", 1, timestamp, timestamp
     )
     relation = RelationProjection(
-        project_id, dataset_id, "relation", "entity", "entity-2", "EMPLOYS", "v1", 1,
-        "unreviewed", timestamp, timestamp
+        project_id,
+        dataset_id,
+        "relation",
+        "entity",
+        "entity-2",
+        "EMPLOYS",
+        "v1",
+        1,
+        "unreviewed",
+        timestamp,
+        timestamp,
     )
     chunk = ChunkProjection(project_id, dataset_id, document_id, "chunk", "pipeline-v1", timestamp)
     return DocumentProjection(
-        project_id, dataset_id, document_id, timestamp, timestamp, (chunk,), (entity,), (relation,),
+        project_id,
+        dataset_id,
+        document_id,
+        timestamp,
+        timestamp,
+        (chunk,),
+        (entity,),
+        (relation,),
         (
             EvidenceProjection(
-                project_id, dataset_id, "entity-evidence", document_id, "chunk", "entity", None,
-                "run", "Acme", 1, "deterministic", "model", "v1", "prompt-v1", timestamp, timestamp
+                project_id,
+                dataset_id,
+                "entity-evidence",
+                document_id,
+                "chunk",
+                "entity",
+                None,
+                "run",
+                "Acme",
+                1,
+                "deterministic",
+                "model",
+                "v1",
+                "prompt-v1",
+                timestamp,
+                timestamp,
             ),
             EvidenceProjection(
-                project_id, dataset_id, "relation-evidence", document_id, "chunk", None, "relation",
-                "run", "Acme employs Bob", 1, "deterministic", "model", "v1", "prompt-v1",
-                timestamp, timestamp
+                project_id,
+                dataset_id,
+                "relation-evidence",
+                document_id,
+                "chunk",
+                None,
+                "relation",
+                "run",
+                "Acme employs Bob",
+                1,
+                "deterministic",
+                "model",
+                "v1",
+                "prompt-v1",
+                timestamp,
+                timestamp,
             ),
         ),
     )
@@ -344,11 +387,25 @@ async def test_document_reconciliation_is_scoped_and_preserves_shared_graph_node
 
 
 @pytest.mark.asyncio
+async def test_document_deletion_is_scoped_and_preserves_supported_subjects() -> None:
+    store = RecordingStore()
+    await store.delete_document("project-a", "dataset-a", "doc-a")
+
+    statements = "\n".join(statement for statement, _ in store.calls)
+    assert "document_id: $document_id" in statements
+    assert "NOT (r)-[:SUPPORTED_BY]->(:Evidence)" in statements
+    assert "NOT (:Chunk)-[:MENTIONS]->(e)" in statements
+    assert all(parameters["project_id"] == "project-a" for _, parameters in store.calls)
+    assert all(parameters["dataset_id"] == "dataset-a" for _, parameters in store.calls)
+
+
+@pytest.mark.asyncio
 async def test_cypher_uses_parameters_for_user_controlled_ids() -> None:
     marker = "user-id-'} DETACH DELETE n //"
     store = RecordingStore()
     await store.project_document(projection(marker, marker, marker))
     await store.reconcile_dataset(marker, marker)
+    await store.delete_document(marker, marker, marker)
     for statement, parameters in store.calls:
         assert marker not in statement
         assert marker in repr(parameters)

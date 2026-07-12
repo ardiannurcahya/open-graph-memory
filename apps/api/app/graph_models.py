@@ -83,6 +83,34 @@ class GraphExtractionOutbox(Base):
     )
 
 
+class GraphCleanupTarget(StrEnum):
+    DOCUMENT = "document"
+    DATASET = "dataset"
+
+
+class GraphCleanupOutbox(Base):
+    """Deletion intent retained after authoritative rows are removed."""
+
+    __tablename__ = "graph_cleanup_outbox"
+    __table_args__ = (Index("ix_graph_cleanup_dispatch", "ready", "published_at"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(nullable=False)
+    dataset_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    document_id: Mapped[str | None] = mapped_column(String(40))
+    target: Mapped[GraphCleanupTarget] = mapped_column(
+        Enum(GraphCleanupTarget, name="graph_cleanup_target")
+    )
+    ready: Mapped[bool] = mapped_column(default=False, nullable=False)
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ScopeMixin:
     project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))

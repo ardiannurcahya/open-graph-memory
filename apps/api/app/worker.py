@@ -15,7 +15,10 @@ celery_app.conf.update(
     task_time_limit=300,
     task_reject_on_worker_lost=True,
     task_default_queue="default",
-    task_routes={"graph.extract_job": {"queue": "graph"}},
+    task_routes={
+        "graph.extract_job": {"queue": "graph"},
+        "graph.cleanup_projection": {"queue": "graph"},
+    },
     beat_schedule={
         "dispatch-indexing-outbox": {
             "task": "ingestion.dispatch_outbox",
@@ -27,6 +30,10 @@ celery_app.conf.update(
         },
         "reconcile-graph-extraction-jobs": {
             "task": "graph.reconcile_jobs",
+            "schedule": settings.outbox_poll_seconds,
+        },
+        "dispatch-graph-cleanup-outbox": {
+            "task": "graph.dispatch_cleanup_outbox",
             "schedule": settings.outbox_poll_seconds,
         },
     },
@@ -72,6 +79,20 @@ def reconcile_graph_jobs() -> int:
     from app.graph_dispatch import reconcile_graph_jobs
 
     return runner.run(reconcile_graph_jobs())
+
+
+@celery_app.task(name="graph.cleanup_projection")  # type: ignore[untyped-decorator]
+def cleanup_graph_projection(cleanup_id: str) -> str:
+    from app.graph_cleanup import execute_graph_cleanup
+
+    return runner.run(execute_graph_cleanup(cleanup_id))
+
+
+@celery_app.task(name="graph.dispatch_cleanup_outbox")  # type: ignore[untyped-decorator]
+def dispatch_graph_cleanup_outbox() -> int:
+    from app.graph_cleanup import dispatch_pending_graph_cleanup
+
+    return runner.run(dispatch_pending_graph_cleanup())
 
 
 async def _dispatch_pending(limit: int = 100) -> int:

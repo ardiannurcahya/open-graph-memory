@@ -13,6 +13,7 @@ from app.auth import ProjectContext, require_project
 from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
+from app.graph_cleanup import create_document_cleanup, mark_cleanup_ready
 from app.ingestion import enqueue_document
 from app.models import Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
@@ -225,6 +226,7 @@ async def delete_document(
 ) -> Response:
     item = await owned_document(db, project, document_id)
     item.status, item.error_message = DocumentStatus.DELETING, None
+    cleanup = await create_document_cleanup(db, item)
     await db.commit()
     try:
         await store.delete(item.object_key)
@@ -232,6 +234,7 @@ async def delete_document(
         item.status, item.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
         await db.commit()
         raise HTTPException(503, "object storage deletion failed") from exc
+    await mark_cleanup_ready(db, cleanup)
     await db.delete(item)
     await db.commit()
     return Response(status_code=204)

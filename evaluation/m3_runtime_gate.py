@@ -69,7 +69,7 @@ def main() -> int:
     assert status == 201, outsider_dataset
     primary = [item for item in fixtures["documents"] if item.get("tenant", "primary") == "primary"]
     documents = [upload(base, primary_headers, dataset["id"], item) for item in primary]
-    upload(
+    outsider_document = upload(
         base,
         outsider_headers,
         outsider_dataset["id"],
@@ -90,6 +90,7 @@ def main() -> int:
     else:
         raise RuntimeError(f"documents did not index: {states}")
     wait_graph(args.compose_file, ids)
+    wait_graph(args.compose_file, [outsider_document["id"]])
     quoted = ",".join("'" + item + "'" for item in ids)
     assert int(
         sql(
@@ -122,12 +123,15 @@ def main() -> int:
         "relation_assertions",
         "graph_evidence",
     ):
-        assert int(
-            sql(
-                args.compose_file,
-                f"select count(*) from {table} where created_at is null or updated_at is null",
+        assert (
+            int(
+                sql(
+                    args.compose_file,
+                    f"select count(*) from {table} where created_at is null or updated_at is null",
+                )
             )
-        ) == 0, table
+            == 0
+        ), table
     status, graph = request(
         base,
         "GET",
@@ -231,6 +235,122 @@ def main() -> int:
             ).splitlines()[-1]
         )
         > 0
+    )
+    # Deletion commits PostgreSQL intent first; the worker removes only the scoped Neo4j projection.
+    deleted_document = ids[0]
+    assert (
+        request(base, "DELETE", f"/v1/documents/{deleted_document}", headers=primary_headers)[0]
+        == 204
+    )
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        completed = sql(
+            args.compose_file,
+            "select count(*) from graph_cleanup_outbox "
+            f"where document_id='{deleted_document}' and completed_at is not null",
+        )
+        if completed == "1":
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError("document graph cleanup did not finish")
+    assert (
+        sql(args.compose_file, f"select count(*) from documents where id='{deleted_document}'")
+        == "0"
+    )
+    deleted_graph = (
+        "MATCH (n) WHERE n.project_id = '"
+        + project["id"]
+        + "' AND n.dataset_id = '"
+        + dataset["id"]
+        + "' AND (n:Document OR n:Chunk OR n:Evidence) "
+        + "AND (n.id = '"
+        + deleted_document
+        + "' OR n.document_id = '"
+        + deleted_document
+        + "') RETURN count(n)"
+    )
+    assert (
+        int(
+            compose(
+                args.compose_file,
+                "exec",
+                "-T",
+                "neo4j",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
+                deleted_graph,
+            ).splitlines()[-1]
+        )
+        == 0
+    )
+    assert (
+        request(base, "DELETE", f"/v1/datasets/{dataset['id']}", headers=primary_headers)[0] == 204
+    )
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        completed = sql(
+            args.compose_file,
+            "select count(*) from graph_cleanup_outbox "
+            f"where dataset_id='{dataset['id']}' and target='DATASET' and completed_at is not null",
+        )
+        if completed == "1":
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError("dataset graph cleanup did not finish")
+    assert (
+        sql(args.compose_file, f"select count(*) from datasets where id='{dataset['id']}'") == "0"
+    )
+    dataset_graph = (
+        "MATCH (n) WHERE n.project_id = '"
+        + project["id"]
+        + "' AND n.dataset_id = '"
+        + dataset["id"]
+        + "' RETURN count(n)"
+    )
+    assert (
+        int(
+            compose(
+                args.compose_file,
+                "exec",
+                "-T",
+                "neo4j",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
+                dataset_graph,
+            ).splitlines()[-1]
+        )
+        == 0
+    )
+    outsider_graph = (
+        "MATCH (n:Document {project_id: '"
+        + outsider["id"]
+        + "', dataset_id: '"
+        + outsider_dataset["id"]
+        + "', id: '"
+        + outsider_document["id"]
+        + "'}) RETURN count(n)"
+    )
+    assert (
+        int(
+            compose(
+                args.compose_file,
+                "exec",
+                "-T",
+                "neo4j",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
+                outsider_graph,
+            ).splitlines()[-1]
+        )
+        == 1
     )
     print("M3 runtime gate passed")
     return 0

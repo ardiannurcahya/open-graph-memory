@@ -336,26 +336,51 @@ async def project_document(db: AsyncSession, document: Document, graph: GraphSto
             ),
             entities=tuple(
                 GraphProjection(
-                    str(e.project_id), e.dataset_id, e.id, e.canonical_name, e.entity_type,
-                    e.version, e.created_at.isoformat(), e.updated_at.isoformat()
+                    str(e.project_id),
+                    e.dataset_id,
+                    e.id,
+                    e.canonical_name,
+                    e.entity_type,
+                    e.version,
+                    e.created_at.isoformat(),
+                    e.updated_at.isoformat(),
                 )
                 for e in entities
             ),
             relations=tuple(
                 RelationProjection(
-                    str(r.project_id), r.dataset_id, r.id, r.source_entity_id, r.target_entity_id,
-                    r.relation_type, r.extractor_version, r.confidence, r.review_state.value,
-                    r.created_at.isoformat(), r.updated_at.isoformat()
+                    str(r.project_id),
+                    r.dataset_id,
+                    r.id,
+                    r.source_entity_id,
+                    r.target_entity_id,
+                    r.relation_type,
+                    r.extractor_version,
+                    r.confidence,
+                    r.review_state.value,
+                    r.created_at.isoformat(),
+                    r.updated_at.isoformat(),
                 )
                 for r in relations
             ),
             evidence=tuple(
                 EvidenceProjection(
-                    str(item.project_id), item.dataset_id, item.id, item.document_id, item.chunk_id,
-                    item.entity_id, item.relation_id, item.run_id, item.quote, item.confidence,
-                    runs[item.run_id].provider, runs[item.run_id].model,
-                    runs[item.run_id].extractor_version, runs[item.run_id].prompt_version,
-                    item.created_at.isoformat(), item.updated_at.isoformat()
+                    str(item.project_id),
+                    item.dataset_id,
+                    item.id,
+                    item.document_id,
+                    item.chunk_id,
+                    item.entity_id,
+                    item.relation_id,
+                    item.run_id,
+                    item.quote,
+                    item.confidence,
+                    runs[item.run_id].provider,
+                    runs[item.run_id].model,
+                    runs[item.run_id].extractor_version,
+                    runs[item.run_id].prompt_version,
+                    item.created_at.isoformat(),
+                    item.updated_at.isoformat(),
                 )
                 for item in evidence
             ),

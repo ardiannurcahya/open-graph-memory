@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
+from app.graph_cleanup import create_dataset_cleanup, mark_cleanup_ready
 from app.models import Dataset, DatasetStatus, Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 
@@ -112,6 +113,7 @@ async def delete(
 ) -> Response:
     item = await owned(db, project, dataset_id)
     item.status, item.error_message = DatasetStatus.DELETING, None
+    cleanup = await create_dataset_cleanup(db, item)
     await db.commit()
     documents = list(
         await db.scalars(
@@ -133,6 +135,7 @@ async def delete(
             document.status, document.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
         await db.commit()
         raise HTTPException(503, "dataset object deletion failed") from exc
+    await mark_cleanup_ready(db, cleanup)
     await db.delete(item)
     await db.commit()
     return Response(status_code=204)
