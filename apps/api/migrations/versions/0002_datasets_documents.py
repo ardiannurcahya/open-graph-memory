@@ -14,9 +14,19 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     status = postgresql.ENUM(
-        "UPLOADED", "STORAGE_FAILED", name="document_status", create_type=False
+        "PENDING_UPLOAD",
+        "UPLOADED",
+        "STORAGE_FAILED",
+        "DELETING",
+        "DELETE_FAILED",
+        name="document_status",
+        create_type=False,
     )
     status.create(op.get_bind())
+    dataset_status = postgresql.ENUM(
+        "ACTIVE", "DELETING", "DELETE_FAILED", name="dataset_status", create_type=False
+    )
+    dataset_status.create(op.get_bind())
     op.create_table(
         "datasets",
         sa.Column("id", sa.String(40), primary_key=True),
@@ -28,6 +38,8 @@ def upgrade() -> None:
         ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text()),
+        sa.Column("status", dataset_status, server_default="ACTIVE", nullable=False),
+        sa.Column("error_message", sa.Text()),
         sa.Column(
             "metadata", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False
         ),
@@ -72,7 +84,12 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
-        sa.UniqueConstraint("dataset_id", "content_hash", name="uq_documents_dataset_hash"),
+        sa.UniqueConstraint(
+            "project_id",
+            "dataset_id",
+            "content_hash",
+            name="uq_documents_project_dataset_hash",
+        ),
     )
     op.create_index("ix_documents_project_dataset", "documents", ["project_id", "dataset_id"])
 
@@ -81,3 +98,4 @@ def downgrade() -> None:
     op.drop_table("documents")
     op.drop_table("datasets")
     sa.Enum(name="document_status").drop(op.get_bind())
+    sa.Enum(name="dataset_status").drop(op.get_bind())

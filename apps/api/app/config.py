@@ -23,20 +23,24 @@ class Settings(BaseSettings):
     s3_secret_key: SecretStr = SecretStr("change-me-s3-secret")
     s3_bucket: str = "opengraphrag"
     s3_region: str = "us-east-1"
-    admin_api_key: SecretStr = SecretStr("change-me-admin-key")
+    admin_api_key: SecretStr = SecretStr("change-me-admin-api-key")
     readiness_timeout_seconds: float = 2.0
+    upload_max_bytes: int = 25 * 1024 * 1024
+    upload_spool_max_bytes: int = 1024 * 1024
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
+    def validate_settings(self) -> "Settings":
+        if self.upload_max_bytes < 1 or self.upload_spool_max_bytes < 1:
+            raise ValueError("upload limits must be positive")
         if self.app_env.lower() not in {"production", "prod"}:
             return self
 
-        secrets = {
+        values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),
             "NEO4J_AUTH": self.neo4j_auth.get_secret_value(),
         }
-        for name, value in secrets.items():
+        for name, value in values.items():
             if len(value) < 16 or any(marker in value.lower() for marker in _PLACEHOLDERS):
                 raise ValueError(f"{name} must be a non-placeholder production secret")
 
@@ -44,8 +48,8 @@ class Settings(BaseSettings):
         if not db.password or any(marker in db.password.lower() for marker in _PLACEHOLDERS):
             raise ValueError("DATABASE_URL must contain a non-placeholder password")
 
-        neo4j_user, separator, neo4j_password = secrets["NEO4J_AUTH"].partition("/")
-        if not separator or not neo4j_user or not neo4j_password:
+        user, separator, password = values["NEO4J_AUTH"].partition("/")
+        if not separator or not user or not password:
             raise ValueError("NEO4J_AUTH must be formatted as user/password")
         return self
 

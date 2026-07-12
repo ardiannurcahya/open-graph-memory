@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
-from app.models import Dataset
+from app.models import Dataset, DatasetStatus, Document, DocumentStatus
+from app.storage import ObjectStore, get_object_store
 
 router = APIRouter(prefix="/v1/datasets", tags=["datasets"])
 Project = Annotated[ProjectContext, Depends(require_project)]
@@ -30,12 +31,21 @@ class DatasetPatch(BaseModel):
 
 class DatasetView(DatasetInput):
     id: str
+    project_id: str
+    status: str
+    error_message: str | None
     model_config = {"from_attributes": True}
 
 
 def view(item: Dataset) -> DatasetView:
     return DatasetView(
-        id=item.id, name=item.name, description=item.description, metadata=item.metadata_
+        id=item.id,
+        project_id=str(item.project_id),
+        name=item.name,
+        description=item.description,
+        metadata=item.metadata_,
+        status=item.status.value,
+        error_message=item.error_message,
     )
 
 
@@ -56,6 +66,7 @@ async def create(body: DatasetInput, project: Project, db: Db) -> DatasetView:
         name=body.name,
         description=body.description,
         metadata_=body.metadata,
+        status=DatasetStatus.ACTIVE,
     )
     db.add(item)
     try:
@@ -93,7 +104,35 @@ async def update(dataset_id: str, body: DatasetPatch, project: Project, db: Db) 
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete(dataset_id: str, project: Project, db: Db) -> Response:
-    await db.delete(await owned(db, project, dataset_id))
+async def delete(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    store: Annotated[ObjectStore, Depends(get_object_store)],
+) -> Response:
+    item = await owned(db, project, dataset_id)
+    item.status, item.error_message = DatasetStatus.DELETING, None
+    await db.commit()
+    documents = list(
+        await db.scalars(
+            select(Document).where(
+                Document.project_id == project.project_id, Document.dataset_id == dataset_id
+            )
+        )
+    )
+    try:
+        for document in documents:
+            document.status = DocumentStatus.DELETING
+            await db.commit()
+            await store.delete(document.object_key)
+            await db.delete(document)
+            await db.commit()
+    except Exception as exc:
+        item.status, item.error_message = DatasetStatus.DELETE_FAILED, str(exc)[:2000]
+        if document.status == DocumentStatus.DELETING:
+            document.status, document.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
+        await db.commit()
+        raise HTTPException(503, "dataset object deletion failed") from exc
+    await db.delete(item)
     await db.commit()
     return Response(status_code=204)

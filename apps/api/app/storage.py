@@ -1,3 +1,4 @@
+import asyncio
 from typing import IO, Protocol
 
 import boto3
@@ -6,8 +7,8 @@ from app.config import Settings, get_settings
 
 
 class ObjectStore(Protocol):
-    def upload(self, key: str, stream: IO[bytes], content_type: str) -> None: ...
-    def delete(self, key: str) -> None: ...
+    async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None: ...
+    async def delete(self, key: str) -> None: ...
 
 
 class S3ObjectStore:
@@ -21,13 +22,17 @@ class S3ObjectStore:
             region_name=settings.s3_region,
         )
 
-    def upload(self, key: str, stream: IO[bytes], content_type: str) -> None:
-        self.client.upload_fileobj(
-            stream, self.bucket, key, ExtraArgs={"ContentType": content_type}
+    async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None:
+        await asyncio.to_thread(
+            self.client.upload_fileobj,
+            stream,
+            self.bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
         )
 
-    def delete(self, key: str) -> None:
-        self.client.delete_object(Bucket=self.bucket, Key=key)
+    async def delete(self, key: str) -> None:
+        await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
 
 
 def get_object_store() -> ObjectStore:
