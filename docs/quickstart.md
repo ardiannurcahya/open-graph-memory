@@ -9,3 +9,4 @@ Requirements: Docker Compose v2, or Python 3.12 with uv and Node 22 for host dev
 5. Stop with `docker compose -f deployments/docker-compose.yml down`; add `-v` only when intentionally deleting data.
 
 Host checks are available through `scripts/lint.sh`, `scripts/test.sh`, and `scripts/build.sh`.
+Dataset CRUD, upload constraints, examples, and the runtime gate are documented in [Dataset and document upload](dataset-upload.md).
