@@ -22,6 +22,9 @@ def test_production_rejects_placeholder_credentials() -> None:
             s3_secret_key="a-secure-object-secret",
             neo4j_auth="neo4j/a-secure-neo4j-password",
             database_url="postgresql+asyncpg://user:a-secure-db-password@postgres/db",
+            graph_extractor_provider="openai",
+            graph_extractor_model="gpt-4o-mini",
+            openai_api_key="a-secure-openai-api-key",
         )
 
 
@@ -32,5 +35,34 @@ def test_production_accepts_consistent_credentials() -> None:
         s3_secret_key="a-secure-object-secret",
         neo4j_auth="neo4j/a-secure-neo4j-password",
         database_url="postgresql+asyncpg://user:a-secure-db-password@postgres/db",
+        graph_extractor_provider="openai",
+        graph_extractor_model="gpt-4o-mini",
+        openai_api_key="a-secure-openai-api-key",
     )
     assert settings.app_env == "production"
+
+
+def test_production_requires_openai_graph_extractor() -> None:
+    with pytest.raises(ValidationError, match="GRAPH_EXTRACTOR_PROVIDER"):
+        Settings(
+            app_env="production",
+            admin_api_key="a-secure-admin-api-key",
+            s3_secret_key="a-secure-object-secret",
+            neo4j_auth="neo4j/a-secure-neo4j-password",
+            database_url="postgresql+asyncpg://user:a-secure-db-password@postgres/db",
+        )
+
+
+def test_production_rejects_insecure_graph_endpoint() -> None:
+    with pytest.raises(ValidationError, match="OPENAI_BASE_URL"):
+        Settings(
+            app_env="production",
+            admin_api_key="a-secure-admin-api-key",
+            s3_secret_key="a-secure-object-secret",
+            neo4j_auth="neo4j/a-secure-neo4j-password",
+            database_url="postgresql+asyncpg://user:a-secure-db-password@postgres/db",
+            graph_extractor_provider="openai",
+            graph_extractor_model="gpt-4o-mini",
+            openai_api_key="a-secure-openai-api-key",
+            openai_base_url="http://localhost:8000/v1",
+        )

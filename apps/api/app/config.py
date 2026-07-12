@@ -29,8 +29,12 @@ class Settings(BaseSettings):
     upload_spool_max_bytes: int = 1024 * 1024
     embedding_provider: str = "deterministic"
     chat_provider: str = "deterministic"
+    graph_extractor_provider: str = "deterministic"
     embedding_model: str = "deterministic-embedding-v1"
     chat_model: str = "deterministic-chat-v1"
+    graph_extractor_model: str = "deterministic-graph-v1"
+    graph_extractor_version: str = "graph-extractor-v1"
+    graph_extractor_prompt_version: str = "graph-v1"
     provider_version: str = "v1"
     embedding_dimensions: int = 64
     openai_base_url: str = "https://api.openai.com/v1"
@@ -45,17 +49,36 @@ class Settings(BaseSettings):
         if self.upload_max_bytes < 1 or self.upload_spool_max_bytes < 1:
             raise ValueError("upload limits must be positive")
         valid = {"deterministic", "openai"}
-        if self.embedding_provider not in valid or self.chat_provider not in valid:
+        if {
+            self.embedding_provider,
+            self.chat_provider,
+            self.graph_extractor_provider,
+        } - valid:
             raise ValueError("providers must be deterministic or openai")
         if self.embedding_dimensions < 1 or self.outbox_poll_seconds <= 0:
             raise ValueError("dimensions and outbox polling interval must be positive")
         if (
-            "openai" in {self.embedding_provider, self.chat_provider}
+            "openai" in {self.embedding_provider, self.chat_provider, self.graph_extractor_provider}
             and not self.openai_api_key.get_secret_value()
         ):
             raise ValueError("OPENAI_API_KEY is required for OpenAI providers")
         if self.app_env.lower() not in {"production", "prod"}:
             return self
+        if self.graph_extractor_provider != "openai":
+            raise ValueError("GRAPH_EXTRACTOR_PROVIDER must be openai in production")
+        if urlparse(self.openai_base_url).scheme != "https":
+            raise ValueError("OPENAI_BASE_URL must use https in production")
+        graph_values = {
+            "OPENAI_API_KEY": self.openai_api_key.get_secret_value(),
+            "GRAPH_EXTRACTOR_MODEL": self.graph_extractor_model,
+            "GRAPH_EXTRACTOR_VERSION": self.graph_extractor_version,
+            "GRAPH_EXTRACTOR_PROMPT_VERSION": self.graph_extractor_prompt_version,
+        }
+        for name, value in graph_values.items():
+            if not value or any(marker in value.lower() for marker in _PLACEHOLDERS):
+                raise ValueError(f"{name} must be configured securely in production")
+        if len(self.openai_api_key.get_secret_value()) < 16:
+            raise ValueError("OPENAI_API_KEY must be a non-placeholder production secret")
         values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db import engine
 from app.graph_models import GraphExtractionJob, GraphExtractionOutbox, GraphJobStatus
-from app.graph_pipeline import EXTRACTOR_VERSION, PROMPT_VERSION, extract_document
+from app.graph_pipeline import extract_document, extractor_metadata
 from app.ingestion import sanitized_error
 from app.models import Document, DocumentStatus
 
@@ -17,7 +17,8 @@ LEASE_SECONDS = 300
 
 async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> GraphExtractionJob:
     """Persist work atomically with successful vector indexing; publishing is separate."""
-    job_id = stable_id("graph-job", document.id, EXTRACTOR_VERSION)
+    metadata = extractor_metadata()
+    job_id = stable_id("graph-job", document.id, metadata.extractor_version)
     job = await db.get(GraphExtractionJob, job_id)
     if job is None:
         job = GraphExtractionJob(
@@ -26,10 +27,10 @@ async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> Grap
             dataset_id=document.dataset_id,
             document_id=document.id,
             status=GraphJobStatus.QUEUED,
-            provider="deterministic",
-            model="deterministic-graph-v1",
-            extractor_version=EXTRACTOR_VERSION,
-            prompt_version=PROMPT_VERSION,
+            provider=metadata.provider,
+            model=metadata.model,
+            extractor_version=metadata.extractor_version,
+            prompt_version=metadata.prompt_version,
             ontology_version=None,
         )
         db.add(job)

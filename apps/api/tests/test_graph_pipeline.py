@@ -1,6 +1,8 @@
 from uuid import uuid4
 
 import pytest
+from app.config import Settings
+from app.graph_dispatch import enqueue_graph_extraction
 from app.graph_models import (
     CanonicalEntity,
     GraphEvidence,
@@ -8,7 +10,7 @@ from app.graph_models import (
     RelationAssertion,
     RunStatus,
 )
-from app.graph_pipeline import _persist_chunk
+from app.graph_pipeline import ExtractorMetadata, _persist_chunk, build_extractor
 from app.graph_store import (
     DocumentProjection,
     EvidenceProjection,
@@ -17,7 +19,13 @@ from app.graph_store import (
     RelationProjection,
 )
 from app.models import Chunk, Document
-from open_graph_core.extraction import Entity, Extraction, Relation
+from open_graph_core.extraction import (
+    DeterministicExtractor,
+    Entity,
+    Extraction,
+    OpenAICompatibleExtractor,
+    Relation,
+)
 
 
 class Extractor:
@@ -41,7 +49,10 @@ class FakeSession:
         return self.rows.get((model, row_id))
 
     def add(self, row: object) -> None:
-        self.rows[(type(row), str(row.id))] = row
+        row_id = getattr(row, "id", None)
+        if row_id is None:
+            row_id = getattr(row, "job_id", None)
+        self.rows[(type(row), str(row_id))] = row
 
     async def flush(self) -> None:
         pass
@@ -71,6 +82,71 @@ def inputs(dataset_id: str = "dataset-a") -> tuple[Document, Chunk]:
         text="Acme [Org] employs Bob [Person]",
     )
     return document, chunk
+
+
+def test_build_extractor_defaults_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: Settings())
+
+    extractor, metadata = build_extractor()
+
+    assert isinstance(extractor, DeterministicExtractor)
+    assert metadata == ExtractorMetadata(
+        provider="deterministic",
+        model="deterministic-graph-v1",
+        extractor_version="graph-extractor-v1",
+        prompt_version="graph-v1",
+    )
+
+
+def test_build_extractor_constructs_openai_compatible_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        graph_extractor_provider="openai",
+        graph_extractor_model="test-model",
+        graph_extractor_version="test-extractor-v2",
+        graph_extractor_prompt_version="test-prompt-v3",
+        openai_base_url="https://extractor.example/v1",
+        openai_api_key="test-secret",
+    )
+    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)
+
+    extractor, metadata = build_extractor()
+
+    assert isinstance(extractor, OpenAICompatibleExtractor)
+    assert (extractor.base_url, extractor.api_key, extractor.model, extractor.prompt_version) == (
+        "https://extractor.example/v1",
+        "test-secret",
+        "test-model",
+        "test-prompt-v3",
+    )
+    assert metadata.provider == "openai_compatible"
+    assert metadata.extractor_version == "test-extractor-v2"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_persists_selected_extractor_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        graph_extractor_provider="openai",
+        graph_extractor_model="test-model",
+        graph_extractor_version="test-extractor-v2",
+        graph_extractor_prompt_version="test-prompt-v3",
+        openai_api_key="test-secret",
+    )
+    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)
+    db = FakeSession()
+    document, _ = inputs()
+
+    job = await enqueue_graph_extraction(db, document)  # type: ignore[arg-type]
+
+    assert (job.provider, job.model, job.extractor_version, job.prompt_version) == (
+        "openai_compatible",
+        "test-model",
+        "test-extractor-v2",
+        "test-prompt-v3",
+    )
 
 
 @pytest.mark.asyncio
@@ -114,6 +190,34 @@ async def test_duplicate_execution_is_idempotent_and_persists_relation_provenanc
         "chunk",
         next(row.id for row in db.rows.values() if isinstance(row, GraphExtractionRun)),
         0.6,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_persists_selected_extractor_metadata() -> None:
+    db = FakeSession()
+    document, chunk = inputs()
+    metadata = ExtractorMetadata(
+        provider="openai_compatible",
+        model="test-model",
+        extractor_version="test-extractor-v2",
+        prompt_version="test-prompt-v3",
+    )
+
+    await _persist_chunk(
+        db,
+        document,
+        chunk,
+        Extractor(Extraction(entities=[], relations=[])),  # type: ignore[arg-type]
+        metadata,
+    )
+
+    run = next(row for row in db.rows.values() if isinstance(row, GraphExtractionRun))
+    assert (run.provider, run.model, run.extractor_version, run.prompt_version) == (
+        "openai_compatible",
+        "test-model",
+        "test-extractor-v2",
+        "test-prompt-v3",
     )
 
 

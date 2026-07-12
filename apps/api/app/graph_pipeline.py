@@ -2,9 +2,16 @@
 
 import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from open_graph_core.extraction import DeterministicExtractor, Extractor, normalize_name, stable_id
+from open_graph_core.extraction import (
+    DeterministicExtractor,
+    Extractor,
+    OpenAICompatibleExtractor,
+    normalize_name,
+    stable_id,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -29,9 +36,43 @@ from app.graph_store import (
 from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
 
-EXTRACTOR_VERSION = "graph-extractor-v1"
-PROMPT_VERSION = "graph-v1"
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ExtractorMetadata:
+    provider: str
+    model: str
+    extractor_version: str
+    prompt_version: str
+
+
+def extractor_metadata() -> ExtractorMetadata:
+    settings = get_settings()
+    return ExtractorMetadata(
+        provider="openai_compatible"
+        if settings.graph_extractor_provider == "openai"
+        else "deterministic",
+        model=settings.graph_extractor_model,
+        extractor_version=settings.graph_extractor_version,
+        prompt_version=settings.graph_extractor_prompt_version,
+    )
+
+
+def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
+    settings = get_settings()
+    metadata = extractor_metadata()
+    if settings.graph_extractor_provider == "openai":
+        return (
+            OpenAICompatibleExtractor(
+                base_url=settings.openai_base_url,
+                api_key=settings.openai_api_key.get_secret_value(),
+                model=settings.graph_extractor_model,
+                prompt_version=settings.graph_extractor_prompt_version,
+            ),
+            metadata,
+        )
+    return DeterministicExtractor(), metadata
 
 
 def _store() -> GraphStore:
@@ -42,6 +83,14 @@ def _store() -> GraphStore:
 async def extract_document(
     document_id: str, extractor: Extractor | None = None, graph: GraphStore | None = None
 ) -> str:
+    selected_extractor, metadata = (
+        build_extractor()
+        if extractor is None
+        else (
+            extractor,
+            extractor_metadata(),
+        )
+    )
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
         document = await db.get(Document, document_id)
@@ -61,7 +110,7 @@ async def extract_document(
         chunk_inputs = [(chunk.id, chunk.text) for chunk in chunks]
         try:
             for chunk in chunks:
-                await _persist_chunk(db, document, chunk, extractor or DeterministicExtractor())
+                await _persist_chunk(db, document, chunk, selected_extractor, metadata)
             await db.commit()
             await project_document(db, document, graph or _store())
             return document.id
@@ -69,7 +118,7 @@ async def extract_document(
             await db.rollback()
             # Rollback expires ORM instances; use values captured before the transaction.
             for chunk_id, chunk_text in chunk_inputs:
-                run_id = stable_id("run", chunk_id, EXTRACTOR_VERSION, _hash(chunk_text))
+                run_id = stable_id("run", chunk_id, metadata.extractor_version, _hash(chunk_text))
                 run = await db.get(GraphExtractionRun, run_id)
                 if run is not None and run.status != RunStatus.SUCCEEDED:
                     run.status = RunStatus.FAILED
@@ -85,10 +134,15 @@ def _hash(text: str) -> str:
 
 
 async def _persist_chunk(
-    db: AsyncSession, document: Document, chunk: Chunk, extractor: Extractor
+    db: AsyncSession,
+    document: Document,
+    chunk: Chunk,
+    extractor: Extractor,
+    metadata: ExtractorMetadata | None = None,
 ) -> None:
+    metadata = metadata or extractor_metadata()
     input_hash = _hash(chunk.text)
-    run_id = stable_id("run", chunk.id, EXTRACTOR_VERSION, input_hash)
+    run_id = stable_id("run", chunk.id, metadata.extractor_version, input_hash)
     run = await db.get(GraphExtractionRun, run_id)
     if run is not None and run.status == RunStatus.SUCCEEDED:
         return
@@ -100,10 +154,10 @@ async def _persist_chunk(
             document_id=document.id,
             chunk_id=chunk.id,
             status=RunStatus.RUNNING,
-            provider="deterministic",
-            model="deterministic-graph-v1",
-            extractor_version=EXTRACTOR_VERSION,
-            prompt_version=PROMPT_VERSION,
+            provider=metadata.provider,
+            model=metadata.model,
+            extractor_version=metadata.extractor_version,
+            prompt_version=metadata.prompt_version,
             ontology_version=None,
             input_hash=input_hash,
         )
@@ -176,7 +230,7 @@ async def _persist_chunk(
             source.id,
             relation_item.type,
             target.id,
-            EXTRACTOR_VERSION,
+            metadata.extractor_version,
         )
         relation = await db.get(RelationAssertion, relation_id)
         if relation is None:
@@ -188,7 +242,7 @@ async def _persist_chunk(
                 target_entity_id=target.id,
                 relation_type=relation_item.type,
                 confidence=relation_item.confidence,
-                extractor_version=EXTRACTOR_VERSION,
+                extractor_version=metadata.extractor_version,
                 review_state=ReviewState.UNREVIEWED
                 if relation_item.confidence == 1
                 else ReviewState.NEEDS_REVIEW,
