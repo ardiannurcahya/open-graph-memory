@@ -13,6 +13,7 @@ from app.auth import ProjectContext, require_project
 from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
+from app.ingestion import enqueue_document
 from app.models import Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 
@@ -155,6 +156,7 @@ async def upload(
             await db.commit()
             raise HTTPException(503, "object storage upload failed") from exc
         existing.status, existing.error_message = DocumentStatus.UPLOADED, None
+        await enqueue_document(db, existing)
         await db.flush()
         # SQL expressions used by onupdate expire updated_at after flush; reload
         # explicitly while async IO is legal before passing the object to sync code.

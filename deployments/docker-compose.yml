@@ -50,6 +50,11 @@ services:
     env_file: [../.env]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
+  dispatcher:
+    build: {context: .., dockerfile: apps/worker/Dockerfile}
+    command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
+    env_file: [../.env]
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}
   web:
     build: {context: .., dockerfile: apps/web/Dockerfile}
     environment: {CADDY_SITE_ADDRESS: "${CADDY_SITE_ADDRESS:-:80}"}
