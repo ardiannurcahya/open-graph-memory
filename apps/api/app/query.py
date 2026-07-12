@@ -131,7 +131,8 @@ async def query(
     if body.mode == "vector_only":
         hits, fusion = vector_hits, []
     elif body.mode == "graph_only":
-        hits, fusion = graph_hits, []
+        # A graph outage must not turn an otherwise retrievable request into a 5xx/refusal.
+        hits, fusion = (vector_hits, []) if graph_state.get("status") == "fallback" else (graph_hits, [])
     else:
         hits, fusion = fuse_hits(
             vector_hits,
