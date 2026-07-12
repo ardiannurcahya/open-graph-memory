@@ -12,14 +12,15 @@ from typing import Any
 from runtime_gate import auth, compose, multipart, request, sql, wait_ready
 
 
-def wait_graph(base: str, headers: dict[str, str], document_ids: list[str]) -> None:
+def wait_graph(compose_file: Path, document_ids: list[str]) -> None:
     deadline = time.monotonic() + 180
     states: list[str] = []
+    quoted = ",".join("'" + item + "'" for item in document_ids)
     while time.monotonic() < deadline:
-        states = [
-            request(base, "GET", f"/v1/documents/{item}", headers=headers)[1]["graph_stage"]
-            for item in document_ids
-        ]
+        states = sql(
+            compose_file,
+            f"select graph_stage from documents where id in ({quoted}) order by id",
+        ).splitlines()
         if all(state == "complete" for state in states):
             return
         if any(state == "failed" for state in states):
@@ -88,7 +89,7 @@ def main() -> int:
         time.sleep(2)
     else:
         raise RuntimeError(f"documents did not index: {states}")
-    wait_graph(base, primary_headers, ids)
+    wait_graph(args.compose_file, ids)
     quoted = ",".join("'" + item + "'" for item in ids)
     assert int(
         sql(
