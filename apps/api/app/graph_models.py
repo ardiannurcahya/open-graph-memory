@@ -106,6 +106,9 @@ class GraphExtractionRun(ScopeMixin, Base):
     input_hash: Mapped[str] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -125,6 +128,9 @@ class CanonicalEntity(ScopeMixin, Base):
     version: Mapped[int] = mapped_column(default=1)
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class EntityAlias(ScopeMixin, Base):
@@ -139,6 +145,10 @@ class EntityAlias(ScopeMixin, Base):
     normalized_alias: Mapped[str] = mapped_column(String(500))
     entity_type: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RelationAssertion(ScopeMixin, Base):
@@ -165,6 +175,10 @@ class RelationAssertion(ScopeMixin, Base):
     confidence: Mapped[float] = mapped_column(Float)
     extractor_version: Mapped[str] = mapped_column(String(100))
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class GraphEvidence(ScopeMixin, Base):
@@ -187,6 +201,10 @@ class GraphEvidence(ScopeMixin, Base):
     start_offset: Mapped[int | None]
     end_offset: Mapped[int | None]
     confidence: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class EntityMergeHistory(ScopeMixin, Base):
@@ -203,3 +221,6 @@ class EntityMergeHistory(ScopeMixin, Base):
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
     reviewer: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

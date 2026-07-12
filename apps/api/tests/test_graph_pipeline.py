@@ -1,3 +1,5 @@
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -12,6 +14,7 @@ from app.graph_models import (
 )
 from app.graph_pipeline import ExtractorMetadata, _persist_chunk, build_extractor
 from app.graph_store import (
+    ChunkProjection,
     DocumentProjection,
     EvidenceProjection,
     GraphProjection,
@@ -68,6 +71,26 @@ class RecordingStore(Neo4jGraphStore):
 
     async def _run(self, statement: str, parameters: dict[str, object] | None = None) -> None:
         self.calls.append((statement, parameters or {}))
+
+
+def test_timestamp_migration_covers_all_graph_artifacts() -> None:
+    path = Path("apps/api/migrations/versions/0008_graph_artifact_timestamps.py")
+    spec = spec_from_file_location("graph_artifact_timestamps", path)
+    assert spec is not None and spec.loader is not None
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.down_revision == "0007"
+    assert migration.TABLES == (
+        "graph_extraction_runs",
+        "canonical_entities",
+        "entity_aliases",
+        "relation_assertions",
+        "graph_evidence",
+        "entity_merge_history",
+    )
+    for model in (CanonicalEntity, RelationAssertion, GraphEvidence):
+        assert {"created_at", "updated_at"} <= set(model.__table__.c.keys())
 
 
 def inputs(dataset_id: str = "dataset-a") -> tuple[Document, Chunk]:
@@ -256,23 +279,26 @@ async def test_failed_attempt_is_durable_and_can_be_sanitized_by_caller() -> Non
 def projection(
     project_id: str = "project", dataset_id: str = "dataset", document_id: str = "doc"
 ) -> DocumentProjection:
-    entity = GraphProjection(project_id, dataset_id, "entity", "Acme", "Org", 1)
-    relation = RelationProjection(
-        project_id, dataset_id, "relation", "entity", "entity-2", "EMPLOYS", "v1", 1, "unreviewed"
+    timestamp = "2024-01-01T00:00:00+00:00"
+    entity = GraphProjection(
+        project_id, dataset_id, "entity", "Acme", "Org", 1, timestamp, timestamp
     )
+    relation = RelationProjection(
+        project_id, dataset_id, "relation", "entity", "entity-2", "EMPLOYS", "v1", 1,
+        "unreviewed", timestamp, timestamp
+    )
+    chunk = ChunkProjection(project_id, dataset_id, document_id, "chunk", "pipeline-v1", timestamp)
     return DocumentProjection(
-        project_id,
-        dataset_id,
-        document_id,
-        ("chunk",),
-        (entity,),
-        (relation,),
+        project_id, dataset_id, document_id, timestamp, timestamp, (chunk,), (entity,), (relation,),
         (
             EvidenceProjection(
-                project_id, dataset_id, "entity-evidence", document_id, "chunk", "entity", None
+                project_id, dataset_id, "entity-evidence", document_id, "chunk", "entity", None,
+                "run", "Acme", 1, "deterministic", "model", "v1", "prompt-v1", timestamp, timestamp
             ),
             EvidenceProjection(
-                project_id, dataset_id, "relation-evidence", document_id, "chunk", None, "relation"
+                project_id, dataset_id, "relation-evidence", document_id, "chunk", None, "relation",
+                "run", "Acme employs Bob", 1, "deterministic", "model", "v1", "prompt-v1",
+                timestamp, timestamp
             ),
         ),
     )
@@ -288,6 +314,17 @@ async def test_document_projection_creates_isolated_topology_and_is_idempotent()
     for edge in ("HAS_DATASET", "HAS_DOCUMENT", "HAS_CHUNK", "MENTIONS", "ASSERTS", "SUPPORTED_BY"):
         assert edge in statements
     assert "document_id: row.document_id" in statements
+    assert "e.provider = row.provider" in statements
+    assert "e.prompt_version = row.prompt_version" in statements
+    assert "e.created_at = row.created_at" in statements
+    assert "edge.evidence_id = row.evidence_id" in statements
+    evidence_parameters = next(
+        parameters
+        for statement, parameters in store.calls
+        if "e.provider = row.provider" in statement
+    )
+    assert evidence_parameters["rows"][0]["provider"] == "deterministic"
+    assert evidence_parameters["rows"][0]["created_at"] == "2024-01-01T00:00:00+00:00"
     assert sum("DETACH DELETE e" in statement for statement, _ in store.calls) == 2
     assert sum("MERGE (p:Project" in statement for statement, _ in store.calls) == 2
 
@@ -298,7 +335,7 @@ async def test_document_reconciliation_is_scoped_and_preserves_shared_graph_node
     await store.project_document(projection("project-a", "dataset-a", "doc-a"))
     stale_statement, stale_parameters = store.calls[0]
     assert "Evidence" in stale_statement and "document_id: $document_id" in stale_statement
-    assert stale_parameters == {
+    assert {key: stale_parameters[key] for key in ("project_id", "dataset_id", "document_id")} == {
         "project_id": "project-a",
         "dataset_id": "dataset-a",
         "document_id": "doc-a",

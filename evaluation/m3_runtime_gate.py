@@ -116,6 +116,18 @@ def main() -> int:
         )
         > 0
     )
+    for table in (
+        "graph_extraction_runs",
+        "canonical_entities",
+        "relation_assertions",
+        "graph_evidence",
+    ):
+        assert int(
+            sql(
+                args.compose_file,
+                f"select count(*) from {table} where created_at is null or updated_at is null",
+            )
+        ) == 0, table
     status, graph = request(
         base,
         "GET",
@@ -199,7 +211,10 @@ def main() -> int:
         + project["id"]
         + "', dataset_id: '"
         + dataset["id"]
-        + "'}) RETURN count(e)"
+        + "'}) WHERE e.created_at IS NOT NULL AND e.updated_at IS NOT NULL "
+        + "AND e.document_id IS NOT NULL AND e.chunk_id IS NOT NULL "
+        + "AND e.provider IS NOT NULL AND e.model IS NOT NULL "
+        + "AND e.extractor_version IS NOT NULL AND e.prompt_version IS NOT NULL RETURN count(e)"
     )
     assert (
         int(
