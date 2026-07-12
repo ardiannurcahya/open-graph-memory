@@ -108,6 +108,7 @@ class DeterministicProvider:
                 "support": "capability",
                 "supports": "capability",
                 "capabilitie": "capability",
+                "led": "lead",
             }.get(token, token)
             normalized.append(token)
         return normalized
@@ -128,6 +129,24 @@ class DeterministicProvider:
             norm = math.sqrt(sum(value * value for value in vector)) or 1
             vectors.append([value / norm for value in vector])
         return vectors
+
+    @classmethod
+    def _evidence_blocks(cls, evidence: str) -> list[tuple[str, str]]:
+        return [
+            (citation.group(1), block)
+            for block in evidence.split("\n\n")
+            if (citation := re.match(r"\[(\d+)\]", block))
+        ]
+
+    @classmethod
+    def _triples(cls, blocks: list[tuple[str, str]]) -> list[tuple[str, str, str, str]]:
+        triples: list[tuple[str, str, str, str]] = []
+        for citation, block in blocks:
+            for line in block.splitlines():
+                if match := re.fullmatch(r"\s*(.+?)\s+->\s+([A-Z_]+)\s+->\s+(.+?)\s*", line):
+                    subject, relation, object_ = match.groups()
+                    triples.append((citation, subject, relation, object_))
+        return triples
 
     async def chat(self, messages: list[dict[str, str]], model: str = "mock-v1") -> ChatResult:
         context = messages[0]["content"]
@@ -164,31 +183,114 @@ class DeterministicProvider:
             "own": "own",
         }
         requested = {relation_terms[token] for token in question_tokens if token in relation_terms}
+        blocks = self._evidence_blocks(evidence)
+        triples = self._triples(blocks)
+        selected: list[tuple[int, str, str]] | None = None
+        type_names: dict[str, list[tuple[str, str]]] = {}
+        for citation, block in blocks:
+            for line in block.splitlines():
+                if match := re.fullmatch(r"\s*(.+?)\s+\[([^]]+)]\s*", line):
+                    name, entity_type = match.groups()
+                    type_names.setdefault(name.lower(), []).append((citation, entity_type))
+        requested_types = question_tokens & {"person", "organization"}
+        if requested_types:
+            candidates = [
+                values
+                for name, values in type_names.items()
+                if set(self._tokens(name)).intersection(question_tokens - requested_types)
+            ]
+            matches = [
+                item
+                for values in candidates
+                for item in values
+                if item[1].lower() in requested_types
+            ]
+            # Competing supported types make a type question intrinsically ambiguous.
+            if len({item[1].lower() for item in matches}) == 1:
+                citation, entity_type = matches[0]
+                selected = [(0, citation, f"The entity is a {entity_type}")]
+            else:
+                selected = []
+        elif "return" in question_tokens and "start" in question_tokens:
+            start = next(
+                (
+                    subject
+                    for _, subject, _, object_ in triples
+                    if set(self._tokens(subject) + self._tokens(object_)).intersection(
+                        question_tokens
+                    )
+                ),
+                "",
+            )
+            path: list[tuple[str, str, str, str]] = []
+            node, seen = start, {start.lower()}
+            while node:
+                edge = next((item for item in triples if item[1].lower() == node.lower()), None)
+                if edge is None:
+                    break
+                path.append(edge)
+                node = edge[3]
+                if node.lower() == start.lower():
+                    break
+                if node.lower() in seen:
+                    path = []
+                    break
+                seen.add(node.lower())
+            selected = [
+                (0, citation, f"{subject} -> {relation} -> {object_}")
+                for citation, subject, relation, object_ in path
+                if node.lower() == start.lower()
+            ]
+        elif (
+            "all" in question_tokens
+            and "relation" in question_tokens
+            and ("connect" in question_tokens or "connected" in question_tokens)
+        ):
+            selected = [
+                (0, citation, f"{subject} -> {relation} -> {object_}")
+                for citation, subject, relation, object_ in triples
+                if set(self._tokens(subject) + self._tokens(object_)).intersection(question_tokens)
+            ]
         ranked: list[tuple[int, str, str]] = []
-        for block in evidence.split("\n\n"):
+        for citation, block in blocks:
             words = set(self._tokens(block))
             relations = [line for line in block.splitlines() if " -> " in line]
             relation_words = set(self._tokens(" ".join(relations)))
-            # Relation questions require an asserted relation, never a merely similar entity list.
             if requested and (not relations or not requested.intersection(relation_words)):
                 continue
             score = len(terms.intersection(words)) + 2 * len(requested.intersection(relation_words))
-            citation = re.match(r"\[(\d+)\]", block)
-            if citation:
-                ranked.append(
-                    (
-                        score,
-                        citation.group(1),
-                        relations[-1] if relations else block.splitlines()[-1],
-                    )
-                )
+            ranked.append((score, citation, relations[-1] if relations else block.splitlines()[-1]))
         ranked.sort(key=lambda item: (-item[0], int(item[1])))
-        if requested:
+        if selected is None and requested:
             selected = [item for item in ranked if item[0] >= 3]
-            # A compound question must be supported by every requested relation.
+            entity_tokens = (
+                question_tokens
+                - set(relation_terms)
+                - {
+                    "does",
+                    "do",
+                    "who",
+                    "what",
+                    "which",
+                    "the",
+                    "this",
+                    "dataset",
+                    "say",
+                    "in",
+                    "and",
+                    "it",
+                    "person",
+                    "organization",
+                }
+            )
+            evidence_tokens = set(self._tokens(evidence))
+            # Refuse when a named query entity has no support anywhere in the evidence;
+            # individual multi-hop claims naturally mention different endpoints.
+            if not entity_tokens.issubset(evidence_tokens):
+                selected = []
             covered = set().union(*(set(self._tokens(item[2])) for item in selected))
             selected = selected if requested.issubset(covered) else []
-        else:
+        elif selected is None:
             policy_question = "policy" in question_tokens
             required_score = 1 if len(terms) <= 1 or policy_question else 2
             coverage = ranked[0][0] / max(1, len(terms)) if ranked else 0

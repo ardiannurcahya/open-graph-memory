@@ -125,3 +125,59 @@ The API service uses private configuration values.
             )
         ).text
         assert "cannot answer" in result.lower()
+
+
+def test_chat_refuses_ambiguous_types_and_unsupported_entity_relation() -> None:
+    provider = DeterministicProvider()
+    context = """Evidence:
+[1] chunk_id=ambiguous
+Jordan [Person]
+Jordan [Organization]
+Jordan -> ADVISES -> Acme Labs
+
+[2] chunk_id=people
+Acme Labs -> EMPLOYS -> Alice Nguyen
+"""
+    for question in ("Is Jordan a person or an organization?", "Does Acme Labs employ Eve?"):
+        result = asyncio.run(
+            provider.chat(
+                [{"role": "system", "content": context}, {"role": "user", "content": question}]
+            )
+        ).text
+        assert "cannot answer" in result.lower()
+
+
+def test_chat_answers_cycles_and_fanout_with_all_supporting_citations() -> None:
+    provider = DeterministicProvider()
+    context = """Evidence:
+[1] chunk_id=people
+Acme Labs -> EMPLOYS -> Alice Nguyen
+
+[2] chunk_id=product
+Atlas -> BUILT_BY -> Acme Labs
+
+[3] chunk_id=followup
+Alice Nguyen -> LEADS -> Atlas
+"""
+    cycle = asyncio.run(
+        provider.chat(
+            [
+                {"role": "system", "content": context},
+                {
+                    "role": "user",
+                    "content": "Starting at Atlas, what supported relations return to Atlas?",
+                },
+            ]
+        )
+    ).text
+    fanout = asyncio.run(
+        provider.chat(
+            [
+                {"role": "system", "content": context},
+                {"role": "user", "content": "List all supported relations connected to Acme Labs."},
+            ]
+        )
+    ).text
+    assert all(f"[{index}]" in cycle for index in ("1", "2", "3"))
+    assert all(f"[{index}]" in fanout for index in ("1", "2"))
+    assert "[3]" not in fanout
