@@ -10,3 +10,7 @@ Requirements: Docker Compose v2, or Python 3.12 with uv and Node 22 for host dev
 
 Host checks are available through `scripts/lint.sh`, `scripts/test.sh`, and `scripts/build.sh`.
 Dataset CRUD, upload constraints, examples, and the runtime gate are documented in [Dataset and document upload](dataset-upload.md).
+
+## Graph extraction
+
+After documents reach `indexed`, the durable graph job moves `graph_stage` from `queued` through `extracting` to `complete`. Inspect the bounded graph at `GET /api/v1/datasets/{dataset_id}/graph`; API keys and project headers remain required. The deterministic end-to-end graph gate uses no external model credentials: run `scripts/m3-runtime-gate.sh`. It destroys only its own Compose volumes and writes `artifacts/m3-report.json`. See [Graph extraction](graph-extraction.md) and [evaluation](../evaluation/README.md) for fixture semantics and thresholds.
