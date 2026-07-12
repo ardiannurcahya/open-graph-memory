@@ -8,6 +8,7 @@ from app.config import Settings, get_settings
 
 class ObjectStore(Protocol):
     async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None: ...
+    async def download(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
 
 
@@ -33,6 +34,10 @@ class S3ObjectStore:
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
+
+    async def download(self, key: str) -> bytes:
+        response = await asyncio.to_thread(self.client.get_object, Bucket=self.bucket, Key=key)
+        return await asyncio.to_thread(response["Body"].read)
 
 
 def get_object_store() -> ObjectStore:

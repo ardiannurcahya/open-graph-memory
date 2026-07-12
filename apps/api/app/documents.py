@@ -22,6 +22,7 @@ MIMES = {
     ".md": ("text/markdown", "text/plain"),
     ".html": ("text/html",),
     ".pdf": ("application/pdf",),
+    ".csv": ("text/csv", "text/plain", "application/csv"),
 }
 
 
