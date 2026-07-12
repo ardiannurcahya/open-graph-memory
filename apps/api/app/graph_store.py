@@ -270,8 +270,9 @@ class Neo4jGraphStore:
     ) -> list["GraphEvidence"]:
         from app.retrieval import GraphEvidence
 
-        # Scope every node and bound seeds/results; a relation path cannot cross tenants.
-        statement = "MATCH (seed:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE seed.canonical_name IN $seed_entity_names OR EXISTS { MATCH (seed_chunk:Chunk {project_id: $project_id, dataset_id: $dataset_id})-[:MENTIONS]->(seed) WHERE seed_chunk.id IN $seed_chunk_ids } WITH seed ORDER BY seed.id LIMIT $seed_limit MATCH (seed)<-[:SOURCE]-(r:Relation {project_id: $project_id, dataset_id: $dataset_id})-[:TARGET]->(neighbor:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (e:Evidence {project_id: $project_id, dataset_id: $dataset_id, relation_id: r.id}) RETURN e.chunk_id AS chunk_id, r.id AS relation_id, seed.id AS seed_id, neighbor.id AS neighbor_id, e.confidence AS confidence ORDER BY r.id, e.chunk_id LIMIT $limit"
+        # Evidence does not duplicate relation_id as a node property: its scoped
+        # SUPPORTED_BY edge is the authoritative relation-to-chunk provenance.
+        statement = "MATCH (seed:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE toLower(seed.canonical_name) IN $seed_entity_names OR EXISTS { MATCH (seed_chunk:Chunk {project_id: $project_id, dataset_id: $dataset_id})-[:MENTIONS]->(seed) WHERE seed_chunk.id IN $seed_chunk_ids } WITH seed ORDER BY seed.id LIMIT $seed_limit MATCH (seed)<-[:SOURCE]-(r:Relation {project_id: $project_id, dataset_id: $dataset_id})-[:TARGET]->(neighbor:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r)-[:SUPPORTED_BY]->(e:Evidence {project_id: $project_id, dataset_id: $dataset_id}) RETURN e.chunk_id AS chunk_id, r.id AS relation_id, seed.id AS seed_id, neighbor.id AS neighbor_id, e.confidence AS confidence ORDER BY r.id, e.chunk_id LIMIT $limit"
         rows = await self._records(
             statement,
             {

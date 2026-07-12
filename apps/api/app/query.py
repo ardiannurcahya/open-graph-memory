@@ -57,7 +57,8 @@ def build_context(hits: list[VectorHit]) -> str:
 
 
 def entity_candidates(text: str) -> list[str]:
-    return sorted({token for token in DeterministicProvider._tokens(text) if len(token) > 2})[:8]
+    candidates = {token.lower() for token in DeterministicProvider._tokens(text) if len(token) > 2}
+    return sorted(candidates)[:8]
 
 
 async def authoritative_hits(

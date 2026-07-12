@@ -32,6 +32,8 @@ async def test_traversal_scopes_every_graph_artifact_and_preserves_provenance() 
     assert graph.parameters["project_id"] == "project-a"
     assert graph.parameters["dataset_id"] == "dataset-a"
     assert "$dataset_id" in graph.statement and "$project_id" in graph.statement
+    assert "SUPPORTED_BY" in graph.statement
+    assert "toLower(seed.canonical_name)" in graph.statement
     assert "LIMIT $limit" in graph.statement
     assert graph.parameters["limit"] == 6
 
