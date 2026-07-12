@@ -23,7 +23,9 @@ def predictions() -> list[dict[str, object]]:
                     "citations": [] if i == 19 else [f"e{i}"],
                     "answer": "cannot answer" if i == 19 else "answer [1]",
                     "latency_ms": i + 1,
-                    "trace": {"graph": {"status": "ok", "paths": [{}] if mode != "vector_only" else []}},
+                    "trace": {
+                        "graph": {"status": "ok", "paths": [{}] if mode != "vector_only" else []}
+                    },
                 }
             )
     return rows

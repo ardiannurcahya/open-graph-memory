@@ -19,7 +19,10 @@ def wait_indexed(base: str, headers: dict[str, str], document_ids: list[str]) ->
     deadline = time.monotonic() + 180
     states: list[str] = []
     while time.monotonic() < deadline:
-        states = [request(base, "GET", f"/v1/documents/{item}", headers=headers)[1]["status"] for item in document_ids]
+        states = [
+            request(base, "GET", f"/v1/documents/{item}", headers=headers)[1]["status"]
+            for item in document_ids
+        ]
         if all(state == "indexed" for state in states):
             return
         if "failed" in states:
@@ -40,14 +43,26 @@ def evidence_mapping(compose_file: Path, document_ids: list[str]) -> dict[str, s
 
 
 def query_row(
-    base: str, headers: dict[str, str], dataset_id: str, case: dict[str, Any], mode: str, evidence: dict[str, str]
+    base: str,
+    headers: dict[str, str],
+    dataset_id: str,
+    case: dict[str, Any],
+    mode: str,
+    evidence: dict[str, str],
 ) -> dict[str, Any]:
     started = time.monotonic()
     status, result = request(
         base,
         "POST",
         "/v1/query",
-        {"dataset_id": dataset_id, "query": case["question"], "mode": mode, "top_k": 5, "graph_depth": 2, "graph_fanout": 3},
+        {
+            "dataset_id": dataset_id,
+            "query": case["question"],
+            "mode": mode,
+            "top_k": 5,
+            "graph_depth": 2,
+            "graph_fanout": 3,
+        },
         headers,
     )
     assert status == 200, (case["id"], mode, result)
@@ -55,11 +70,16 @@ def query_row(
     trace_id = trace["trace_id"]
     refused = "cannot answer from the supplied evidence" in result["answer"].lower()
     return {
-        "id": case["id"], "mode": mode, "answer": result["answer"],
+        "id": case["id"],
+        "mode": mode,
+        "answer": result["answer"],
         "retrieved": [evidence[item] for item in trace["chunk_ids"]],
         "citations": [evidence[item["chunk_id"]] for item in result["citations"]],
-        "unanswerable": refused, "latency_ms": (time.monotonic() - started) * 1000,
-        "trace": trace, "usage": result["usage"], "trace_id": trace_id,
+        "unanswerable": refused,
+        "latency_ms": (time.monotonic() - started) * 1000,
+        "trace": trace,
+        "usage": result["usage"],
+        "trace_id": trace_id,
     }
 
 
@@ -83,24 +103,46 @@ def main() -> int:
     headers, outsider_headers = auth(project), auth(outsider)
     status, dataset = request(base, "POST", "/v1/datasets", {"name": "m4-fixture"}, headers)
     assert status == 201, dataset
-    status, outsider_dataset = request(base, "POST", "/v1/datasets", {"name": "m4-outsider"}, outsider_headers)
+    status, outsider_dataset = request(
+        base, "POST", "/v1/datasets", {"name": "m4-outsider"}, outsider_headers
+    )
     assert status == 201, outsider_dataset
     primary = [item for item in fixtures["documents"] if item.get("tenant", "primary") == "primary"]
     documents = [upload(base, headers, dataset["id"], item) for item in primary]
-    outsider_document = upload(base, outsider_headers, outsider_dataset["id"], next(item for item in fixtures["documents"] if item.get("tenant") == "other"))
+    outsider_document = upload(
+        base,
+        outsider_headers,
+        outsider_dataset["id"],
+        next(item for item in fixtures["documents"] if item.get("tenant") == "other"),
+    )
     ids = [item["id"] for item in documents]
     wait_indexed(base, headers, ids)
     wait_indexed(base, outsider_headers, [outsider_document["id"]])
     wait_graph(args.compose_file, ids)
     wait_graph(args.compose_file, [outsider_document["id"]])
     evidence = evidence_mapping(args.compose_file, ids)
-    # The API authorization boundary is tested before scoring to prevent cross-tenant evidence leakage.
-    assert request(base, "POST", "/v1/query", {"dataset_id": dataset["id"], "query": "Atlas", "mode": "hybrid"}, outsider_headers)[0] == 404
+    # Verify the authorization boundary before scoring any evidence.
+    assert (
+        request(
+            base,
+            "POST",
+            "/v1/query",
+            {"dataset_id": dataset["id"], "query": "Atlas", "mode": "hybrid"},
+            outsider_headers,
+        )[0]
+        == 404
+    )
     rows = []
     for mode in MODES:
         for case in golden["cases"]:
             row = query_row(base, headers, dataset["id"], case, mode, evidence)
-            assert sql(args.compose_file, f"select status from query_logs where trace_id='{row['trace_id']}'") == "succeeded"
+            assert (
+                sql(
+                    args.compose_file,
+                    f"select status from query_logs where trace_id='{row['trace_id']}'",
+                )
+                == "succeeded"
+            )
             assert len(row["trace"].get("graph", {}).get("paths", [])) <= 6
             row.pop("trace_id")
             rows.append(row)
@@ -112,7 +154,9 @@ def main() -> int:
         assert row["trace"]["graph"]["status"] == "fallback", row["trace"]
         assert row["retrieved"], row
     args.predictions.parent.mkdir(parents=True, exist_ok=True)
-    args.predictions.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+    args.predictions.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8"
+    )
     print(f"wrote {len(rows)} M4 API predictions to {args.predictions}")
     return 0
 

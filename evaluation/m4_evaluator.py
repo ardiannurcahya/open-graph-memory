@@ -31,7 +31,9 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def evaluate(golden: dict[str, Any], predictions: list[dict[str, Any]], k: int = 5) -> dict[str, Any]:
+def evaluate(
+    golden: dict[str, Any], predictions: list[dict[str, Any]], k: int = 5
+) -> dict[str, Any]:
     cases = golden.get("cases", [])
     if not 20 <= len(cases) <= 30:
         raise ValueError("M4 golden set must contain 20-30 cases")
@@ -55,28 +57,42 @@ def evaluate(golden: dict[str, Any], predictions: list[dict[str, Any]], k: int =
             )
             graph = row.get("trace", {}).get("graph", {})
             paths = graph.get("paths", []) if isinstance(graph, dict) else []
-            details.append({
-                "id": case_id,
-                "recall_at_k": len(evidence & set(retrieved)) / len(evidence) if evidence else 1.0,
-                "evidence_hit": bool(evidence & set(retrieved)) if evidence else True,
-                "citation_correct": set(cited).issubset(retrieved) and (bool(cited) if answerable else not cited),
-                "answerability_correct": (not refused) if answerable else refused,
-                "fallback_correct": mode == "vector_only" or graph.get("status") != "fallback" or bool(retrieved),
-                "traversal_paths": len(paths),
-                "missing": not bool(row),
-            })
+            details.append(
+                {
+                    "id": case_id,
+                    "recall_at_k": len(evidence & set(retrieved)) / len(evidence)
+                    if evidence
+                    else 1.0,
+                    "evidence_hit": bool(evidence & set(retrieved)) if evidence else True,
+                    "citation_correct": set(cited).issubset(retrieved)
+                    and (bool(cited) if answerable else not cited),
+                    "answerability_correct": (not refused) if answerable else refused,
+                    "fallback_correct": mode == "vector_only"
+                    or graph.get("status") != "fallback"
+                    or bool(retrieved),
+                    "traversal_paths": len(paths),
+                    "missing": not bool(row),
+                }
+            )
             latencies.append(float(row.get("latency_ms", 0)))
             traversal_counts.append(float(len(paths)))
         count = len(details)
-        mean = lambda key: sum(float(detail[key]) for detail in details) / count
         reports[mode] = {
-            "recall_at_k": mean("recall_at_k"),
-            "evidence_hit_rate": mean("evidence_hit"),
-            "citation_correctness": mean("citation_correct"),
-            "answerability_accuracy": mean("answerability_correct"),
-            "fallback_correctness": mean("fallback_correct"),
+            "recall_at_k": sum(float(detail["recall_at_k"]) for detail in details) / count,
+            "evidence_hit_rate": sum(float(detail["evidence_hit"]) for detail in details) / count,
+            "citation_correctness": sum(float(detail["citation_correct"]) for detail in details)
+            / count,
+            "answerability_accuracy": sum(
+                float(detail["answerability_correct"]) for detail in details
+            )
+            / count,
+            "fallback_correctness": sum(float(detail["fallback_correct"]) for detail in details)
+            / count,
             "latency_ms": {"p50": percentile(latencies, 0.5), "p95": percentile(latencies, 0.95)},
-            "graph_traversal": {"p95_paths": percentile(traversal_counts, 0.95), "max_paths": max(traversal_counts, default=0)},
+            "graph_traversal": {
+                "p95_paths": percentile(traversal_counts, 0.95),
+                "max_paths": max(traversal_counts, default=0),
+            },
             "missing_predictions": sum(detail["missing"] for detail in details),
             "details": details,
         }
@@ -87,7 +103,8 @@ def evaluate(golden: dict[str, Any], predictions: list[dict[str, Any]], k: int =
         "modes": reports,
         "hybrid_delta_vs_vector": {
             "recall_at_k": reports["hybrid"]["recall_at_k"] - reports["vector_only"]["recall_at_k"],
-            "evidence_hit_rate": reports["hybrid"]["evidence_hit_rate"] - reports["vector_only"]["evidence_hit_rate"],
+            "evidence_hit_rate": reports["hybrid"]["evidence_hit_rate"]
+            - reports["vector_only"]["evidence_hit_rate"],
         },
     }
 
@@ -101,7 +118,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.k < 1:
         parser.error("k must be positive")
-    report = evaluate(json.loads(args.golden.read_text(encoding="utf-8")), load_jsonl(args.predictions), args.k)
+    report = evaluate(
+        json.loads(args.golden.read_text(encoding="utf-8")), load_jsonl(args.predictions), args.k
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report["modes"], sort_keys=True))
