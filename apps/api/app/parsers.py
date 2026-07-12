@@ -22,14 +22,14 @@ class Parser(Protocol):
 
 
 class TextParser:
-    mime_types = ("text/plain",)
+    mime_types: tuple[str, ...] = ("text/plain",)
 
     def parse(self, content: bytes) -> ParsedDocument:
         return ParsedDocument(content.decode("utf-8").replace("\r\n", "\n").strip())
 
 
 class CsvParser:
-    mime_types = ("text/csv", "application/csv")
+    mime_types: tuple[str, ...] = ("text/csv", "application/csv")
 
     def parse(self, content: bytes) -> ParsedDocument:
         rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
@@ -44,7 +44,7 @@ class CsvParser:
 
 
 class MarkdownParser:
-    mime_types = ("text/markdown",)
+    mime_types: tuple[str, ...] = ("text/markdown",)
 
     def parse(self, content: bytes) -> ParsedDocument:
         source = content.decode("utf-8")
@@ -53,7 +53,7 @@ class MarkdownParser:
 
 
 class HtmlParser:
-    mime_types = ("text/html",)
+    mime_types: tuple[str, ...] = ("text/html",)
 
     def parse(self, content: bytes) -> ParsedDocument:
         soup = BeautifulSoup(content, "lxml")
@@ -64,7 +64,7 @@ class HtmlParser:
 
 
 class PdfParser:
-    mime_types = ("application/pdf",)
+    mime_types: tuple[str, ...] = ("application/pdf",)
 
     def parse(self, content: bytes) -> ParsedDocument:
         reader = PdfReader(io.BytesIO(content))
@@ -94,6 +94,9 @@ class ParserRegistry:
 
 def default_registry() -> ParserRegistry:
     registry = ParserRegistry()
-    for parser in (TextParser(), CsvParser(), MarkdownParser(), HtmlParser(), PdfParser()):
-        registry.register(parser)
+    registry.register(TextParser())
+    registry.register(CsvParser())
+    registry.register(MarkdownParser())
+    registry.register(HtmlParser())
+    registry.register(PdfParser())
     return registry
