@@ -127,6 +127,7 @@ async def query(
             body.dataset_id,
             [VectorHit(chunk_id, score, {}) for chunk_id, score in scores.items()],
         )
+    fusion: list[dict[str, object]]
     if body.mode == "vector_only":
         hits, fusion = vector_hits, []
     elif body.mode == "graph_only":
