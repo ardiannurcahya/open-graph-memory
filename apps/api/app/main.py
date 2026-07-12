@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await vector_store.setup()
     graph_store = Neo4jGraphStore(settings.neo4j_url, settings.neo4j_auth.get_secret_value())
     await graph_store.bootstrap()
-    install_runtime(Runtime(embedding_provider, chat_provider, vector_store))
+    install_runtime(Runtime(embedding_provider, chat_provider, vector_store, graph_store))
     try:
         yield
     finally:

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.graph_store import GraphStore
 from app.providers import ChatProvider, EmbeddingProvider
 from app.vector_store import VectorStore
 
@@ -9,6 +10,7 @@ class Runtime:
     embeddings: EmbeddingProvider
     chat: ChatProvider
     vectors: VectorStore
+    graph: GraphStore
 
 
 _runtime: Runtime | None = None
@@ -42,3 +44,7 @@ def get_chat_provider() -> ChatProvider:
 
 def get_vector_store() -> VectorStore:
     return get_runtime().vectors
+
+
+def get_graph_store() -> GraphStore:
+    return get_runtime().graph
