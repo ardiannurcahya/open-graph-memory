@@ -15,6 +15,7 @@ class GraphEvidence:
     path: tuple[str, ...]
     entity_ids: tuple[str, ...]
     relation_ids: tuple[str, ...]
+    evidence_chunk_ids: tuple[str, ...]
 
 
 class GraphRetriever(Protocol):
@@ -100,6 +101,8 @@ async def bounded_graph_search(
 ) -> tuple[list[GraphEvidence], dict[str, object]]:
     started = perf_counter()
     try:
+        if max_depth not in {1, 2}:
+            raise ValueError("graph depth must be 1 or 2")
         evidence = await asyncio.wait_for(
             graph.traverse(
                 project_id,
@@ -112,7 +115,15 @@ async def bounded_graph_search(
             ),
             timeout_ms / 1000,
         )
-        return evidence, {"status": "ok", "latency_ms": round((perf_counter() - started) * 1000, 3)}
+        # Keep a stable best path per evidence chunk before it reaches query context.
+        deduplicated = {
+            item.chunk_id: item
+            for item in sorted(evidence, key=lambda item: (-item.score, item.chunk_id, item.path))
+        }
+        return list(deduplicated.values()), {
+            "status": "ok",
+            "latency_ms": round((perf_counter() - started) * 1000, 3),
+        }
     except TimeoutError:
         return [], {
             "status": "fallback",

@@ -173,6 +173,7 @@ async def query(
                     "chunk_id": item.chunk_id,
                     "path": list(item.path),
                     "relation_ids": list(item.relation_ids),
+                    "evidence_chunk_ids": list(item.evidence_chunk_ids),
                 }
                 for item in graph_evidence
             ],

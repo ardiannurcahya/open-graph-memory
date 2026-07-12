@@ -49,6 +49,7 @@ def query_row(
     case: dict[str, Any],
     mode: str,
     evidence: dict[str, str],
+    graph_timeout_ms: int = 2800,
 ) -> dict[str, Any]:
     started = time.monotonic()
     status, result = request(
@@ -62,6 +63,7 @@ def query_row(
             "top_k": 5,
             "graph_depth": 2,
             "graph_fanout": 3,
+            "graph_timeout_ms": graph_timeout_ms,
         },
         headers,
     )
@@ -137,6 +139,12 @@ def main() -> int:
         )[0]
         == 404
     )
+    # Compile the depth-two Cypher shape before collecting latency and provenance assertions.
+    warmup_case = next(case for case in golden["cases"] if case["class"] == "multi_hop")
+    warmup = query_row(
+        base, headers, dataset["id"], warmup_case, "graph_only", evidence, graph_timeout_ms=10000
+    )
+    assert warmup["trace"]["graph"]["status"] == "ok", warmup
     rows = []
     for mode in MODES:
         for case in golden["cases"]:
@@ -149,6 +157,24 @@ def main() -> int:
                 == "succeeded"
             )
             assert len(row["trace"].get("graph", {}).get("paths", [])) <= 6
+            if case["class"] == "multi_hop" and mode in {"graph_only", "hybrid"}:
+                paths = row["trace"]["graph"]["paths"]
+                two_hop = [path for path in paths if len(path.get("relation_ids", [])) == 2]
+                assert two_hop, ("missing real two-hop graph expansion", case["id"], mode, row)
+                graph_chunks = {
+                    item["chunk_id"] for item in row["trace"]["channel_candidates"]["graph"]
+                }
+                assert any(
+                    set(evidence[chunk] for chunk in path["evidence_chunk_ids"])
+                    >= set(case["evidence_ids"])
+                    and path["chunk_id"] in graph_chunks
+                    for path in two_hop
+                ), (
+                    "required multi-hop evidence was not produced by graph expansion",
+                    case["id"],
+                    mode,
+                    row,
+                )
             row.pop("trace_id")
             rows.append(row)
     # A real Neo4j outage must preserve scoped vector evidence for graph_only and hybrid requests.

@@ -4,7 +4,7 @@
 # ruff: noqa: E501
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
 
@@ -149,6 +149,11 @@ class Neo4jGraphStore:
             "CREATE CONSTRAINT entity_scope_id IF NOT EXISTS FOR (e:Entity) REQUIRE (e.project_id, e.dataset_id, e.id) IS UNIQUE",
             "CREATE CONSTRAINT relation_scope_id IF NOT EXISTS FOR (r:Relation) REQUIRE (r.project_id, r.dataset_id, r.id) IS UNIQUE",
             "CREATE CONSTRAINT evidence_scope_id IF NOT EXISTS FOR (e:Evidence) REQUIRE (e.project_id, e.dataset_id, e.id) IS UNIQUE",
+            "CREATE INDEX entity_scope_name IF NOT EXISTS FOR (e:Entity) ON (e.project_id, e.dataset_id, e.canonical_name)",
+            "CREATE INDEX source_scope IF NOT EXISTS FOR ()-[r:SOURCE]-() ON (r.project_id, r.dataset_id)",
+            "CREATE INDEX target_scope IF NOT EXISTS FOR ()-[r:TARGET]-() ON (r.project_id, r.dataset_id)",
+            "CREATE INDEX supported_by_scope IF NOT EXISTS FOR ()-[r:SUPPORTED_BY]-() ON (r.project_id, r.dataset_id)",
+            "CREATE INDEX mentions_scope IF NOT EXISTS FOR ()-[r:MENTIONS]-() ON (r.project_id, r.dataset_id)",
         ):
             await self._run(statement)
 
@@ -270,9 +275,23 @@ class Neo4jGraphStore:
     ) -> list["GraphEvidence"]:
         from app.retrieval import GraphEvidence
 
-        # Evidence does not duplicate relation_id as a node property: its scoped
-        # SUPPORTED_BY edge is the authoritative relation-to-chunk provenance.
-        statement = "MATCH (seed:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE toLower(seed.canonical_name) IN $seed_entity_names OR EXISTS { MATCH (seed_chunk:Chunk {project_id: $project_id, dataset_id: $dataset_id})-[:MENTIONS]->(seed) WHERE seed_chunk.id IN $seed_chunk_ids } WITH seed ORDER BY seed.id LIMIT $seed_limit MATCH (seed)<-[:SOURCE]-(r:Relation {project_id: $project_id, dataset_id: $dataset_id})-[:TARGET]->(neighbor:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r)-[:SUPPORTED_BY]->(e:Evidence {project_id: $project_id, dataset_id: $dataset_id}) RETURN e.chunk_id AS chunk_id, r.id AS relation_id, seed.id AS seed_id, neighbor.id AS neighbor_id, e.confidence AS confidence ORDER BY r.id, e.chunk_id LIMIT $limit"
+        if max_depth not in {1, 2}:
+            raise ValueError("graph depth must be 1 or 2")
+        if fanout < 1 or seed_limit < 1:
+            raise ValueError("graph traversal limits must be positive")
+        # These fixed query shapes are allowlisted rather than interpolating a Cypher depth.
+        # CALL subqueries cap fanout at each hop so intermediate results stay bounded
+        # before the final max_paths LIMIT; relationship property indexes (created in
+        # bootstrap) accelerate the scoped traversals inside each subquery.
+        seed = "MATCH (seed:Entity {project_id: $project_id, dataset_id: $dataset_id}) WHERE toLower(seed.canonical_name) IN $seed_entity_names OR EXISTS { MATCH (seed_chunk:Chunk {project_id: $project_id, dataset_id: $dataset_id})-[mention:MENTIONS]->(seed) WHERE seed_chunk.id IN $seed_chunk_ids } WITH seed ORDER BY seed.id LIMIT $seed_limit "
+        one_hop = "CALL { WITH seed MATCH (seed)<-[:SOURCE|TARGET]-(r1:Relation {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r1)-[:SOURCE]->(source1:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r1)-[:TARGET]->(target1:Entity {project_id: $project_id, dataset_id: $dataset_id}) WITH seed, r1, CASE WHEN source1.id = seed.id THEN target1 ELSE source1 END AS entity1 ORDER BY r1.id LIMIT $fanout RETURN r1, entity1 } MATCH (r1)-[support1:SUPPORTED_BY]->(e1:Evidence {project_id: $project_id, dataset_id: $dataset_id}) RETURN e1.chunk_id AS chunk_id, [e1.chunk_id] AS evidence_chunk_ids, [seed.id, r1.id, entity1.id] AS path, [seed.id, entity1.id] AS entity_ids, [r1.id] AS relation_ids, e1.confidence AS confidence "
+        two_hop = "CALL { WITH seed MATCH (seed)<-[:SOURCE|TARGET]-(r1:Relation {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r1)-[:SOURCE]->(source1:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r1)-[:TARGET]->(target1:Entity {project_id: $project_id, dataset_id: $dataset_id}) WITH seed, r1, CASE WHEN source1.id = seed.id THEN target1 ELSE source1 END AS entity1 ORDER BY r1.id LIMIT $fanout RETURN r1, entity1 } CALL { WITH seed, r1, entity1 MATCH (entity1)<-[:SOURCE|TARGET]-(r2:Relation {project_id: $project_id, dataset_id: $dataset_id}) WHERE r1.id <> r2.id MATCH (r2)-[:SOURCE]->(source2:Entity {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r2)-[:TARGET]->(target2:Entity {project_id: $project_id, dataset_id: $dataset_id}) WITH seed, r1, entity1, r2, CASE WHEN source2.id = entity1.id THEN target2 ELSE source2 END AS entity2 ORDER BY r2.id LIMIT $fanout RETURN r2, entity2 } MATCH (r1)-[support1:SUPPORTED_BY]->(e1:Evidence {project_id: $project_id, dataset_id: $dataset_id}) MATCH (r2)-[support2:SUPPORTED_BY]->(e2:Evidence {project_id: $project_id, dataset_id: $dataset_id}) RETURN e2.chunk_id AS chunk_id, [e1.chunk_id, e2.chunk_id] AS evidence_chunk_ids, [seed.id, r1.id, entity1.id, r2.id, entity2.id] AS path, [seed.id, entity1.id, entity2.id] AS entity_ids, [r1.id, r2.id] AS relation_ids, (e1.confidence + e2.confidence) / 2 AS confidence "
+        max_paths = min(fanout * seed_limit, 50)
+        statement = (
+            seed
+            + (one_hop if max_depth == 1 else two_hop)
+            + "ORDER BY relation_ids, evidence_chunk_ids LIMIT $max_paths"
+        )
         rows = await self._records(
             statement,
             {
@@ -281,16 +300,18 @@ class Neo4jGraphStore:
                 "seed_chunk_ids": seed_chunk_ids,
                 "seed_entity_names": seed_entity_names,
                 "seed_limit": seed_limit,
-                "limit": fanout * seed_limit,
+                "fanout": fanout,
+                "max_paths": max_paths,
             },
         )
         return [
             GraphEvidence(
                 str(row["chunk_id"]),
                 float(str(row["confidence"])),
-                (str(row["seed_id"]), str(row["relation_id"]), str(row["neighbor_id"])),
-                (str(row["seed_id"]), str(row["neighbor_id"])),
-                (str(row["relation_id"]),),
+                tuple(str(item) for item in cast(list[object], row["path"])),
+                tuple(str(item) for item in cast(list[object], row["entity_ids"])),
+                tuple(str(item) for item in cast(list[object], row["relation_ids"])),
+                tuple(str(item) for item in cast(list[object], row["evidence_chunk_ids"])),
             )
             for row in rows
         ]
