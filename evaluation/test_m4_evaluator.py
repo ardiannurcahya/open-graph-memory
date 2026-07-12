@@ -65,3 +65,16 @@ def test_m4_rejects_duplicate_case_mode_rows() -> None:
 
 def test_m4_nearest_rank_percentile() -> None:
     assert percentile([5, 1, 3, 2, 4], 0.95) == 5
+
+
+def test_m4_scores_threshold_metrics_only_on_applicable_cases() -> None:
+    source = golden()
+    source["cases"][0]["applicable_modes"] = ["graph_only", "hybrid"]
+    rows = predictions()
+    vector = next(row for row in rows if row["id"] == "q0" and row["mode"] == "vector_only")
+    vector["citations"] = []
+    report = evaluate(source, rows)
+    assert report["modes"]["vector_only"]["citation_correctness"] == 1
+    assert report["modes"]["vector_only"]["all_cases"]["citation_correctness"] == 19 / 20
+    assert report["modes"]["vector_only"]["applicable_cases"] == 19
+    assert report["graph_answerable_quality_delta_vs_vector"]["citation_correct"] > 0

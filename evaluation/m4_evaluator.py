@@ -31,6 +31,20 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def metric_summary(details: list[dict[str, Any]], mode: str) -> dict[str, float]:
+    if not details:
+        raise ValueError(f"no applicable M4 cases for {mode}")
+    count = len(details)
+    return {
+        "recall_at_k": sum(float(item["recall_at_k"]) for item in details) / count,
+        "evidence_hit_rate": sum(float(item["evidence_hit"]) for item in details) / count,
+        "citation_correctness": sum(float(item["citation_correct"]) for item in details) / count,
+        "answerability_accuracy": sum(float(item["answerability_correct"]) for item in details)
+        / count,
+        "fallback_correctness": sum(float(item["fallback_correct"]) for item in details) / count,
+    }
+
+
 def evaluate(
     golden: dict[str, Any], predictions: list[dict[str, Any]], k: int = 5
 ) -> dict[str, Any]:
@@ -60,9 +74,8 @@ def evaluate(
             details.append(
                 {
                     "id": case_id,
-                    "recall_at_k": len(evidence & set(retrieved)) / len(evidence)
-                    if evidence
-                    else 1.0,
+                    "applicable": mode in case.get("applicable_modes", MODES),
+                    "recall_at_k": len(evidence & set(retrieved)) / len(evidence) if evidence else 1.0,
                     "evidence_hit": bool(evidence & set(retrieved)) if evidence else True,
                     "citation_correct": set(cited).issubset(retrieved)
                     and (bool(cited) if answerable else not cited),
@@ -76,18 +89,11 @@ def evaluate(
             )
             latencies.append(float(row.get("latency_ms", 0)))
             traversal_counts.append(float(len(paths)))
-        count = len(details)
+        relevant = [detail for detail in details if detail["applicable"]]
         reports[mode] = {
-            "recall_at_k": sum(float(detail["recall_at_k"]) for detail in details) / count,
-            "evidence_hit_rate": sum(float(detail["evidence_hit"]) for detail in details) / count,
-            "citation_correctness": sum(float(detail["citation_correct"]) for detail in details)
-            / count,
-            "answerability_accuracy": sum(
-                float(detail["answerability_correct"]) for detail in details
-            )
-            / count,
-            "fallback_correctness": sum(float(detail["fallback_correct"]) for detail in details)
-            / count,
+            **metric_summary(relevant, mode),
+            "applicable_cases": len(relevant),
+            "all_cases": metric_summary(details, mode),
             "latency_ms": {"p50": percentile(latencies, 0.5), "p95": percentile(latencies, 0.95)},
             "graph_traversal": {
                 "p95_paths": percentile(traversal_counts, 0.95),
@@ -96,6 +102,16 @@ def evaluate(
             "missing_predictions": sum(detail["missing"] for detail in details),
             "details": details,
         }
+    graph_answerable = {
+        str(case["id"])
+        for case in cases
+        if case["answerable"] and "graph_only" in case.get("applicable_modes", MODES)
+    }
+
+    def graph_quality(mode: str, name: str) -> float:
+        details = [item for item in reports[mode]["details"] if item["id"] in graph_answerable]
+        return sum(float(item[name]) for item in details) / len(details)
+
     return {
         "schema_version": "1.0",
         "golden_version": golden["version"],
@@ -105,6 +121,10 @@ def evaluate(
             "recall_at_k": reports["hybrid"]["recall_at_k"] - reports["vector_only"]["recall_at_k"],
             "evidence_hit_rate": reports["hybrid"]["evidence_hit_rate"]
             - reports["vector_only"]["evidence_hit_rate"],
+        },
+        "graph_answerable_quality_delta_vs_vector": {
+            name: graph_quality("hybrid", name) - graph_quality("vector_only", name)
+            for name in ("citation_correct", "answerability_correct")
         },
     }
 

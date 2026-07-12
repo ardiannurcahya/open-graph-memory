@@ -41,6 +41,9 @@ for mode, metrics in report["modes"].items():
         failures.append(f"{mode} graph paths exceed budget")
 if report["hybrid_delta_vs_vector"]["recall_at_k"] < 0:
     failures.append("hybrid recall regresses vector_only")
+for name, delta in report["graph_answerable_quality_delta_vs_vector"].items():
+    if delta < 0:
+        failures.append(f"hybrid {name} regresses vector_only on graph-answerable cases")
 if failures:
     raise SystemExit("M4 evaluation failed: " + "; ".join(failures))
 PY

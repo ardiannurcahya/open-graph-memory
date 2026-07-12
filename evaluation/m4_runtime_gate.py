@@ -87,15 +87,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--compose-file", type=Path, required=True)
-    parser.add_argument("--fixtures", type=Path, default=Path("evaluation/m3_golden/v1.0.json"))
+    parser.add_argument("--fixtures", type=Path)
     parser.add_argument("--golden", type=Path, default=Path("evaluation/m4_golden/v1.0.json"))
     parser.add_argument("--predictions", type=Path, required=True)
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
     wait_ready(base)
     admin = {"X-API-Key": os.environ["ADMIN_API_KEY"]}
-    fixtures = json.loads(args.fixtures.read_text(encoding="utf-8"))
     golden = json.loads(args.golden.read_text(encoding="utf-8"))
+    fixture_path = args.fixtures or Path(golden["fixture"])
+    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
+    primary_count = sum(item.get("tenant", "primary") == "primary" for item in fixtures["documents"])
+    assert primary_count > 5, "M4 fixture corpus must be larger than top_k"
     status, project = request(base, "POST", "/v1/projects", {"name": "m4-primary"}, admin)
     assert status == 201, project
     status, outsider = request(base, "POST", "/v1/projects", {"name": "m4-outsider"}, admin)

@@ -1,0 +1,18 @@
+{
+  "version": "v1.1",
+  "documents": [
+    {"id": "acme-people", "text": "Acme Labs [Organization]\nAlice Nguyen [Person]\nAlice [Person]\nAcme Labs -> EMPLOYS -> Alice Nguyen"},
+    {"id": "acme-product", "text": "Atlas [Product]\nAcme Labs [Organization]\nAtlas -> BUILT_BY -> Acme Labs"},
+    {"id": "acme-followup", "text": "Alice Nguyen [Person]\nAtlas [Product]\nAlice Nguyen -> LEADS -> Atlas"},
+    {"id": "ambiguous", "text": "Jordan [Person]\nJordan [Organization]\nJordan -> ADVISES -> Acme Labs"},
+    {"id": "unsupported", "text": "Acme Labs [Organization]\nAtlas [Product]\nAcme Labs ~~ OWNS ~~ Atlas"},
+    {"id": "acme-history", "text": "Acme Labs published a history of its research program."},
+    {"id": "atlas-notes", "text": "Atlas design notes describe accessibility review and test coverage."},
+    {"id": "alice-bio", "text": "Alice Nguyen spoke at the engineering forum about mentoring."},
+    {"id": "release-process", "text": "Release planning requires a checklist and independent review."},
+    {"id": "vendor-policy", "text": "The vendor policy records procurement contacts and renewal dates."},
+    {"id": "security-notes", "text": "Security notes describe incident triage and audit preparation."},
+    {"id": "roadmap", "text": "The roadmap prioritizes reliability, documentation, and support."},
+    {"id": "other-tenant", "tenant": "other", "text": "Acme Labs [Organization]\nEve [Person]\nAcme Labs -> EMPLOYS -> Eve"}
+  ]
+}
