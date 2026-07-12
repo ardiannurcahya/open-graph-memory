@@ -161,19 +161,29 @@ class Neo4jGraphStore:
         )
 
     async def _project_evidence(self, evidence: list[EvidenceProjection]) -> None:
+        rows = [item.__dict__ for item in evidence]
         await self._run(
             "UNWIND $rows AS row "
             "MATCH (c:Chunk {project_id: row.project_id, dataset_id: row.dataset_id, id: row.chunk_id, document_id: row.document_id}) "
             "MERGE (e:Evidence {project_id: row.project_id, dataset_id: row.dataset_id, id: row.evidence_id}) "
             "SET e.document_id = row.document_id, e.chunk_id = row.chunk_id "
-            "MERGE (e)-[:FROM_CHUNK]->(c) "
-            "FOREACH (_ IN CASE WHEN row.entity_id IS NULL THEN [] ELSE [1] END | "
+            "MERGE (e)-[:FROM_CHUNK]->(c)",
+            {"rows": rows},
+        )
+        await self._run(
+            "UNWIND $rows AS row "
+            "MATCH (c:Chunk {project_id: row.project_id, dataset_id: row.dataset_id, id: row.chunk_id, document_id: row.document_id}) "
             "MATCH (entity:Entity {project_id: row.project_id, dataset_id: row.dataset_id, id: row.entity_id}) "
-            "MERGE (c)-[:MENTIONS]->(entity)) "
-            "FOREACH (_ IN CASE WHEN row.relation_id IS NULL THEN [] ELSE [1] END | "
+            "MERGE (c)-[:MENTIONS]->(entity)",
+            {"rows": [row for row in rows if row["entity_id"] is not None]},
+        )
+        await self._run(
+            "UNWIND $rows AS row "
+            "MATCH (c:Chunk {project_id: row.project_id, dataset_id: row.dataset_id, id: row.chunk_id, document_id: row.document_id}) "
+            "MATCH (e:Evidence {project_id: row.project_id, dataset_id: row.dataset_id, id: row.evidence_id}) "
             "MATCH (relation:Relation {project_id: row.project_id, dataset_id: row.dataset_id, id: row.relation_id}) "
-            "MERGE (c)-[:ASSERTS]->(relation) MERGE (relation)-[:SUPPORTED_BY]->(e))",
-            {"rows": [item.__dict__ for item in evidence]},
+            "MERGE (c)-[:ASSERTS]->(relation) MERGE (relation)-[:SUPPORTED_BY]->(e)",
+            {"rows": [row for row in rows if row["relation_id"] is not None]},
         )
 
     async def reconcile_dataset(self, project_id: str, dataset_id: str) -> None:

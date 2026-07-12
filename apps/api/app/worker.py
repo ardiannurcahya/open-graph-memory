@@ -14,6 +14,8 @@ celery_app.conf.update(
     task_soft_time_limit=270,
     task_time_limit=300,
     task_reject_on_worker_lost=True,
+    task_default_queue="default",
+    task_routes={"graph.extract_job": {"queue": "graph"}},
     beat_schedule={
         "dispatch-indexing-outbox": {
             "task": "ingestion.dispatch_outbox",

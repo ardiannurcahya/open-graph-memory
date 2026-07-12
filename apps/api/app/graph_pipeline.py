@@ -1,6 +1,7 @@
 """Authoritative extraction persistence followed by rebuildable Neo4j projection."""
 
 import hashlib
+import logging
 from datetime import UTC, datetime
 
 from open_graph_core.extraction import DeterministicExtractor, Extractor, normalize_name, stable_id
@@ -30,6 +31,7 @@ from app.models import Chunk, Document, DocumentStatus
 
 EXTRACTOR_VERSION = "graph-extractor-v1"
 PROMPT_VERSION = "graph-v1"
+logger = logging.getLogger(__name__)
 
 
 def _store() -> GraphStore:
@@ -56,6 +58,7 @@ async def extract_document(
                 .order_by(Chunk.chunk_index)
             )
         )
+        chunk_inputs = [(chunk.id, chunk.text) for chunk in chunks]
         try:
             for chunk in chunks:
                 await _persist_chunk(db, document, chunk, extractor or DeterministicExtractor())
@@ -64,14 +67,16 @@ async def extract_document(
             return document.id
         except BaseException as exc:
             await db.rollback()
-            for chunk in chunks:
-                run_id = stable_id("run", chunk.id, EXTRACTOR_VERSION, _hash(chunk.text))
+            # Rollback expires ORM instances; use values captured before the transaction.
+            for chunk_id, chunk_text in chunk_inputs:
+                run_id = stable_id("run", chunk_id, EXTRACTOR_VERSION, _hash(chunk_text))
                 run = await db.get(GraphExtractionRun, run_id)
                 if run is not None and run.status != RunStatus.SUCCEEDED:
                     run.status = RunStatus.FAILED
                     run.error_message = sanitized_error(exc)
                     run.completed_at = datetime.now(UTC)
             await db.commit()
+            logger.exception("graph extraction failed for document %s", document_id)
             raise
 
 
