@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
 from app.graph_cleanup import create_document_cleanup, mark_cleanup_ready
+from app.graph_gc import cleanup_document_graph
 from app.ingestion import enqueue_document
 from app.models import Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
@@ -234,7 +235,10 @@ async def delete_document(
         item.status, item.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
         await db.commit()
         raise HTTPException(503, "object storage deletion failed") from exc
-    await mark_cleanup_ready(db, cleanup)
+    # Flush the document cascade first so concurrent evidence inserts cannot escape collection.
     await db.delete(item)
+    await db.flush()
+    await cleanup_document_graph(db, item.project_id, item.dataset_id, item.id)
+    await mark_cleanup_ready(db, cleanup)
     await db.commit()
     return Response(status_code=204)

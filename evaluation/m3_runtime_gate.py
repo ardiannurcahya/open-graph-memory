@@ -258,6 +258,69 @@ def main() -> int:
         sql(args.compose_file, f"select count(*) from documents where id='{deleted_document}'")
         == "0"
     )
+    # The authoritative graph must not retain deleted-only subjects, while shared rows survive.
+    assert int(
+        sql(
+            args.compose_file,
+            "select count(*) from relation_assertions where project_id='"
+            + project["id"]
+            + "' and dataset_id='"
+            + dataset["id"]
+            + "' and relation_type='EMPLOYS'",
+        )
+    ) == 0
+    assert int(
+        sql(
+            args.compose_file,
+            "select count(*) from canonical_entities where project_id='"
+            + project["id"]
+            + "' and dataset_id='"
+            + dataset["id"]
+            + "' and canonical_name='Alice'",
+        )
+    ) == 0
+    status, graph = request(
+        base,
+        "GET",
+        f"/v1/datasets/{dataset['id']}/graph?limit=100&depth=1",
+        headers=primary_headers,
+    )
+    assert status == 200, graph
+    assert all(relation["relation_type"] != "EMPLOYS" for relation in graph["relations"]), graph
+    assert {"Acme Labs", "Alice Nguyen"} <= {
+        node["canonical_name"] for node in graph["nodes"]
+    }, graph
+    status, outsider_graph = request(
+        base,
+        "GET",
+        f"/v1/datasets/{outsider_dataset['id']}/graph?limit=100&depth=1",
+        headers=outsider_headers,
+    )
+    assert status == 200 and any(
+        relation["relation_type"] == "EMPLOYS" for relation in outsider_graph["relations"]
+    ), outsider_graph
+    # A reconciliation replay reads authoritative rows and cannot recreate deleted artifacts.
+    compose(
+        args.compose_file,
+        "exec",
+        "-T",
+        "worker",
+        "celery",
+        "-A",
+        "worker.main.celery_app",
+        "call",
+        "graph.reconcile_jobs",
+    )
+    assert int(
+        sql(
+            args.compose_file,
+            "select count(*) from relation_assertions where project_id='"
+            + project["id"]
+            + "' and dataset_id='"
+            + dataset["id"]
+            + "' and relation_type='EMPLOYS'",
+        )
+    ) == 0
     deleted_graph = (
         "MATCH (n) WHERE n.project_id = '"
         + project["id"]
@@ -286,6 +349,52 @@ def main() -> int:
         )
         == 0
     )
+    deleted_subjects = (
+        "MATCH (n) WHERE n.project_id = '"
+        + project["id"]
+        + "' AND n.dataset_id = '"
+        + dataset["id"]
+        + "' AND ((n:Relation AND n.relation_type = 'EMPLOYS') "
+        + "OR (n:Entity AND n.canonical_name = 'Alice')) RETURN count(n)"
+    )
+    assert int(
+        compose(
+            args.compose_file,
+            "exec",
+            "-T",
+            "neo4j",
+            "sh",
+            "-c",
+            'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+            "sh",
+            deleted_subjects,
+        ).splitlines()[-1]
+    ) == 0
+    surviving_subjects = (
+        "MATCH (n) WHERE (n.project_id = '"
+        + project["id"]
+        + "' AND n.dataset_id = '"
+        + dataset["id"]
+        + "' AND n:Entity AND n.canonical_name IN ['Acme Labs', 'Alice Nguyen']) "
+        + "OR (n.project_id = '"
+        + outsider["id"]
+        + "' AND n.dataset_id = '"
+        + outsider_dataset["id"]
+        + "' AND n:Relation AND n.relation_type = 'EMPLOYS') RETURN count(n)"
+    )
+    assert int(
+        compose(
+            args.compose_file,
+            "exec",
+            "-T",
+            "neo4j",
+            "sh",
+            "-c",
+            'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+            "sh",
+            surviving_subjects,
+        ).splitlines()[-1]
+    ) == 3
     assert (
         request(base, "DELETE", f"/v1/datasets/{dataset['id']}", headers=primary_headers)[0] == 204
     )
