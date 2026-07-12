@@ -92,7 +92,12 @@ class GraphCleanupOutbox(Base):
     """Deletion intent retained after authoritative rows are removed."""
 
     __tablename__ = "graph_cleanup_outbox"
-    __table_args__ = (Index("ix_graph_cleanup_dispatch", "ready", "published_at"),)
+    __table_args__ = (
+        Index("ix_graph_cleanup_dispatch", "ready", "published_at"),
+        Index("ix_graph_cleanup_lease", "lease_expires_at"),
+        Index("ix_graph_cleanup_execution_lease", "execution_lease_expires_at"),
+        Index("ix_graph_cleanup_ready", "ready", "completed_at", "next_attempt_at"),
+    )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(nullable=False)
     dataset_id: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -104,6 +109,10 @@ class GraphCleanupOutbox(Base):
     attempts: Mapped[int] = mapped_column(default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

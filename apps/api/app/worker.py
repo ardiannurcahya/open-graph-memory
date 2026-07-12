@@ -36,6 +36,10 @@ celery_app.conf.update(
             "task": "graph.dispatch_cleanup_outbox",
             "schedule": settings.outbox_poll_seconds,
         },
+        "reconcile-graph-cleanup-outbox": {
+            "task": "graph.reconcile_cleanup_outbox",
+            "schedule": settings.outbox_poll_seconds,
+        },
     },
 )
 
@@ -93,6 +97,13 @@ def dispatch_graph_cleanup_outbox() -> int:
     from app.graph_cleanup import dispatch_pending_graph_cleanup
 
     return runner.run(dispatch_pending_graph_cleanup())
+
+
+@celery_app.task(name="graph.reconcile_cleanup_outbox")  # type: ignore[untyped-decorator]
+def reconcile_graph_cleanup_outbox() -> int:
+    from app.graph_cleanup import reconcile_graph_cleanup_outbox as reconcile
+
+    return runner.run(reconcile())
 
 
 async def _dispatch_pending(limit: int = 100) -> int:

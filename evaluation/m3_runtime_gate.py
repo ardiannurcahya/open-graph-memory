@@ -242,6 +242,39 @@ def main() -> int:
         request(base, "DELETE", f"/v1/documents/{deleted_document}", headers=primary_headers)[0]
         == 204
     )
+    # Simulate a broker-accepted task lost before a worker starts it. Reconciliation must release
+    # the expired delivery lease rather than leaving the deletion intent permanently published.
+    sql(
+        args.compose_file,
+        "update graph_cleanup_outbox set published_at=now(), "
+        "lease_expires_at=now() - interval '1 second', "
+        "next_attempt_at=now(), attempts=1 where document_id='" + deleted_document + "'",
+    )
+    compose(
+        args.compose_file,
+        "exec",
+        "-T",
+        "worker",
+        "celery",
+        "-A",
+        "worker.main.celery_app",
+        "call",
+        "graph.reconcile_cleanup_outbox",
+    )
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        released = sql(
+            args.compose_file,
+            "select count(*) from graph_cleanup_outbox where document_id='"
+            + deleted_document
+            + "' and (completed_at is not null "
+            "or (lease_expires_at is null and published_at is null))",
+        )
+        if released == "1":
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError("stale graph cleanup delivery lease was not reclaimed")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         completed = sql(
@@ -259,26 +292,32 @@ def main() -> int:
         == "0"
     )
     # The authoritative graph must not retain deleted-only subjects, while shared rows survive.
-    assert int(
-        sql(
-            args.compose_file,
-            "select count(*) from relation_assertions where project_id='"
-            + project["id"]
-            + "' and dataset_id='"
-            + dataset["id"]
-            + "' and relation_type='EMPLOYS'",
+    assert (
+        int(
+            sql(
+                args.compose_file,
+                "select count(*) from relation_assertions where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and relation_type='EMPLOYS'",
+            )
         )
-    ) == 0
-    assert int(
-        sql(
-            args.compose_file,
-            "select count(*) from canonical_entities where project_id='"
-            + project["id"]
-            + "' and dataset_id='"
-            + dataset["id"]
-            + "' and canonical_name='Alice'",
+        == 0
+    )
+    assert (
+        int(
+            sql(
+                args.compose_file,
+                "select count(*) from canonical_entities where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and canonical_name='Alice'",
+            )
         )
-    ) == 0
+        == 0
+    )
     status, graph = request(
         base,
         "GET",
@@ -287,9 +326,9 @@ def main() -> int:
     )
     assert status == 200, graph
     assert all(relation["relation_type"] != "EMPLOYS" for relation in graph["relations"]), graph
-    assert {"Acme Labs", "Alice Nguyen"} <= {
-        node["canonical_name"] for node in graph["nodes"]
-    }, graph
+    assert {"Acme Labs", "Alice Nguyen"} <= {node["canonical_name"] for node in graph["nodes"]}, (
+        graph
+    )
     status, outsider_graph = request(
         base,
         "GET",
@@ -311,16 +350,19 @@ def main() -> int:
         "call",
         "graph.reconcile_jobs",
     )
-    assert int(
-        sql(
-            args.compose_file,
-            "select count(*) from relation_assertions where project_id='"
-            + project["id"]
-            + "' and dataset_id='"
-            + dataset["id"]
-            + "' and relation_type='EMPLOYS'",
+    assert (
+        int(
+            sql(
+                args.compose_file,
+                "select count(*) from relation_assertions where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and relation_type='EMPLOYS'",
+            )
         )
-    ) == 0
+        == 0
+    )
     deleted_graph = (
         "MATCH (n) WHERE n.project_id = '"
         + project["id"]
@@ -357,19 +399,22 @@ def main() -> int:
         + "' AND ((n:Relation AND n.relation_type = 'EMPLOYS') "
         + "OR (n:Entity AND n.canonical_name = 'Alice')) RETURN count(n)"
     )
-    assert int(
-        compose(
-            args.compose_file,
-            "exec",
-            "-T",
-            "neo4j",
-            "sh",
-            "-c",
-            'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-            "sh",
-            deleted_subjects,
-        ).splitlines()[-1]
-    ) == 0
+    assert (
+        int(
+            compose(
+                args.compose_file,
+                "exec",
+                "-T",
+                "neo4j",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
+                deleted_subjects,
+            ).splitlines()[-1]
+        )
+        == 0
+    )
     surviving_subjects = (
         "MATCH (n) WHERE (n.project_id = '"
         + project["id"]
@@ -382,19 +427,22 @@ def main() -> int:
         + outsider_dataset["id"]
         + "' AND n:Relation AND n.relation_type = 'EMPLOYS') RETURN count(n)"
     )
-    assert int(
-        compose(
-            args.compose_file,
-            "exec",
-            "-T",
-            "neo4j",
-            "sh",
-            "-c",
-            'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-            "sh",
-            surviving_subjects,
-        ).splitlines()[-1]
-    ) == 3
+    assert (
+        int(
+            compose(
+                args.compose_file,
+                "exec",
+                "-T",
+                "neo4j",
+                "sh",
+                "-c",
+                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
+                "sh",
+                surviving_subjects,
+            ).splitlines()[-1]
+        )
+        == 3
+    )
     assert (
         request(base, "DELETE", f"/v1/datasets/{dataset['id']}", headers=primary_headers)[0] == 204
     )
