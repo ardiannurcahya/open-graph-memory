@@ -1,0 +1,26 @@
+{
+  "version": "v1.0",
+  "documents": [
+    {"id": "acme-people", "text": "Acme Labs [Organization]\nAlice Nguyen [Person]\nAlice [Person]\nAcme Labs -> EMPLOYS -> Alice Nguyen"},
+    {"id": "acme-product", "text": "Atlas [Product]\nAcme Labs [Organization]\nAtlas -> BUILT_BY -> Acme Labs"},
+    {"id": "acme-followup", "text": "Alice Nguyen [Person]\nAtlas [Product]\nAlice Nguyen -> LEADS -> Atlas"},
+    {"id": "ambiguous", "text": "Jordan [Person]\nJordan [Organization]\nJordan -> ADVISES -> Acme Labs"},
+    {"id": "unsupported", "text": "Acme Labs [Organization]\nAtlas [Product]\nAcme Labs ~~ OWNS ~~ Atlas"},
+    {"id": "other-tenant", "tenant": "other", "text": "Acme Labs [Organization]\nEve [Person]\nAcme Labs -> EMPLOYS -> Eve"}
+  ],
+  "entities": [
+    {"name": "Acme Labs", "type": "Organization", "documents": ["acme-people", "acme-product"]},
+    {"name": "Alice Nguyen", "type": "Person", "documents": ["acme-people", "acme-followup"], "aliases": ["Alice"]},
+    {"name": "Alice", "type": "Person", "documents": ["acme-people"], "alias_of": "Alice Nguyen"},
+    {"name": "Atlas", "type": "Product", "documents": ["acme-product", "acme-followup"]},
+    {"name": "Jordan", "type": "Person", "documents": ["ambiguous"]},
+    {"name": "Jordan", "type": "Organization", "documents": ["ambiguous"]}
+  ],
+  "relations": [
+    {"source": "Acme Labs", "type": "EMPLOYS", "target": "Alice Nguyen", "document": "acme-people"},
+    {"source": "Atlas", "type": "BUILT_BY", "target": "Acme Labs", "document": "acme-product"},
+    {"source": "Alice Nguyen", "type": "LEADS", "target": "Atlas", "document": "acme-followup"}
+  ],
+  "excluded_relations": [{"source": "Jordan", "type": "ADVISES", "target": "Acme Labs"}, {"source": "Acme Labs", "type": "OWNS", "target": "Atlas"}],
+  "thresholds": {"entity_precision": 1.0, "entity_recall": 1.0, "relation_precision": 1.0, "relation_recall": 1.0, "provenance_completeness": 1.0, "resolution_duplicate_rate_max": 0.0, "idempotency": 1.0}
+}
