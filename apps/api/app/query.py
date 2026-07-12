@@ -99,8 +99,23 @@ async def query(
     ]
     query_terms = set(DeterministicProvider._tokens(body.query))
     stopwords = {
-        "a", "an", "and", "are", "can", "do", "does", "for", "from", "how",
-        "is", "of", "the", "to", "what", "where", "which",
+        "a",
+        "an",
+        "and",
+        "are",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "is",
+        "of",
+        "the",
+        "to",
+        "what",
+        "where",
+        "which",
     }
     query_terms -= stopwords
 

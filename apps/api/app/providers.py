@@ -164,11 +164,7 @@ class DeterministicProvider:
         required_score = 1 if len(terms) <= 1 or policy_question else 2
         coverage = score / max(1, len(terms))
         requirement_question = "require" in terms
-        supported = (
-            coverage >= 0.5
-            if requirement_question
-            else score >= 3 or score == len(terms)
-        )
+        supported = coverage >= 0.5 if requirement_question else score >= 3 or score == len(terms)
         if score >= required_score and (required_score == 1 or supported) and matching:
             citation = re.match(r"\[(\d+)]", matching)
             index = citation.group(1) if citation else ""

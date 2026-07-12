@@ -120,8 +120,7 @@ class OpenAICompatibleExtractor:
                     {
                         "role": "system",
                         "content": (
-                            "Extract entities and relations. "
-                            f"Prompt version: {self.prompt_version}"
+                            f"Extract entities and relations. Prompt version: {self.prompt_version}"
                         ),
                     },
                     {"role": "user", "content": text},

@@ -229,6 +229,10 @@ async def run_ingestion(
             await _stage(db, job, IndexingStage.COMPLETE)
             job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.INDEXED
             document.error_message = None
+            # Persist graph work in this transaction; the dispatcher publishes only committed rows.
+            from app.graph_dispatch import enqueue_graph_extraction
+
+            await enqueue_graph_extraction(db, document)
             await db.commit()
             return document.id
         except BaseException as exc:

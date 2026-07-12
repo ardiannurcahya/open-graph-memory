@@ -18,7 +18,15 @@ celery_app.conf.update(
         "dispatch-indexing-outbox": {
             "task": "ingestion.dispatch_outbox",
             "schedule": settings.outbox_poll_seconds,
-        }
+        },
+        "dispatch-graph-extraction-outbox": {
+            "task": "graph.dispatch_outbox",
+            "schedule": settings.outbox_poll_seconds,
+        },
+        "reconcile-graph-extraction-jobs": {
+            "task": "graph.reconcile_jobs",
+            "schedule": settings.outbox_poll_seconds,
+        },
     },
 )
 
@@ -41,6 +49,27 @@ def index_document(self: object, job_id: str) -> str:
     from app.ingestion import execute
 
     return execute(job_id)
+
+
+@celery_app.task(name="graph.extract_job")  # type: ignore[untyped-decorator]
+def extract_graph(job_id: str) -> str:
+    from app.graph_dispatch import execute_graph_job
+
+    return runner.run(execute_graph_job(job_id))
+
+
+@celery_app.task(name="graph.dispatch_outbox")  # type: ignore[untyped-decorator]
+def dispatch_graph_outbox() -> int:
+    from app.graph_dispatch import dispatch_pending_graph_jobs
+
+    return runner.run(dispatch_pending_graph_jobs())
+
+
+@celery_app.task(name="graph.reconcile_jobs")  # type: ignore[untyped-decorator]
+def reconcile_graph_jobs() -> int:
+    from app.graph_dispatch import reconcile_graph_jobs
+
+    return runner.run(reconcile_graph_jobs())
 
 
 async def _dispatch_pending(limit: int = 100) -> int:

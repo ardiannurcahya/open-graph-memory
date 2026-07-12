@@ -114,6 +114,7 @@ class Document(Base):
     object_key: Mapped[str] = mapped_column(String(255))
     status: Mapped[DocumentStatus] = mapped_column(Enum(DocumentStatus, name="document_status"))
     error_message: Mapped[str | None] = mapped_column(Text)
+    graph_stage: Mapped[str | None] = mapped_column(String(32))
     metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
