@@ -45,6 +45,12 @@ OpenGraphRAG is self-hosted GraphRAG platform for document ingestion, vector and
 - Retrieval trace and latency inspector.
 - Responsive web interface.
 
+#### Graph Explorer preview
+
+![OpenGraphRAG Graph Explorer showing entities and labeled relations](docs/assets/graph-explorer.png)
+
+*Graph Explorer rendered by actual web UI using representative architecture data. Runtime graphs come from entities and relations extracted from uploaded documents.*
+
 ### Plugin contracts and Python SDK
 
 - Contracts for embedding, chat, extraction, parsing, chunking, object storage, vector storage, graph storage, and graph retrieval.
