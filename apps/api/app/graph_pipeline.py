@@ -5,10 +5,9 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.extraction import (
-    DeterministicExtractor,
     Extractor,
-    OpenAICompatibleExtractor,
     normalize_name,
     stable_id,
 )
@@ -31,11 +30,11 @@ from app.graph_store import (
     EvidenceProjection,
     GraphProjection,
     GraphStore,
-    Neo4jGraphStore,
     RelationProjection,
 )
 from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
+from app.plugin_registry import create_extractor, create_graph_store
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +62,30 @@ def extractor_metadata() -> ExtractorMetadata:
 def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
     settings = get_settings()
     metadata = extractor_metadata()
-    if settings.graph_extractor_provider == "openai":
-        return (
-            OpenAICompatibleExtractor(
-                base_url=settings.openai_base_url,
-                api_key=settings.openai_api_key.get_secret_value(),
-                model=settings.graph_extractor_model,
-                prompt_version=settings.graph_extractor_prompt_version,
+    return (
+        create_extractor(
+            settings.graph_extractor_provider,
+            PluginConfig(
+                {
+                    "base_url": settings.openai_base_url,
+                    "model": settings.graph_extractor_model,
+                    "prompt_version": settings.graph_extractor_prompt_version,
+                },
+                {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
             ),
-            metadata,
-        )
-    return DeterministicExtractor(), metadata
+        ),
+        metadata,
+    )
 
 
 def _store() -> GraphStore:
     settings = get_settings()
-    return Neo4jGraphStore(settings.neo4j_url, settings.neo4j_auth.get_secret_value())
+    return create_graph_store(
+        PluginConfig(
+            {"url": settings.neo4j_url},
+            {"auth": SecretValue(settings.neo4j_auth.get_secret_value())},
+        )
+    )
 
 
 async def extract_document(

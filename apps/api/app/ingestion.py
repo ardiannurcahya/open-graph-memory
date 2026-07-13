@@ -3,8 +3,8 @@ import hashlib
 import re
 
 from celery.exceptions import SoftTimeLimitExceeded
+from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.ids import new_id
-from qdrant_client import AsyncQdrantClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,9 +24,10 @@ from app.models import (
     JobStatus,
 )
 from app.parsers import default_registry
-from app.providers import DeterministicProvider, EmbeddingProvider, OpenAIEmbeddingProvider
+from app.plugin_registry import create_embedding, create_vector_store
+from app.providers import EmbeddingProvider
 from app.storage import ObjectStore, get_object_store
-from app.vector_store import QdrantVectorStore, VectorPoint, VectorStore
+from app.vector_store import VectorPoint, VectorStore
 
 PIPELINE_VERSION = "ingestion-v1:parser-v1:recursive-v1:embedding-v1"
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
@@ -94,18 +95,21 @@ async def _stage(db: AsyncSession, job: IndexingJob, stage: IndexingStage) -> No
 
 def _runtime() -> tuple[EmbeddingProvider, VectorStore, str]:
     settings = get_settings()
-    if settings.embedding_provider == "openai":
-        provider: EmbeddingProvider = OpenAIEmbeddingProvider(
-            settings.openai_base_url,
-            settings.openai_api_key.get_secret_value(),
-            settings.embedding_dimensions,
+    provider = create_embedding(
+        settings.embedding_provider,
+        PluginConfig(
+            {"base_url": settings.openai_base_url, "dimensions": settings.embedding_dimensions},
+            {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
+        ),
+    )
+    vectors = create_vector_store(
+        PluginConfig(
+            {
+                "url": settings.qdrant_url,
+                "collection": settings.qdrant_collection,
+                "dimensions": settings.embedding_dimensions,
+            }
         )
-    else:
-        provider = DeterministicProvider(settings.embedding_dimensions)
-    vectors = QdrantVectorStore(
-        AsyncQdrantClient(url=settings.qdrant_url),
-        settings.qdrant_collection,
-        settings.embedding_dimensions,
     )
     return provider, vectors, settings.embedding_model
 
