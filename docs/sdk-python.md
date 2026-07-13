@@ -1,6 +1,6 @@
 # Python SDK
 
-M6 adds `open_graph_sdk`, an async-first Python client for the OpenGraphRAG API.
+M6 adds `open_graph_sdk`, an async-first Python client for the OpenGraphMemory API.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ async with AsyncOGMClient(
     document = await client.upload_document(
         dataset.id,
         filename="note.txt",
-        content=b"OpenGraphRAG connects vector and graph evidence.",
+        content=b"OpenGraphMemory connects vector and graph evidence.",
         content_type="text/plain",
     )
     result = await client.query(

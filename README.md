@@ -1,6 +1,6 @@
-# OpenGraphRAG
+# OpenGraphMemory
 
-OpenGraphRAG is self-hosted GraphRAG platform for document ingestion, vector and graph retrieval, grounded answers with citations, provider plugins, and scoped agent memory.
+OpenGraphMemory is self-hosted GraphRAG platform for document ingestion, vector and graph retrieval, grounded answers with citations, provider plugins, and scoped agent memory.
 
 ## Features
 
@@ -47,7 +47,7 @@ OpenGraphRAG is self-hosted GraphRAG platform for document ingestion, vector and
 
 #### Knowledge graph visualization preview
 
-![OpenGraphRAG radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
+![OpenGraphMemory radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
 
 *Interactive radial entity network rendered by actual web UI using representative biography data. Node size reflects connectivity, color identifies entity type, and directed edges show extracted semantic relations. Runtime graphs come from documents uploaded to each dataset.*
 
