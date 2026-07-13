@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
+from app.observability import render_metrics
 
 router = APIRouter()
 
@@ -16,6 +17,11 @@ router = APIRouter()
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    return Response(render_metrics(), media_type="text/plain; version=0.0.4")
 
 
 async def checks() -> dict[str, bool]:

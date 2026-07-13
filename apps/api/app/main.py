@@ -12,6 +12,7 @@ from app.documents import router as documents_router
 from app.graph_api import router as graph_router
 from app.health import router
 from app.memory import router as memory_router
+from app.observability import MetricsMiddleware
 from app.plugin_registry import (
     create_chat,
     create_embedding,
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="OpenGraphRAG API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(MetricsMiddleware)
 app.include_router(router)
 app.include_router(projects_router)
 app.include_router(datasets_router)

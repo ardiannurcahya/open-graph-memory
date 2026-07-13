@@ -1,4 +1,17 @@
 {$CADDY_SITE_ADDRESS::80} {
+	log {
+		output stdout
+		format json
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy api:8000

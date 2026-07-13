@@ -4,29 +4,53 @@ x-logging: &production-logging
 services:
   api:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: null
+    build: !reset null
     restart: unless-stopped
     mem_limit: 256m
+    pids_limit: 256
+    stop_grace_period: 30s
     logging: *production-logging
     environment: {APP_ENV: production}
   worker:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: null
+    build: !reset null
     restart: unless-stopped
     mem_limit: 384m
+    pids_limit: 256
+    stop_grace_period: 60s
+    logging: *production-logging
+    environment: {APP_ENV: production}
+  graph-worker:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: !reset null
+    restart: unless-stopped
+    mem_limit: 384m
+    pids_limit: 256
+    stop_grace_period: 60s
+    logging: *production-logging
+    environment: {APP_ENV: production}
+  dispatcher:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: !reset null
+    restart: unless-stopped
+    mem_limit: 192m
+    pids_limit: 128
+    stop_grace_period: 30s
     logging: *production-logging
     environment: {APP_ENV: production}
   migrate:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: null
+    build: !reset null
     logging: *production-logging
     environment: {APP_ENV: production}
   web:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-web:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: null
+    build: !reset null
     restart: unless-stopped
     mem_limit: 128m
+    pids_limit: 128
     logging: *production-logging
+    healthcheck: {test: [CMD, wget, -q, -O, /dev/null, http://localhost/], interval: 15s, timeout: 5s, retries: 5}
   postgres: {restart: unless-stopped, mem_limit: 320m, logging: *production-logging}
   redis: {restart: unless-stopped, mem_limit: 96m, logging: *production-logging}
   rustfs: {restart: unless-stopped, mem_limit: 160m, logging: *production-logging}

@@ -14,3 +14,13 @@ Dataset CRUD, upload constraints, examples, and the runtime gate are documented 
 ## Graph extraction
 
 After documents reach `indexed`, the durable graph job moves `graph_stage` from `queued` through `extracting` to `complete`. Inspect the bounded graph at `GET /api/v1/datasets/{dataset_id}/graph`; API keys and project headers remain required. The deterministic end-to-end graph gate uses no external model credentials: run `scripts/m3-runtime-gate.sh`. The M4 gate runs the real hybrid retrieval vertical slice with all retrieval modes: run `scripts/m4-runtime-gate.sh`. Both gates destroy only their own Compose volumes and write ignored reports under `artifacts/`. See [Graph extraction](graph-extraction.md), [hybrid retrieval](hybrid-retrieval.md), and [evaluation](../evaluation/README.md) for fixture semantics and thresholds.
+
+## Dashboard, SDK, plugins, and memory
+
+Dashboard at `http://localhost:3000` covers upload, datasets, query modes, citations, graph paths, and traces; see [dashboard](dashboard.md). Python SDK usage lives in [SDK docs](sdk-python.md). Provider boundaries and conformance tests live in [plugin docs](plugin-system.md). Agent Memory Preview API, scope/lifecycle, query personalization, and evaluator live in [memory docs](agent-memory-preview.md).
+
+```sh
+uv run python evaluation/memory_evaluator.py
+```
+
+Production operations, backup/restore, metrics, alerts, and unvalidated small-VPS limits are documented in [deployment](deployment.md) and [runbooks](runbooks/operations.md).
