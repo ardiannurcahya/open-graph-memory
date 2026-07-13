@@ -47,9 +47,9 @@ OpenGraphRAG is self-hosted GraphRAG platform for document ingestion, vector and
 
 #### Graph Explorer preview
 
-![OpenGraphRAG Graph Explorer showing entities and labeled relations](docs/assets/graph-explorer.png)
+![OpenGraphRAG knowledge graph visualization showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
 
-*Graph Explorer rendered by actual web UI using representative architecture data. Runtime graphs come from entities and relations extracted from uploaded documents.*
+*Knowledge graph rendered by actual Graph Explorer UI using representative biography data. It shows extracted people, places, discoveries, organizations, and semantic relations. Runtime graphs come from documents uploaded to each dataset.*
 
 ### Plugin contracts and Python SDK
 
