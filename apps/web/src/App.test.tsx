@@ -139,7 +139,7 @@ describe("App", () => {
     });
     expect(screen.getByText("Run Inspector")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Documents", level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Entity Atlas", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Entity Network", level: 2 })).toBeInTheDocument();
   });
 
   it("disables the run query button when no dataset is selected", async () => {

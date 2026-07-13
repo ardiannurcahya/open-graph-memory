@@ -45,11 +45,11 @@ OpenGraphRAG is self-hosted GraphRAG platform for document ingestion, vector and
 - Retrieval trace and latency inspector.
 - Responsive web interface.
 
-#### Graph Explorer preview
+#### Knowledge graph visualization preview
 
-![OpenGraphRAG knowledge graph visualization showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
+![OpenGraphRAG radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
 
-*Knowledge graph rendered by actual Graph Explorer UI using representative biography data. It shows extracted people, places, discoveries, organizations, and semantic relations. Runtime graphs come from documents uploaded to each dataset.*
+*Interactive radial entity network rendered by actual web UI using representative biography data. Node size reflects connectivity, color identifies entity type, and directed edges show extracted semantic relations. Runtime graphs come from documents uploaded to each dataset.*
 
 ### Plugin contracts and Python SDK
 

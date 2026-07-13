@@ -1114,8 +1114,10 @@ a:hover {
 /* ---------- Graph explorer ---------- */
 
 .graph-canvas {
-  height: 420px;
-  background: var(--base);
+  height: 520px;
+  background:
+    radial-gradient(circle at 50% 45%, rgb(85 214 190 / 7%), transparent 38%),
+    var(--base);
   position: relative;
 }
 
@@ -1124,29 +1126,107 @@ a:hover {
   inset: 0;
 }
 
-.graph-node {
-  background: var(--surface-2) !important;
-  border: 1px solid var(--accent) !important;
-  border-radius: var(--radius) !important;
-  color: var(--text) !important;
-  font-size: 11px !important;
-  font-family: var(--font-mono) !important;
-  padding: 6px 10px !important;
-  box-shadow: var(--shadow) !important;
+.knowledge-legend {
+  min-height: 38px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(15 18 25 / 72%);
+}
+
+.knowledge-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.knowledge-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentcolor;
+}
+
+.knowledge-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px;
+  background: radial-gradient(circle at 35% 28%, #232d3a, #11151d 72%);
+  border: 2px solid;
+  border-radius: 50%;
+  color: var(--text);
+  text-align: center;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.knowledge-node:hover {
+  transform: scale(1.06);
+  filter: brightness(1.16);
+}
+
+.knowledge-node strong {
+  max-width: 92px;
+  font-size: 11px;
+  line-height: 1.15;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.knowledge-node-type,
+.knowledge-node-degree {
+  max-width: 88px;
+  font: 7px/1.1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.knowledge-node-degree {
+  color: var(--text-muted);
+}
+
+.knowledge-handle {
+  width: 6px !important;
+  height: 6px !important;
+  border: 1px solid #c9fff5 !important;
+  background: #55d6be !important;
+  opacity: 0.75;
 }
 
 .react-flow__edge-text {
   font-family: var(--font-mono) !important;
-  font-size: 9px !important;
-  fill: var(--text-muted) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em;
+  fill: #d6e1ee !important;
 }
 
 .react-flow__edge-textbg {
-  fill: var(--surface) !important;
+  fill: #10151d !important;
+  fill-opacity: 0.94 !important;
+  stroke: #354356 !important;
+  stroke-width: 1px;
 }
 
 .react-flow__edge-path {
-  stroke: var(--border-light) !important;
+  stroke: #7894b4 !important;
+  stroke-width: 1.7px !important;
+  opacity: 0.9;
+}
+
+.react-flow__arrowhead polyline {
+  stroke: #89a5c4 !important;
+  fill: #89a5c4 !important;
 }
 
 .react-flow__controls {

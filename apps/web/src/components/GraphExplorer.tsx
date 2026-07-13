@@ -1,9 +1,19 @@
-import { Background, Controls, type Edge, type Node, ReactFlow } from "@xyflow/react";
+import {
+  Background,
+  Controls,
+  type Edge,
+  Handle,
+  MarkerType,
+  type Node,
+  type NodeProps,
+  Position,
+  ReactFlow,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Network, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 
-import type { GraphSummary } from "../lib/types";
+import type { EntityView, GraphSummary } from "../lib/types";
 
 interface GraphExplorerProps {
   graph: GraphSummary | null;
@@ -11,77 +21,165 @@ interface GraphExplorerProps {
   onRefresh: () => void;
 }
 
-export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
-  const { nodes, edges } = useMemo(() => {
-    const rawNodes = graph?.nodes ?? [];
-    const nodeIds = new Set(rawNodes.map((n) => n.id));
+interface KnowledgeNodeData extends Record<string, unknown> {
+  label: string;
+  entityType: string;
+  confidence: number;
+  degree: number;
+  color: string;
+}
 
-    const flowNodes: Node[] = rawNodes.map((entity, i) => ({
+type KnowledgeNode = Node<KnowledgeNodeData, "knowledge">;
+
+const TYPE_COLORS = ["#55d6be", "#8b9cff", "#f0b35a", "#d98cff", "#58b8f5", "#ef7d8f"];
+const SEMANTIC_COLORS: Record<string, string> = {
+  person: "#8b9cff",
+  organization: "#55d6be",
+  place: "#ef7d8f",
+  award: "#d98cff",
+  "chemical element": "#f0b35a",
+  "scientific concept": "#58b8f5",
+};
+
+function colorForType(type: string): string {
+  const semanticColor = SEMANTIC_COLORS[type.toLowerCase()];
+  if (semanticColor) return semanticColor;
+  let hash = 0;
+  for (const char of type) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return TYPE_COLORS[hash % TYPE_COLORS.length];
+}
+
+function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
+  const size = Math.min(116, 76 + data.degree * 7);
+  return (
+    <div
+      className="knowledge-node"
+      style={{
+        width: size,
+        height: size,
+        borderColor: data.color,
+        boxShadow: `0 0 0 5px ${data.color}18, 0 0 28px ${data.color}22`,
+      }}
+      title={`${data.label} · ${data.entityType} · ${Math.round(data.confidence * 100)}% confidence`}
+    >
+      <Handle type="target" position={Position.Top} className="knowledge-handle" />
+      <span className="knowledge-node-type" style={{ color: data.color }}>
+        {data.entityType}
+      </span>
+      <strong>{data.label}</strong>
+      <span className="knowledge-node-degree">
+        {data.degree} {data.degree === 1 ? "link" : "links"}
+      </span>
+      <Handle type="source" position={Position.Bottom} className="knowledge-handle" />
+    </div>
+  );
+}
+
+const nodeTypes = { knowledge: KnowledgeNodeView };
+
+function radialPosition(index: number, total: number, degree: number, maxDegree: number) {
+  if (index === 0 && maxDegree > 2) return { x: 450, y: 210 };
+  const orbitIndex = maxDegree > 2 ? index - 1 : index;
+  const orbitTotal = maxDegree > 2 ? total - 1 : total;
+  const angle = (orbitIndex / Math.max(orbitTotal, 1)) * Math.PI * 2 - Math.PI / 2;
+  const radiusX = orbitTotal > 10 ? 390 : 330;
+  const radiusY = orbitTotal > 10 ? 245 : 205;
+  return {
+    x: 450 + Math.cos(angle) * radiusX,
+    y: 210 + Math.sin(angle) * radiusY,
+  };
+}
+
+export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
+  const { nodes, edges, legend } = useMemo(() => {
+    const rawNodes = graph?.nodes ?? [];
+    const nodeIds = new Set(rawNodes.map((node) => node.id));
+    const degree = new Map(rawNodes.map((node) => [node.id, 0]));
+    for (const relation of graph?.relations ?? []) {
+      if (!nodeIds.has(relation.source_entity_id) || !nodeIds.has(relation.target_entity_id)) continue;
+      degree.set(relation.source_entity_id, (degree.get(relation.source_entity_id) ?? 0) + 1);
+      degree.set(relation.target_entity_id, (degree.get(relation.target_entity_id) ?? 0) + 1);
+    }
+
+    const ordered = [...rawNodes].sort(
+      (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.canonical_name.localeCompare(b.canonical_name),
+    );
+    const maxDegree = Math.max(0, ...degree.values());
+    const flowNodes: KnowledgeNode[] = ordered.map((entity, index) => ({
       id: entity.id,
-      position: {
-        x: 120 + (i % 6) * 180,
-        y: 60 + Math.floor(i / 6) * 140,
-      },
+      type: "knowledge",
+      position: radialPosition(index, ordered.length, degree.get(entity.id) ?? 0, maxDegree),
       data: {
         label: entity.canonical_name,
         entityType: entity.entity_type,
         confidence: entity.confidence,
+        degree: degree.get(entity.id) ?? 0,
+        color: colorForType(entity.entity_type),
       },
-      className: "graph-node",
+      draggable: true,
     }));
 
     const flowEdges: Edge[] = (graph?.relations ?? [])
-      .filter((r) => nodeIds.has(r.source_entity_id) && nodeIds.has(r.target_entity_id))
-      .map((r) => ({
-        id: r.id,
-        source: r.source_entity_id,
-        target: r.target_entity_id,
-        label: r.relation_type,
-        animated: false,
-        className: "graph-edge",
+      .filter((relation) => nodeIds.has(relation.source_entity_id) && nodeIds.has(relation.target_entity_id))
+      .map((relation, index) => ({
+        id: relation.id,
+        source: relation.source_entity_id,
+        target: relation.target_entity_id,
+        label: relation.relation_type.replaceAll("_", " "),
+        type: "bezier",
+        pathOptions: { curvature: 0.28 + (index % 3) * 0.08 },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 19, height: 19 },
+        labelBgPadding: [7, 4],
+        labelBgBorderRadius: 5,
+        className: "knowledge-edge",
       }));
 
-    return { nodes: flowNodes, edges: flowEdges };
+    const typeLegend = [...new Set(rawNodes.map((node: EntityView) => node.entity_type))]
+      .sort()
+      .map((type) => ({ type, color: colorForType(type) }));
+    return { nodes: flowNodes, edges: flowEdges, legend: typeLegend };
   }, [graph]);
 
   const hasGraph = nodes.length > 0;
 
   return (
-    <section className="panel" id="graph" aria-labelledby="graph-heading">
+    <section className="panel knowledge-panel" id="graph" aria-labelledby="graph-heading">
       <div className="panel-header">
         <div>
           <span className="panel-eyebrow">Knowledge Graph</span>
-          <h2 id="graph-heading" className="panel-title">
-            Entity Atlas
-          </h2>
+          <h2 id="graph-heading" className="panel-title">Entity Network</h2>
         </div>
         <div className="panel-actions">
           <span className="badge">
             {graph ? `${graph.entity_count} entities · ${graph.relation_count} relations` : "—"}
           </span>
-          <button
-            className="btn btn-ghost"
-            onClick={onRefresh}
-            disabled={loading}
-            title="Refresh graph"
-          >
+          <button className="btn btn-ghost" onClick={onRefresh} disabled={loading} title="Refresh graph">
             <RefreshCw size={14} strokeWidth={2} className={loading ? "spin" : ""} />
           </button>
         </div>
       </div>
 
-      <div className="graph-canvas">
+      <div className="knowledge-legend" aria-label="Entity type legend">
+        {legend.map((item) => (
+          <span key={item.type}><i style={{ background: item.color }} />{item.type}</span>
+        ))}
+      </div>
+
+      <div className="graph-canvas knowledge-canvas">
         {hasGraph ? (
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.2 }}
+            fitViewOptions={{ padding: 0.16, minZoom: 0.55, maxZoom: 1.15 }}
+            minZoom={0.35}
+            maxZoom={1.8}
             proOptions={{ hideAttribution: true }}
             nodesDraggable
             zoomOnScroll
           >
-            <Background color="#2a2a35" gap={20} />
+            <Background color="#273140" gap={24} size={1} />
             <Controls showInteractive={false} />
           </ReactFlow>
         ) : (
