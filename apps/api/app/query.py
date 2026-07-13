@@ -5,14 +5,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
 from app.config import get_settings
 from app.dependencies import get_session
 from app.graph_store import GraphStore
-from app.models import Chunk, Dataset, QueryLog
+from app.models import Chunk, Dataset, MemoryFact, MemoryFactStatus, QueryLog
 from app.providers import ChatProvider, DeterministicProvider, EmbeddingProvider
 from app.retrieval import GraphEvidence, bounded_graph_search, fuse_hits
 from app.runtime import get_chat_provider, get_embedding_provider, get_graph_store, get_vector_store
@@ -30,6 +30,10 @@ class QueryRequest(BaseModel):
     graph_fanout: int | None = Field(default=None, ge=1, le=100)
     graph_timeout_ms: int | None = Field(default=None, ge=1, le=10_000)
     fusion: Literal["rrf", "weighted"] | None = None
+    memory_user_id: str | None = None
+    memory_agent_id: str | None = None
+    memory_session_id: str | None = None
+    memory_top_k: int = Field(default=0, ge=0, le=20)
 
 
 class Citation(BaseModel):
@@ -47,13 +51,53 @@ class QueryResponse(BaseModel):
     usage: dict[str, int | float]
 
 
-def build_context(hits: list[VectorHit]) -> str:
+def build_context(hits: list[VectorHit], memory_facts: list[MemoryFact] | None = None) -> str:
     evidence = "\n\n".join(
         f"[{i}] chunk_id={hit.id} document_id={hit.payload.get('document_id')}\n"
         f"{hit.payload.get('text', '')}"
         for i, hit in enumerate(hits, 1)
     )
-    return "Answer only from the evidence and cite claims with [n].\n\nEvidence:\n" + evidence
+    memory = ""
+    if memory_facts:
+        memory = (
+            "\n\nMemory facts for personalization only; do not cite them as evidence:\n"
+            + "\n".join(
+                f"- {fact.content} (scope={fact.scope}, id={fact.id})" for fact in memory_facts
+            )
+        )
+    return (
+        "Answer only from the evidence and cite claims with [n].\n\nEvidence:\n" + evidence + memory
+    )
+
+
+def memory_terms(text: str) -> set[str]:
+    return {token.lower() for token in DeterministicProvider._tokens(text) if len(token) > 2}
+
+
+async def memory_hits(db: AsyncSession, project_id: object, body: QueryRequest) -> list[MemoryFact]:
+    if body.memory_top_k <= 0:
+        return []
+    stmt = select(MemoryFact).where(
+        MemoryFact.project_id == project_id,
+        MemoryFact.status == MemoryFactStatus.ACTIVE,
+    )
+    filters = []
+    if body.memory_user_id:
+        filters.append(MemoryFact.user_id == body.memory_user_id)
+    if body.memory_agent_id:
+        filters.append(MemoryFact.agent_id == body.memory_agent_id)
+    if body.memory_session_id:
+        filters.append(MemoryFact.session_id == body.memory_session_id)
+    if filters:
+        stmt = stmt.where(or_(*filters))
+    rows = list(await db.scalars(stmt.order_by(MemoryFact.created_at.desc()).limit(200)))
+    terms = memory_terms(body.query)
+    scored = [
+        (len([term for term in terms if term in fact.content.lower()]), fact) for fact in rows
+    ]
+    return [
+        fact for score, fact in sorted(scored, key=lambda item: item[0], reverse=True) if score > 0
+    ][: body.memory_top_k]
 
 
 def entity_candidates(text: str) -> list[str]:
@@ -146,9 +190,10 @@ async def query(
             settings.retrieval_graph_weight,
         )
     hits = hits[: body.top_k]
+    memories = await memory_hits(db, context.project_id, body)
     result = await chat.chat(
         [
-            {"role": "system", "content": build_context(hits)},
+            {"role": "system", "content": build_context(hits, memories)},
             {"role": "user", "content": body.query},
         ],
         settings.chat_model,
@@ -180,6 +225,11 @@ async def query(
         },
         "chunk_ids": [hit.id for hit in hits],
         "scores": [hit.score for hit in hits],
+        "memory": {
+            "fact_ids": [fact.id for fact in memories],
+            "scopes": [fact.scope for fact in memories],
+            "source_message_ids": [fact.source_message_id for fact in memories],
+        },
         "latency_ms": latency_ms,
     }
     usage: dict[str, int | float] = {

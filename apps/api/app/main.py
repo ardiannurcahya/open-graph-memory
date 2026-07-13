@@ -11,6 +11,7 @@ from app.datasets import router as datasets_router
 from app.documents import router as documents_router
 from app.graph_api import router as graph_router
 from app.health import router
+from app.memory import router as memory_router
 from app.plugin_registry import (
     create_chat,
     create_embedding,
@@ -77,3 +78,4 @@ app.include_router(datasets_router)
 app.include_router(documents_router)
 app.include_router(query_router)
 app.include_router(graph_router)
+app.include_router(memory_router)

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from types import TracebackType
@@ -18,6 +17,12 @@ from open_graph_sdk.models import (
     GraphJob,
     GraphRun,
     GraphSummary,
+    MemoryAgent,
+    MemoryFact,
+    MemoryMessageBatch,
+    MemorySearchHit,
+    MemorySession,
+    MemoryUser,
     Neighbor,
     ProjectCreated,
     QueryRequest,
@@ -188,6 +193,10 @@ class AsyncOGMClient:
         graph_fanout: int | None = None,
         graph_timeout_ms: int | None = None,
         fusion: str | None = None,
+        memory_user_id: str | None = None,
+        memory_agent_id: str | None = None,
+        memory_session_id: str | None = None,
+        memory_top_k: int = 0,
     ) -> QueryResponse:
         body = QueryRequest(
             dataset_id=dataset_id,
@@ -198,9 +207,118 @@ class AsyncOGMClient:
             graph_fanout=graph_fanout,
             graph_timeout_ms=graph_timeout_ms,
             fusion=fusion,  # type: ignore[arg-type]
+            memory_user_id=memory_user_id,
+            memory_agent_id=memory_agent_id,
+            memory_session_id=memory_session_id,
+            memory_top_k=memory_top_k,
         ).model_dump(mode="json", exclude_none=True)
         data = await self._request("POST", "/v1/query", json=body)
         return QueryResponse.model_validate(data)
+
+    async def create_memory_user(
+        self,
+        external_id: str,
+        *,
+        display_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryUser:
+        data = await self._request(
+            "POST",
+            "/v1/memory/users",
+            json={
+                "external_id": external_id,
+                "display_name": display_name,
+                "metadata": metadata or {},
+            },
+        )
+        return MemoryUser.model_validate(data)
+
+    async def create_memory_agent(
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryAgent:
+        data = await self._request(
+            "POST",
+            "/v1/memory/agents",
+            json={"name": name, "description": description, "metadata": metadata or {}},
+        )
+        return MemoryAgent.model_validate(data)
+
+    async def create_memory_session(
+        self,
+        *,
+        user_id: str,
+        agent_id: str,
+        title: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemorySession:
+        data = await self._request(
+            "POST",
+            "/v1/memory/sessions",
+            json={
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "title": title,
+                "metadata": metadata or {},
+            },
+        )
+        return MemorySession.model_validate(data)
+
+    async def add_memory_messages(
+        self,
+        session_id: str,
+        *,
+        messages: list[dict[str, Any]],
+        facts: list[dict[str, Any]] | None = None,
+    ) -> MemoryMessageBatch:
+        data = await self._request(
+            "POST",
+            f"/v1/memory/sessions/{session_id}/messages",
+            json={"messages": messages, "facts": facts or []},
+        )
+        return MemoryMessageBatch.model_validate(data)
+
+    async def get_session_memory(self, session_id: str) -> list[MemoryFact]:
+        data = await self._request("GET", f"/v1/memory/sessions/{session_id}/memory")
+        return [MemoryFact.model_validate(item) for item in data]
+
+    async def get_user_memory_context(self, user_id: str, *, limit: int = 20) -> list[MemoryFact]:
+        data = await self._request(
+            "GET", f"/v1/memory/users/{user_id}/context", params={"limit": limit}
+        )
+        return [MemoryFact.model_validate(item) for item in data]
+
+    async def search_memory(
+        self,
+        query: str,
+        *,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        scopes: list[str] | None = None,
+        limit: int = 10,
+        include_superseded: bool = False,
+    ) -> list[MemorySearchHit]:
+        data = await self._request(
+            "POST",
+            "/v1/memory/search",
+            json={
+                "query": query,
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "scopes": scopes or ["user", "agent", "session"],
+                "limit": limit,
+                "include_superseded": include_superseded,
+            },
+        )
+        return [MemorySearchHit.model_validate(item) for item in data]
+
+    async def delete_memory(self, memory_id: str) -> None:
+        await self._request("DELETE", f"/v1/memory/{memory_id}")
 
     async def get_entity(self, entity_id: str) -> Entity:
         data = await self._request("GET", f"/v1/entities/{entity_id}")

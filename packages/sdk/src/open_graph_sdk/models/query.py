@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -46,6 +45,10 @@ class QueryRequest(BaseModel):
     graph_fanout: int | None = None
     graph_timeout_ms: int | None = None
     fusion: FusionMethod | None = None
+    memory_user_id: str | None = None
+    memory_agent_id: str | None = None
+    memory_session_id: str | None = None
+    memory_top_k: int = 0
 
 
 class QueryResponse(BaseModel):

@@ -1,4 +1,3 @@
-
 from open_graph_sdk.models.common import (
     DatasetStatus,
     DocumentStatus,
@@ -19,6 +18,17 @@ from open_graph_sdk.models.graph import (
     Relation,
     ReviewInput,
 )
+from open_graph_sdk.models.memory import (
+    MemoryAgent,
+    MemoryFact,
+    MemoryMessage,
+    MemoryMessageBatch,
+    MemoryScope,
+    MemorySearchHit,
+    MemorySession,
+    MemoryUser,
+    MessageRole,
+)
 from open_graph_sdk.models.projects import ProjectCreated
 from open_graph_sdk.models.query import Citation, QueryRequest, QueryResponse, RetrievalTrace, Usage
 
@@ -37,6 +47,15 @@ __all__ = [
     "GraphJob",
     "GraphRun",
     "GraphSummary",
+    "MemoryAgent",
+    "MemoryFact",
+    "MemoryMessage",
+    "MemoryMessageBatch",
+    "MemoryScope",
+    "MemorySearchHit",
+    "MemorySession",
+    "MemoryUser",
+    "MessageRole",
     "Neighbor",
     "ProjectCreated",
     "QueryMode",
