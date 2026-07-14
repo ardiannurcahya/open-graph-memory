@@ -12,6 +12,7 @@ from app.async_runner import runner
 from app.chunking import RecursiveTextChunker
 from app.config import get_settings
 from app.db import engine
+from app.graph_gc import cleanup_document_graph
 from app.models import (
     Chunk,
     Document,
@@ -29,7 +30,7 @@ from app.providers import EmbeddingProvider
 from app.storage import ObjectStore, get_object_store
 from app.vector_store import VectorPoint, VectorStore
 
-PIPELINE_VERSION = "ingestion-v2:parser-v2:recursive-v2-source-aware:embedding-v1"
+PIPELINE_VERSION = "ingestion-v3:parser-v2:recursive-v3-source-aware-segment-offsets:embedding-v1"
 EMBEDDING_BATCH_SIZE = 64
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
@@ -192,21 +193,25 @@ async def run_ingestion(
                     text=item.text,
                     pipeline_version=PIPELINE_VERSION,
                     metadata={
-                        "start_char": item.start_char,
-                        "end_char": item.end_char,
                         "parser": "parser-v2",
                         "chunker": chunker.version,
                         **item.metadata,
+                        **parsed.metadata,
                     },
                 )
                 for item, vector in zip(chunks, embedded, strict=True)
             ]
-            await vectors.delete_document(
-                str(document.project_id), document.dataset_id, document.id
+            # PostgreSQL is authoritative. Commit replacement chunks and graph cleanup before
+            # mutating Qdrant; failed projection stays retryable and is hidden by hydration.
+            await db.execute(
+                delete(Chunk).where(
+                    Chunk.project_id == document.project_id,
+                    Chunk.dataset_id == document.dataset_id,
+                    Chunk.document_id == document.id,
+                )
             )
-            await vectors.upsert(points)
-
-            await db.execute(delete(Chunk).where(Chunk.document_id == document.id))
+            await db.flush()
+            await cleanup_document_graph(db, document.project_id, document.dataset_id, document.id)
             for item in chunks:
                 db.add(
                     Chunk(
@@ -222,8 +227,6 @@ async def run_ingestion(
                         text=item.text,
                         token_count=item.token_count,
                         metadata_={
-                            "start_char": item.start_char,
-                            "end_char": item.end_char,
                             "parser": "parser-v2",
                             "chunker": chunker.version,
                             **item.metadata,
@@ -253,6 +256,12 @@ async def run_ingestion(
                     )
                 )
             await db.commit()
+
+            # Delete before upsert so retry converges after partial projection failure.
+            await vectors.delete_document(
+                str(document.project_id), document.dataset_id, document.id
+            )
+            await vectors.upsert(points)
             await _stage(db, job, IndexingStage.COMPLETE)
             job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.PERSISTING
             document.error_message = None

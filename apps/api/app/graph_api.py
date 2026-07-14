@@ -6,8 +6,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth import ProjectContext, require_project
 from app.datasets import owned
@@ -147,6 +148,23 @@ def entity_view(item: CanonicalEntity) -> EntityView:
     return EntityView.model_validate(item, from_attributes=True)
 
 
+def supported_relation() -> ColumnElement[bool]:
+    """Relation needs at least one authoritative citation."""
+    return exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+
+
+def supported_entity() -> ColumnElement[bool]:
+    """Entity needs direct evidence or endpoint of cited relation."""
+    cited_endpoint = exists().where(
+        GraphEvidence.relation_id == RelationAssertion.id,
+        or_(
+            RelationAssertion.source_entity_id == CanonicalEntity.id,
+            RelationAssertion.target_entity_id == CanonicalEntity.id,
+        ),
+    )
+    return or_(exists().where(GraphEvidence.entity_id == CanonicalEntity.id), cited_endpoint)
+
+
 def low_signal_entity(name: str, entity_type: str) -> bool:
     normalized_type = entity_type.strip().lower()
     normalized_name = name.strip().lower()
@@ -222,7 +240,9 @@ async def scoped_entity(
 ) -> CanonicalEntity:
     item = await db.scalar(
         select(CanonicalEntity).where(
-            CanonicalEntity.id == entity_id, CanonicalEntity.project_id == project.project_id
+            CanonicalEntity.id == entity_id,
+            CanonicalEntity.project_id == project.project_id,
+            supported_entity(),
         )
     )
     if item is None:
@@ -255,6 +275,7 @@ async def neighbors(
                 RelationAssertion.dataset_id == entity.dataset_id,
                 (RelationAssertion.source_entity_id == entity_id)
                 | (RelationAssertion.target_entity_id == entity_id),
+                supported_relation(),
             )
             .order_by(RelationAssertion.id)
             .limit(limit)
@@ -269,7 +290,9 @@ async def neighbors(
         )
         other = await db.scalar(
             select(CanonicalEntity).where(
-                CanonicalEntity.id == other_id, CanonicalEntity.project_id == project.project_id
+                CanonicalEntity.id == other_id,
+                CanonicalEntity.project_id == project.project_id,
+                supported_entity(),
             )
         )
         if other is not None:
@@ -294,6 +317,7 @@ async def graph(
             .where(
                 CanonicalEntity.project_id == project.project_id,
                 CanonicalEntity.dataset_id == dataset_id,
+                supported_entity(),
             )
             .order_by(CanonicalEntity.canonical_name)
             .limit(GRAPH_CANDIDATE_LIMIT)
@@ -304,6 +328,7 @@ async def graph(
         .where(
             RelationAssertion.project_id == project.project_id,
             RelationAssertion.dataset_id == dataset_id,
+            supported_relation(),
         )
         .group_by(RelationAssertion.source_entity_id)
     )
@@ -313,6 +338,7 @@ async def graph(
         .where(
             RelationAssertion.project_id == project.project_id,
             RelationAssertion.dataset_id == dataset_id,
+            supported_relation(),
         )
         .group_by(RelationAssertion.target_entity_id)
     )
@@ -331,6 +357,7 @@ async def graph(
                     RelationAssertion.dataset_id == dataset_id,
                     RelationAssertion.source_entity_id.in_(entity_ids),
                     RelationAssertion.target_entity_id.in_(entity_ids),
+                    supported_relation(),
                 )
                 .order_by(RelationAssertion.id)
                 .limit(limit)
@@ -344,6 +371,7 @@ async def graph(
             .where(
                 CanonicalEntity.project_id == project.project_id,
                 CanonicalEntity.dataset_id == dataset_id,
+                supported_entity(),
             )
         )
         or 0
@@ -355,6 +383,7 @@ async def graph(
             .where(
                 RelationAssertion.project_id == project.project_id,
                 RelationAssertion.dataset_id == dataset_id,
+                supported_relation(),
             )
         )
         or 0

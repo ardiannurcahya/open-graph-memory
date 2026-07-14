@@ -25,7 +25,7 @@ class Chunker(Protocol):
 
 
 class RecursiveTextChunker:
-    version = "recursive-v2-source-aware"
+    version = "recursive-v3-source-aware-segment-offsets"
 
     def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 5000) -> None:
         if size <= overlap or overlap < 0:
@@ -66,7 +66,22 @@ class RecursiveTextChunker:
                 start = max(start + 1, end - self.overlap)
             count = len(segment_drafts)
             drafts.extend(
-                (text, start, end, {**metadata, "segment_part": part, "segment_count": count})
+                (
+                    text,
+                    start,
+                    end,
+                    {
+                        **metadata,
+                        # Offsets are segment-local, not concatenated-document offsets.
+                        "segment_start_char": start,
+                        "segment_end_char": end,
+                        # Compatibility aliases. New consumers must use segment_* names.
+                        "start_char": start,
+                        "end_char": end,
+                        "segment_part": part,
+                        "segment_count": count,
+                    },
+                )
                 for part, (text, start, end, metadata) in enumerate(segment_drafts, 1)
             )
         chunks = []
