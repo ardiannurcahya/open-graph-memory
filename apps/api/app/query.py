@@ -239,7 +239,11 @@ async def authoritative_hits(
         VectorHit(
             hit.id,
             hit.score,
-            {"document_id": by_id[hit.id].document_id, "text": by_id[hit.id].text},
+            {
+                "document_id": by_id[hit.id].document_id,
+                "text": by_id[hit.id].text,
+                **getattr(by_id[hit.id], "metadata_", {}),
+            },
         )
         for hit in raw
         if hit.id in by_id

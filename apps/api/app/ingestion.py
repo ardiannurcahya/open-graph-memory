@@ -201,13 +201,12 @@ async def run_ingestion(
                 )
                 for item, vector in zip(chunks, embedded, strict=True)
             ]
+            await vectors.delete_document(
+                str(document.project_id), document.dataset_id, document.id
+            )
             await vectors.upsert(points)
 
-            await db.execute(
-                delete(Chunk).where(
-                    Chunk.document_id == document.id, Chunk.pipeline_version == PIPELINE_VERSION
-                )
-            )
+            await db.execute(delete(Chunk).where(Chunk.document_id == document.id))
             for item in chunks:
                 db.add(
                     Chunk(

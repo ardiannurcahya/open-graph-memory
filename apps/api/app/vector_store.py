@@ -25,6 +25,7 @@ class VectorHit:
 
 class VectorStore(Protocol):
     async def upsert(self, points: list[VectorPoint]) -> None: ...
+    async def delete_document(self, project_id: str, dataset_id: str, document_id: str) -> None: ...
     async def search(
         self, vector: list[float], project_id: str, dataset_id: str, limit: int
     ) -> list[VectorHit]: ...
@@ -62,6 +63,28 @@ class QdrantVectorStore:
                 )
                 for p in points
             ],
+            wait=True,
+        )
+
+    async def delete_document(self, project_id: str, dataset_id: str, document_id: str) -> None:
+        await self.setup()
+        await self.client.delete(
+            self.collection,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="project_id", match=models.MatchValue(value=project_id)
+                        ),
+                        models.FieldCondition(
+                            key="dataset_id", match=models.MatchValue(value=dataset_id)
+                        ),
+                        models.FieldCondition(
+                            key="document_id", match=models.MatchValue(value=document_id)
+                        ),
+                    ]
+                )
+            ),
             wait=True,
         )
 

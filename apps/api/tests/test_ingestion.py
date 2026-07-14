@@ -1,5 +1,6 @@
 from io import BytesIO
 
+import pytest
 from app.chunking import RecursiveTextChunker
 from app.ingestion import PIPELINE_VERSION, deterministic_id, embed_in_batches, sanitized_error
 from app.parsers import default_registry
@@ -66,14 +67,83 @@ def test_csv_parser_accepts_semicolon_delimiter() -> None:
     assert "name: beta; description: second" in parsed.text
 
 
-def test_csv_parser_repairs_malformed_unclosed_quote() -> None:
+def test_csv_parser_rejects_malformed_unmatched_quote() -> None:
+    with pytest.raises(ValueError, match="malformed CSV: unmatched quote"):
+        default_registry().parse(
+            "text/csv", b'name,description\nalpha,"broken\nbeta,second\n', "malformed.csv"
+        )
+
+
+def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
+    from app.parsers import ParsedDocument, ParsedSegment
+
+    document = ParsedDocument(
+        "first\n\nthird",
+        segments=(
+            ParsedSegment("first " * 20, {"page_number": 1}),
+            ParsedSegment("third " * 20, {"page_number": 3}),
+        ),
+    )
+    chunks = RecursiveTextChunker(size=30, overlap=5).split_document("doc", document)
+
+    assert {chunk.metadata["page_number"] for chunk in chunks} == {1, 3}
+    assert all("first" in chunk.text or "third" in chunk.text for chunk in chunks)
+    assert all(chunk.metadata["segment_count"] > 1 for chunk in chunks)
+    first_page_parts = {
+        chunk.metadata["segment_part"] for chunk in chunks if chunk.metadata["page_number"] == 1
+    }
+    assert first_page_parts == {
+        1,
+        2,
+        3,
+        4,
+        5,
+    }
+
+
+def test_csv_chunks_never_merge_records_and_long_record_keeps_location() -> None:
     parsed = default_registry().parse(
-        "text/csv", b'name,description\nalpha,"broken\nbeta,second\n', "malformed.csv"
+        "text/csv", b"name,value\na,1\nb,2\nc," + b"x" * 100 + b"\n", "rows.csv"
+    )
+    chunks = RecursiveTextChunker(size=30, overlap=5).split_document("doc", parsed)
+
+    assert [chunk.metadata["record_number"] for chunk in chunks[:2]] == [1, 2]
+    long_record = [chunk for chunk in chunks if chunk.metadata["record_number"] == 3]
+    assert len(long_record) > 1
+    assert {chunk.metadata["segment_part"] for chunk in long_record} == set(
+        range(1, len(long_record) + 1)
     )
 
-    assert parsed.metadata == {"rows": 2, "columns": ["name", "description"], "repaired": True}
-    assert "name: alpha; description: broken" in parsed.text
-    assert "name: beta; description: second" in parsed.text
+
+def test_csv_quoted_multiline_field_is_one_logical_record_and_limit_restores() -> None:
+    import csv
+
+    previous = csv.field_size_limit()
+    parsed = default_registry().parse(
+        "text/csv", b'name,description\na,"line one\nline two"\nb,plain\n', "rows.csv"
+    )
+
+    assert csv.field_size_limit() == previous
+    assert len(parsed.segments) == 2
+    assert parsed.segments[0].metadata["record_number"] == 1
+    assert "line one\nline two" in parsed.segments[0].text
+
+
+@pytest.mark.parametrize(
+    ("mime", "content"),
+    [
+        ("text/plain", b"plain text"),
+        ("text/markdown", b"# Heading\n\nBody"),
+        ("text/html", b"<h1>Title</h1><p>Body</p>"),
+    ],
+)
+def test_generic_formats_remain_single_generic_segment(mime: str, content: bytes) -> None:
+    parsed = default_registry().parse(mime, content)
+
+    chunks = RecursiveTextChunker(size=100, overlap=1).split_document("doc", parsed)
+    assert len(chunks) == 1
+    assert chunks[0].metadata["segment_part"] == 1
+    assert chunks[0].metadata["segment_count"] == 1
 
 
 def test_plain_text_csv_filename_uses_csv_parser() -> None:
@@ -114,7 +184,7 @@ def test_pdf_parser_accepts_a_real_large_pdf() -> None:
 
     assert len(content) > 8192
     parsed = default_registry().parse("application/pdf", content, "manual.pdf")
-    assert parsed.metadata == {"pages": 1}
+    assert parsed.metadata == {"pages": 1, "non_empty_pages": 0}
 
 
 def test_errors_are_bounded_and_secrets_redacted() -> None:

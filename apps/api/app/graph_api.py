@@ -20,6 +20,7 @@ from app.graph_models import (
     RelationAssertion,
     ReviewState,
 )
+from app.models import Chunk
 
 router = APIRouter(prefix="/v1", tags=["graph"])
 Project = Annotated[ProjectContext, Depends(require_project)]
@@ -50,6 +51,16 @@ class Citation(BaseModel):
     document_id: str
     chunk_id: str
     quote: str
+    source_location: dict[str, int] | None = None
+
+
+def source_location(metadata: dict[str, object]) -> dict[str, int] | None:
+    location = {
+        key: value
+        for key, value in metadata.items()
+        if key in {"page_number", "record_number", "segment_part"} and isinstance(value, int)
+    }
+    return location or None
 
 
 class EntityView(BaseModel):
@@ -174,11 +185,22 @@ async def citations(db: AsyncSession, relation_id: str) -> list[Citation]:
             GraphEvidence.document_id,
             GraphEvidence.chunk_id,
             GraphEvidence.quote,
+            Chunk.metadata_,
         )
+        .join(Chunk, Chunk.id == GraphEvidence.chunk_id)
         .where(GraphEvidence.relation_id == relation_id)
         .order_by(GraphEvidence.id)
     )
-    return [Citation(dataset_id=r[0], document_id=r[1], chunk_id=r[2], quote=r[3]) for r in rows]
+    return [
+        Citation(
+            dataset_id=r[0],
+            document_id=r[1],
+            chunk_id=r[2],
+            quote=r[3],
+            source_location=source_location(r[4]),
+        )
+        for r in rows
+    ]
 
 
 async def relation_view(db: AsyncSession, item: RelationAssertion) -> RelationView:
@@ -359,6 +381,7 @@ async def evidence(
     )
     if item is None:
         raise HTTPException(404, "evidence not found")
+    chunk = await db.get(Chunk, item.chunk_id)
     return EvidenceView(
         id=item.id,
         dataset_id=item.dataset_id,
@@ -371,6 +394,7 @@ async def evidence(
         confidence=item.confidence,
         start_offset=item.start_offset,
         end_offset=item.end_offset,
+        source_location=source_location(chunk.metadata_) if chunk else None,
     )
 
 

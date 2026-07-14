@@ -45,6 +45,17 @@ async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> Grap
         )
         db.add(job)
         db.add(GraphExtractionOutbox(job_id=job_id))
+    else:
+        job.status = GraphJobStatus.QUEUED
+        job.attempt = 0
+        job.error_message = None
+        job.next_attempt_at = datetime.now(UTC)
+        outbox = await db.get(GraphExtractionOutbox, job_id)
+        if outbox is None:
+            db.add(GraphExtractionOutbox(job_id=job_id))
+        else:
+            outbox.published_at = None
+            outbox.last_error = None
     document.graph_stage = "queued"
     return job
 
