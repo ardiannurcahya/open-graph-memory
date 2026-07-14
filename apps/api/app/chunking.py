@@ -1,6 +1,8 @@
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
+
+from app.parsers import ParsedDocument, ParsedSegment
 
 
 @dataclass(frozen=True)
@@ -11,6 +13,9 @@ class TextChunk:
     token_count: int
     start_char: int
     end_char: int
+    metadata: dict[str, object] = field(default_factory=dict)
+    segment_part: int = 1
+    segment_count: int = 1
 
 
 class Chunker(Protocol):
@@ -20,7 +25,7 @@ class Chunker(Protocol):
 
 
 class RecursiveTextChunker:
-    version = "recursive-v1"
+    version = "recursive-v2-source-aware"
 
     def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 5000) -> None:
         if size <= overlap or overlap < 0:
@@ -28,27 +33,47 @@ class RecursiveTextChunker:
         self.size, self.overlap, self.maximum = size, overlap, maximum
 
     def split(self, document_id: str, text: str) -> list[TextChunk]:
-        chunks: list[TextChunk] = []
-        start = 0
-        while start < len(text) and len(chunks) < self.maximum:
-            end = min(start + self.size, len(text))
-            if end < len(text):
-                separators = ("\n\n", "\n", ". ", " ")
-                candidates = [text.rfind(separator, start, end) for separator in separators]
-                boundary = max(candidates)
-                if boundary > start + self.size // 2:
-                    end = boundary + 1
-            value = text[start:end].strip()
-            if value:
-                index = len(chunks)
-                identity = f"{document_id}:{self.version}:{index}:{value}".encode()
-                digest = hashlib.sha256(identity).hexdigest()[:24]
-                chunks.append(
-                    TextChunk(f"chunk_{digest}", index, value, len(value.split()), start, end)
+        return self._split_segments(document_id, (ParsedSegment(text),))
+
+    def split_document(self, document_id: str, document: ParsedDocument) -> list[TextChunk]:
+        return self._split_segments(document_id, document.segments or (ParsedSegment(document.text),))
+
+    def _split_segments(self, document_id: str, segments: tuple[ParsedSegment, ...]) -> list[TextChunk]:
+        drafts: list[tuple[str, int, int, dict[str, object]]] = []
+        for segment in segments:
+            text = segment.text
+            start = 0
+            segment_drafts: list[tuple[str, int, int, dict[str, object]]] = []
+            while start < len(text):
+                if len(drafts) + len(segment_drafts) >= self.maximum:
+                    raise ValueError("document exceeds maximum chunk count")
+                end = min(start + self.size, len(text))
+                if end < len(text):
+                    boundary = max(text.rfind(separator, start, end) for separator in ("\n\n", "\n", ". ", " "))
+                    if boundary > start + self.size // 2:
+                        end = boundary + 1
+                value = text[start:end].strip()
+                if value:
+                    segment_drafts.append((value, start, end, segment.metadata))
+                if end == len(text):
+                    break
+                start = max(start + 1, end - self.overlap)
+            count = len(segment_drafts)
+            drafts.extend((text, start, end, {**metadata, "segment_part": part, "segment_count": count}) for part, (text, start, end, metadata) in enumerate(segment_drafts, 1))
+        chunks = []
+        for index, (value, start, end, metadata) in enumerate(drafts):
+            identity = f"{document_id}:{self.version}:{index}:{value}".encode()
+            chunks.append(
+                TextChunk(
+                    f"chunk_{hashlib.sha256(identity).hexdigest()[:24]}",
+                    index,
+                    value,
+                    len(value.split()),
+                    start,
+                    end,
+                    metadata,
+                    metadata["segment_part"],  # type: ignore[arg-type]
+                    metadata["segment_count"],  # type: ignore[arg-type]
                 )
-            if end == len(text):
-                break
-            start = max(start + 1, end - self.overlap)
-        if start < len(text) and len(chunks) >= self.maximum:
-            raise ValueError("document exceeds maximum chunk count")
+            )
         return chunks

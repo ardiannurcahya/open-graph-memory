@@ -29,7 +29,7 @@ from app.providers import EmbeddingProvider
 from app.storage import ObjectStore, get_object_store
 from app.vector_store import VectorPoint, VectorStore
 
-PIPELINE_VERSION = "ingestion-v1:parser-v1:recursive-v1:embedding-v1"
+PIPELINE_VERSION = "ingestion-v2:parser-v2:recursive-v2-source-aware:embedding-v1"
 EMBEDDING_BATCH_SIZE = 64
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
@@ -162,7 +162,7 @@ async def run_ingestion(
             document.status = DocumentStatus.CHUNKING
             await _stage(db, job, IndexingStage.CHUNKING)
             chunker = RecursiveTextChunker()
-            chunks = await asyncio.to_thread(chunker.split, document.id, parsed.text)
+            chunks = await asyncio.to_thread(chunker.split_document, document.id, parsed)
 
             runtime_model = embedding_model
             if embeddings is None or vectors is None or runtime_model is None:
@@ -191,6 +191,13 @@ async def run_ingestion(
                     document_id=document.id,
                     text=item.text,
                     pipeline_version=PIPELINE_VERSION,
+                    metadata={
+                        "start_char": item.start_char,
+                        "end_char": item.end_char,
+                        "parser": "parser-v2",
+                        "chunker": chunker.version,
+                        **item.metadata,
+                    },
                 )
                 for item, vector in zip(chunks, embedded, strict=True)
             ]
@@ -218,7 +225,9 @@ async def run_ingestion(
                         metadata_={
                             "start_char": item.start_char,
                             "end_char": item.end_char,
-                            "parser": "parser-v1",
+                            "parser": "parser-v2",
+                            "chunker": chunker.version,
+                            **item.metadata,
                             **parsed.metadata,
                         },
                     )

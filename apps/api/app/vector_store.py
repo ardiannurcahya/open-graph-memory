@@ -13,6 +13,7 @@ class VectorPoint:
     document_id: str
     text: str
     pipeline_version: str
+    metadata: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class QdrantVectorStore:
                         "document_id": p.document_id,
                         "text": p.text,
                         "pipeline_version": p.pipeline_version,
+                        **p.metadata,
                     },
                 )
                 for p in points
