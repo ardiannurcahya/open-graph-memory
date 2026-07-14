@@ -45,6 +45,37 @@ def test_csv_parser_accepts_large_field() -> None:
     assert f"description: {large_value}" in parsed.text
 
 
+def test_csv_parser_accepts_quoted_newline_field() -> None:
+    parsed = default_registry().parse(
+        "text/csv",
+        b'name,description\r\nalpha,"line one\r\nline two"\r\n',
+        "quoted.csv",
+    )
+
+    assert parsed.metadata == {"rows": 1, "columns": ["name", "description"]}
+    assert "name: alpha; description: line one\r\nline two" in parsed.text
+
+
+def test_csv_parser_accepts_semicolon_delimiter() -> None:
+    parsed = default_registry().parse(
+        "text/csv", b"name;description\nalpha;first\nbeta;second\n", "semicolon.csv"
+    )
+
+    assert parsed.metadata == {"rows": 2, "columns": ["name", "description"]}
+    assert "name: alpha; description: first" in parsed.text
+    assert "name: beta; description: second" in parsed.text
+
+
+def test_csv_parser_repairs_malformed_unclosed_quote() -> None:
+    parsed = default_registry().parse(
+        "text/csv", b'name,description\nalpha,"broken\nbeta,second\n', "malformed.csv"
+    )
+
+    assert parsed.metadata == {"rows": 2, "columns": ["name", "description"], "repaired": True}
+    assert "name: alpha; description: broken" in parsed.text
+    assert "name: beta; description: second" in parsed.text
+
+
 def test_plain_text_csv_filename_uses_csv_parser() -> None:
     parsed = default_registry().parse("text/plain", b"name,value\nalpha,1\n", "rows.csv")
 
