@@ -35,11 +35,11 @@ describe("knowledge graph layout", () => {
   });
 
   it("uses stable bounded node sizes", () => {
-    expect(knowledgeNodeSize(0)).toBe(76);
-    expect(knowledgeNodeSize(1)).toBe(83);
-    expect(knowledgeNodeSize(5)).toBe(111);
-    expect(knowledgeNodeSize(6)).toBe(116);
-    expect(knowledgeNodeSize(100)).toBe(116);
+    expect(knowledgeNodeSize(0)).toBe(64);
+    expect(knowledgeNodeSize(1)).toBe(82);
+    expect(knowledgeNodeSize(5)).toBeCloseTo(104.25, 2);
+    expect(knowledgeNodeSize(6)).toBeCloseTo(108.09, 2);
+    expect(knowledgeNodeSize(100)).toBe(172);
   });
 
   it("produces deterministic positions", () => {
@@ -50,7 +50,7 @@ describe("knowledge graph layout", () => {
     expect(layoutKnowledgeNodes(nodes, false)).toEqual(layoutKnowledgeNodes(nodes, false));
   });
 
-  it("groups nodes into stable typed bubbles", () => {
+  it("packs degree-sized bubbles without group wrappers", () => {
     const nodes = [
       { id: "person", data: { degree: 4, entityType: "Person", color: "#8b9cff" } },
       { id: "skill", data: { degree: 2, entityType: "Skill", color: "#55d6be" } },
@@ -60,10 +60,10 @@ describe("knowledge graph layout", () => {
     const layout = layoutKnowledgeBubbles(nodes);
 
     expect(layout.nodes).toHaveLength(3);
-    expect(layout.bubbles.map((bubble) => [bubble.label, bubble.count])).toEqual([
-      ["Person", 1],
-      ["Skill", 2],
-    ]);
-    expect(layout.bubbles.every((bubble) => bubble.width > 0 && bubble.height > 0)).toBe(true);
+    expect(layout.bubbles).toEqual([]);
+    expect(layout.nodes[0].id).toBe("person");
+    expect(knowledgeNodeSize(layout.nodes[0].data.degree)).toBeGreaterThan(
+      knowledgeNodeSize(layout.nodes[1].data.degree),
+    );
   });
 });

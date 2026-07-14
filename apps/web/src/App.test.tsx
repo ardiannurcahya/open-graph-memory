@@ -22,6 +22,7 @@ function jsonResponse(data: unknown, ok = true, status = 200) {
   return {
     ok,
     status,
+    headers: new Headers({ "content-type": "application/json" }),
     json: async () => data,
   };
 }
@@ -33,7 +34,7 @@ function mockFetch(impl: (url: string, init?: RequestInit) => unknown): Mock {
       return jsonResponse({ detail: data.message }, false, data.status);
     }
     if (init?.method === "DELETE") {
-      return { ok: true, status: 204, json: async () => ({}) };
+      return { ok: true, status: 204, headers: new Headers(), json: async () => ({}) };
     }
     return jsonResponse(data);
   });
@@ -128,6 +129,25 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Invalid project API key");
+    });
+  });
+
+  it("shows a clear error when /api returns HTML instead of JSON", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "text/html" }),
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    connect();
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("API returned HTML instead of JSON");
     });
   });
 

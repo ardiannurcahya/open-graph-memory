@@ -49,8 +49,9 @@ export function createApiClient(opts: ClientOptions) {
       ...init,
       headers: { ...headers(init.body), ...init.headers },
     });
+    const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
+      const body = contentType.includes("application/json") ? await response.json().catch(() => ({})) : {};
       const detail =
         typeof body.detail === "string"
           ? body.detail
@@ -59,7 +60,11 @@ export function createApiClient(opts: ClientOptions) {
             : `Request failed (${response.status})`;
       throw new ApiError(detail, response.status);
     }
-    return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+    if (response.status === 204) return undefined as T;
+    if (!contentType.includes("application/json")) {
+      throw new ApiError("API returned HTML instead of JSON. Check that the web proxy is routing /api to the backend.", 502);
+    }
+    return (await response.json()) as T;
   }
 
   async function streamQuery(input: QueryRequest, onEvent: (event: QueryStreamEvent) => void) {
@@ -69,7 +74,8 @@ export function createApiClient(opts: ClientOptions) {
       headers: headers(JSON.stringify(input)),
     });
     if (!response.ok || !response.body) {
-      const body = await response?.json?.().catch(() => ({}));
+      const contentType = response.headers.get("content-type") ?? "";
+      const body = contentType.includes("application/json") ? await response?.json?.().catch(() => ({})) : {};
       throw new ApiError(typeof body.detail === "string" ? body.detail : "Streaming query failed", response.status);
     }
     const reader = response.body.getReader();

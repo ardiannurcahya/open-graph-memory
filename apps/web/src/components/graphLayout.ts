@@ -2,14 +2,12 @@ export const KNOWLEDGE_NODE_GAP = 16;
 
 const CENTER_X = 450;
 const CENTER_Y = 260;
-const MAX_NODE_SIZE = 116;
-const FIRST_RING_RADIUS = 150;
-const RING_STEP = MAX_NODE_SIZE + KNOWLEDGE_NODE_GAP;
-const BUBBLE_CELL_WIDTH = 420;
-const BUBBLE_CELL_HEIGHT = 340;
-const BUBBLE_PADDING = 72;
+const MIN_NODE_SIZE = 64;
+const MAX_NODE_SIZE = 172;
+const PACKING_STEP = 8;
 
 interface LayoutNode {
+  id?: unknown;
   data: { degree: number; entityType?: string; color?: string };
 }
 
@@ -24,98 +22,82 @@ export interface KnowledgeBubble {
 }
 
 export function knowledgeNodeSize(degree: number): number {
-  return Math.min(MAX_NODE_SIZE, 76 + degree * 7);
+  const safeDegree = Math.max(0, degree);
+  return Math.min(MAX_NODE_SIZE, MIN_NODE_SIZE + Math.sqrt(safeDegree) * 18);
 }
 
-function ringCapacity(radius: number): number {
-  const ratio = RING_STEP / (2 * radius);
-  if (ratio >= 1) return 1;
-  return Math.max(1, Math.floor(Math.PI / Math.asin(ratio)));
+function centerOf<T extends LayoutNode>(node: T & { position: { x: number; y: number } }) {
+  const size = knowledgeNodeSize(node.data.degree);
+  return { x: node.position.x + size / 2, y: node.position.y + size / 2, radius: size / 2 };
+}
+
+function overlaps<T extends LayoutNode>(
+  candidate: { x: number; y: number; radius: number },
+  placed: Array<T & { position: { x: number; y: number } }>,
+): boolean {
+  return placed.some((node) => {
+    const other = centerOf(node);
+    return Math.hypot(candidate.x - other.x, candidate.y - other.y) <
+      candidate.radius + other.radius + KNOWLEDGE_NODE_GAP;
+  });
+}
+
+function packedPosition<T extends LayoutNode>(
+  node: T,
+  placed: Array<T & { position: { x: number; y: number } }>,
+): { x: number; y: number } {
+  const size = knowledgeNodeSize(node.data.degree);
+  const radius = size / 2;
+  if (placed.length === 0) return { x: CENTER_X - radius, y: CENTER_Y - radius };
+
+  let searchRadius = PACKING_STEP;
+  while (searchRadius < 5000) {
+    const slots = Math.max(12, Math.ceil((Math.PI * 2 * searchRadius) / PACKING_STEP));
+    for (let slot = 0; slot < slots; slot += 1) {
+      const angle = (slot / slots) * Math.PI * 2 + placed.length * 0.61;
+      const candidate = {
+        x: CENTER_X + Math.cos(angle) * searchRadius,
+        y: CENTER_Y + Math.sin(angle) * searchRadius,
+        radius,
+      };
+      if (!overlaps(candidate, placed)) return { x: candidate.x - radius, y: candidate.y - radius };
+    }
+    searchRadius += PACKING_STEP;
+  }
+
+  return { x: CENTER_X - radius, y: CENTER_Y - radius };
+}
+
+function recenter<T extends LayoutNode>(
+  nodes: Array<T & { position: { x: number; y: number } }>,
+): Array<T & { position: { x: number; y: number } }> {
+  if (nodes.length === 0) return [];
+  const minX = Math.min(...nodes.map((node) => node.position.x));
+  const minY = Math.min(...nodes.map((node) => node.position.y));
+  const maxX = Math.max(...nodes.map((node) => node.position.x + knowledgeNodeSize(node.data.degree)));
+  const maxY = Math.max(...nodes.map((node) => node.position.y + knowledgeNodeSize(node.data.degree)));
+  const dx = CENTER_X - (minX + maxX) / 2;
+  const dy = CENTER_Y - (minY + maxY) / 2;
+  return nodes.map((node) => ({
+    ...node,
+    position: { x: node.position.x + dx, y: node.position.y + dy },
+  }));
 }
 
 export function layoutKnowledgeNodes<T extends LayoutNode>(
   nodes: T[],
   hasHub: boolean,
 ): Array<T & { position: { x: number; y: number } }> {
+  void hasHub;
   if (nodes.length === 0) return [];
 
   const positioned: Array<T & { position: { x: number; y: number } }> = [];
-  let offset = 0;
-  if (hasHub) {
-    const hub = nodes[0];
-    const size = knowledgeNodeSize(hub.data.degree);
-    positioned.push({
-      ...hub,
-      position: { x: CENTER_X - size / 2, y: CENTER_Y - size / 2 },
-    });
-    offset = 1;
+  const sortedNodes = [...nodes].sort((a, b) => b.data.degree - a.data.degree || String(a.id).localeCompare(String(b.id)));
+  for (const node of sortedNodes) {
+    positioned.push({ ...node, position: packedPosition(node, positioned) });
   }
 
-  let radius = FIRST_RING_RADIUS;
-  while (offset < nodes.length) {
-    const count = Math.min(ringCapacity(radius), nodes.length - offset);
-    for (let slot = 0; slot < count; slot += 1) {
-      const node = nodes[offset + slot];
-      const size = knowledgeNodeSize(node.data.degree);
-      const angle = (slot / count) * Math.PI * 2 - Math.PI / 2;
-      positioned.push({
-        ...node,
-        position: {
-          x: CENTER_X + Math.cos(angle) * radius - size / 2,
-          y: CENTER_Y + Math.sin(angle) * radius - size / 2,
-        },
-      });
-    }
-    offset += count;
-    radius += RING_STEP;
-  }
-
-  return positioned;
-}
-
-
-function clusterCenter(index: number, total: number): { x: number; y: number } {
-  if (total <= 1) return { x: CENTER_X, y: CENTER_Y };
-  const columns = Math.ceil(Math.sqrt(total));
-  const row = Math.floor(index / columns);
-  const column = index % columns;
-  const rows = Math.ceil(total / columns);
-  return {
-    x: CENTER_X + (column - (columns - 1) / 2) * BUBBLE_CELL_WIDTH,
-    y: CENTER_Y + (row - (rows - 1) / 2) * BUBBLE_CELL_HEIGHT,
-  };
-}
-
-
-function layoutCluster<T extends LayoutNode>(
-  nodes: T[],
-  center: { x: number; y: number },
-): Array<T & { position: { x: number; y: number } }> {
-  const positioned: Array<T & { position: { x: number; y: number } }> = [];
-  if (nodes.length === 1) {
-    const size = knowledgeNodeSize(nodes[0].data.degree);
-    return [{ ...nodes[0], position: { x: center.x - size / 2, y: center.y - size / 2 } }];
-  }
-  let offset = 0;
-  let radius = Math.max(96, Math.min(170, 62 + nodes.length * 10));
-  while (offset < nodes.length) {
-    const count = Math.min(ringCapacity(radius), nodes.length - offset);
-    for (let slot = 0; slot < count; slot += 1) {
-      const node = nodes[offset + slot];
-      const size = knowledgeNodeSize(node.data.degree);
-      const angle = (slot / count) * Math.PI * 2 - Math.PI / 2;
-      positioned.push({
-        ...node,
-        position: {
-          x: center.x + Math.cos(angle) * radius - size / 2,
-          y: center.y + Math.sin(angle) * radius - size / 2,
-        },
-      });
-    }
-    offset += count;
-    radius += RING_STEP;
-  }
-  return positioned;
+  return recenter(positioned);
 }
 
 
@@ -123,42 +105,5 @@ export function layoutKnowledgeBubbles<T extends LayoutNode>(nodes: T[]): {
   nodes: Array<T & { position: { x: number; y: number } }>;
   bubbles: KnowledgeBubble[];
 } {
-  const groups = new Map<string, T[]>();
-  for (const node of nodes) {
-    const key = node.data.entityType || "Other";
-    groups.set(key, [...(groups.get(key) ?? []), node]);
-  }
-  const orderedGroups = [...groups.entries()].sort(
-    ([aType, aNodes], [bType, bNodes]) =>
-      bNodes.reduce((sum, node) => sum + node.data.degree, 0) -
-        aNodes.reduce((sum, node) => sum + node.data.degree, 0) || aType.localeCompare(bType),
-  );
-  const positionedNodes: Array<T & { position: { x: number; y: number } }> = [];
-  const bubbles: KnowledgeBubble[] = [];
-  for (const [index, [type, clusterNodes]] of orderedGroups.entries()) {
-    const center = clusterCenter(index, orderedGroups.length);
-    const sortedNodes = [...clusterNodes].sort(
-      (a, b) => b.data.degree - a.data.degree || String(type).localeCompare(type),
-    );
-    const placed = layoutCluster(sortedNodes, center);
-    positionedNodes.push(...placed);
-    const minX = Math.min(...placed.map((node) => node.position.x));
-    const minY = Math.min(...placed.map((node) => node.position.y));
-    const maxX = Math.max(
-      ...placed.map((node) => node.position.x + knowledgeNodeSize(node.data.degree)),
-    );
-    const maxY = Math.max(
-      ...placed.map((node) => node.position.y + knowledgeNodeSize(node.data.degree)),
-    );
-    bubbles.push({
-      id: `bubble-${type}`,
-      label: type,
-      count: clusterNodes.length,
-      color: clusterNodes[0]?.data.color || "#55d6be",
-      position: { x: minX - BUBBLE_PADDING, y: minY - BUBBLE_PADDING },
-      width: maxX - minX + BUBBLE_PADDING * 2,
-      height: maxY - minY + BUBBLE_PADDING * 2,
-    });
-  }
-  return { nodes: positionedNodes, bubbles };
+  return { nodes: layoutKnowledgeNodes(nodes, false), bubbles: [] };
 }

@@ -32,14 +32,6 @@ interface KnowledgeNodeData extends Record<string, unknown> {
 
 type KnowledgeNode = Node<KnowledgeNodeData, "knowledge">;
 
-interface BubbleNodeData extends Record<string, unknown> {
-  label: string;
-  count: number;
-  color: string;
-}
-
-type BubbleNode = Node<BubbleNodeData, "bubble">;
-
 const TYPE_COLORS = ["#55d6be", "#8b9cff", "#f0b35a", "#d98cff", "#58b8f5", "#ef7d8f"];
 const SEMANTIC_COLORS: Record<string, string> = {
   person: "#8b9cff",
@@ -72,34 +64,13 @@ function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
       title={`${data.label} · ${data.entityType} · ${Math.round(data.confidence * 100)}% confidence`}
     >
       <Handle type="target" position={Position.Top} className="knowledge-handle" />
-      <span className="knowledge-node-type" style={{ color: data.color }}>
-        {data.entityType}
-      </span>
       <strong>{data.label}</strong>
-      <span className="knowledge-node-degree">
-        {data.degree} {data.degree === 1 ? "link" : "links"}
-      </span>
       <Handle type="source" position={Position.Bottom} className="knowledge-handle" />
     </div>
   );
 }
 
-function BubbleNodeView({ data }: NodeProps<BubbleNode>) {
-  return (
-    <div
-      className="knowledge-bubble"
-      style={{
-        borderColor: data.color,
-        background: `radial-gradient(circle at 35% 30%, ${data.color}24, ${data.color}08 62%, transparent 78%)`,
-      }}
-    >
-      <span style={{ color: data.color }}>{data.label}</span>
-      <strong>{data.count}</strong>
-    </div>
-  );
-}
-
-const nodeTypes = { knowledge: KnowledgeNodeView, bubble: BubbleNodeView };
+const nodeTypes = { knowledge: KnowledgeNodeView };
 
 export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
   const { nodes, edges, legend } = useMemo(() => {
@@ -129,16 +100,7 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
         draggable: true,
       })),
     );
-    const bubbleNodes: BubbleNode[] = layout.bubbles.map((bubble) => ({
-      id: bubble.id,
-      type: "bubble",
-      data: { label: bubble.label, count: bubble.count, color: bubble.color },
-      position: bubble.position,
-      style: { width: bubble.width, height: bubble.height, zIndex: -1, pointerEvents: "none" },
-      selectable: false,
-      draggable: false,
-    }));
-    const flowNodes: Array<KnowledgeNode | BubbleNode> = [...bubbleNodes, ...layout.nodes];
+    const flowNodes: KnowledgeNode[] = layout.nodes;
 
     const flowEdges: Edge[] = (graph?.relations ?? [])
       .filter((relation) => nodeIds.has(relation.source_entity_id) && nodeIds.has(relation.target_entity_id))
