@@ -65,5 +65,6 @@ jobs:
       - run: uv sync --frozen --group dev
       - run: uv run pip install pip-audit==2.7.3
       - run: uv run pip-audit
-      - uses: aquasecurity/trivy-action@0.29.0
+      # Pin immutable commit; hosted runners intermittently fail resolving mutable release tags.
+      - uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
         with: {scan-type: fs, scan-ref: ., severity: "CRITICAL,HIGH", exit-code: "1", ignore-unfixed: true}
