@@ -14,9 +14,16 @@ CSV_DELIMITERS = (",", ";", "\t", "|")
 
 
 @dataclass(frozen=True)
+class ParsedSegment:
+    text: str
+    metadata: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ParsedDocument:
     text: str
     metadata: dict[str, object] = field(default_factory=dict)
+    segments: tuple[ParsedSegment, ...] = ()
 
 
 class Parser(Protocol):
@@ -29,8 +36,7 @@ class TextParser:
     mime_types: tuple[str, ...] = ("text/plain",)
 
     def parse(self, content: bytes) -> ParsedDocument:
-        text = content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip()
-        return ParsedDocument(text)
+        return ParsedDocument(content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip())
 
 
 class CsvParser:
@@ -38,22 +44,23 @@ class CsvParser:
 
     def parse(self, content: bytes) -> ParsedDocument:
         previous_limit = csv.field_size_limit()
-        if previous_limit < CSV_FIELD_SIZE_LIMIT:
-            csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
-        text = content.decode("utf-8-sig", errors="replace")
-        if text.count('"') % 2:
-            return fallback_csv_parse(text)
         try:
-            dialect = csv.Sniffer().sniff(
-                text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS)
-            )
-        except csv.Error:
-            dialect = csv.excel
-        try:
-            rows = list(csv.reader(io.StringIO(text, newline=""), dialect))
-        except csv.Error:
-            return fallback_csv_parse(text)
-        return rows_to_document(rows)
+            if previous_limit < CSV_FIELD_SIZE_LIMIT:
+                csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
+            text = content.decode("utf-8-sig", errors="replace")
+            if text.count('"') % 2:
+                raise ValueError("malformed CSV: unmatched quote")
+            try:
+                dialect = csv.Sniffer().sniff(text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS))
+            except csv.Error:
+                dialect = csv.excel
+            try:
+                rows = list(csv.reader(io.StringIO(text, newline=""), dialect, strict=True))
+            except csv.Error as exc:
+                raise ValueError(f"malformed CSV: {exc}") from exc
+            return rows_to_document(rows)
+        finally:
+            csv.field_size_limit(previous_limit)
 
 
 def rows_to_document(rows: list[list[str]]) -> ParsedDocument:
@@ -61,30 +68,18 @@ def rows_to_document(rows: list[list[str]]) -> ParsedDocument:
     if not rows:
         return ParsedDocument("")
     header, *body = rows
-    lines = [format_csv_row(header, row) for row in body]
-    return ParsedDocument("\n".join(lines), {"rows": len(body), "columns": header})
-
-
-def fallback_csv_parse(text: str) -> ParsedDocument:
-    source_lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not source_lines:
-        return ParsedDocument("")
-    delimiter = max(CSV_DELIMITERS, key=lambda item: source_lines[0].count(item))
-    header = [value.strip().strip('"') for value in source_lines[0].split(delimiter)]
-    rows = []
-    for line in source_lines[1:]:
-        values = [value.strip().strip('"') for value in line.split(delimiter)]
-        rows.append(normalize_csv_row(header, values))
-    lines = [format_csv_row(header, row) for row in rows]
-    return ParsedDocument(
-        "\n".join(lines), {"rows": len(rows), "columns": header, "repaired": True}
+    segments = tuple(
+        ParsedSegment(
+            format_csv_row(header, row),
+            {
+                "record_number": record_number,
+                "columns": header,
+                "values": {key: value for key, value in zip(header, row, strict=False)},
+            },
+        )
+        for record_number, row in enumerate(body, 1)
     )
-
-
-def normalize_csv_row(header: list[str], row: list[str]) -> list[str]:
-    if len(row) <= len(header):
-        return row
-    return [*row[: len(header) - 1], " ".join(row[len(header) - 1 :])]
+    return ParsedDocument("\n".join(segment.text for segment in segments), {"rows": len(body), "columns": header}, segments)
 
 
 def format_csv_row(header: list[str], row: list[str]) -> str:
@@ -95,8 +90,7 @@ class MarkdownParser:
     mime_types: tuple[str, ...] = ("text/markdown",)
 
     def parse(self, content: bytes) -> ParsedDocument:
-        source = content.decode("utf-8")
-        html = MarkdownIt().render(source)
+        html = MarkdownIt().render(content.decode("utf-8"))
         return ParsedDocument(BeautifulSoup(html, "lxml").get_text("\n", strip=True))
 
 
@@ -117,7 +111,16 @@ class PdfParser:
     def parse(self, content: bytes) -> ParsedDocument:
         reader = PdfReader(io.BytesIO(content))
         pages = [page.extract_text() or "" for page in reader.pages]
-        return ParsedDocument("\n\n".join(pages).strip(), {"pages": len(pages)})
+        segments = tuple(
+            ParsedSegment(text.strip(), {"page_number": page_number})
+            for page_number, text in enumerate(pages, 1)
+            if text.strip()
+        )
+        return ParsedDocument(
+            "\n\n".join(segment.text for segment in segments),
+            {"pages": len(pages), "non_empty_pages": len(segments)},
+            segments,
+        )
 
 
 class ParserRegistry:
@@ -137,7 +140,11 @@ class ParserRegistry:
         if parser is None:
             raise ValueError(f"unsupported MIME type: {mime_type}")
         parsed = parser.parse(content)
-        return ParsedDocument(re.sub(r"\n{3,}", "\n\n", parsed.text), parsed.metadata)
+        return ParsedDocument(
+            re.sub(r"\n{3,}", "\n\n", parsed.text),
+            parsed.metadata,
+            tuple(ParsedSegment(re.sub(r"\n{3,}", "\n\n", segment.text), segment.metadata) for segment in parsed.segments),
+        )
 
 
 def default_registry() -> ParserRegistry:
