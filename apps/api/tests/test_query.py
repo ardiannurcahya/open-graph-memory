@@ -33,6 +33,26 @@ def test_build_context_keeps_evidence_blocks_and_citation_indexes_aligned() -> N
     assert context.index("[1]") < context.index("[2]")
 
 
+def test_build_context_includes_source_location_when_present() -> None:
+    context = build_context(
+        [
+            VectorHit(
+                "chunk",
+                0.9,
+                {
+                    "document_id": "doc",
+                    "text": "Evidence",
+                    "page_number": 2,
+                    "record_number": 4,
+                    "segment_part": 3,
+                },
+            )
+        ]
+    )
+
+    assert "source={'page_number': 2, 'record_number': 4, 'segment_part': 3}" in context
+
+
 def test_stream_helpers_emit_sse_and_token_segments() -> None:
     assert stream_event("status", {"stage": "retrieving"}) == (
         'event: status\ndata: {"stage":"retrieving"}\n\n'

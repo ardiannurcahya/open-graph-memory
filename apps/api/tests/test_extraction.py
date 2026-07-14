@@ -126,7 +126,7 @@ def test_deterministic_extractor_falls_back_to_heuristic_entities() -> None:
         "PostgreSQL",
         "Docker",
     }
-    assert result.relations
+    assert result.relations == []
 
 
 def test_openai_extractor_falls_back_when_provider_response_is_not_json(monkeypatch) -> None:

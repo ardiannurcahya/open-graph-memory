@@ -155,11 +155,19 @@ function renderInline(text: string) {
 }
 
 function CitationCard({ citation }: { citation: Citation }) {
+  const location = citation.source_location;
+  const locationLabel = [
+    location?.page_number !== undefined && `Page ${location.page_number}`,
+    location?.record_number !== undefined && `Record ${location.record_number}`,
+    location?.segment_part !== undefined && `Part ${location.segment_part}`,
+  ].filter(Boolean).join(" · ");
+
   return (
     <details className="citation">
       <summary className="citation-summary">
         <span className="citation-index">[{citation.index}]</span>
         <span className="citation-doc">{citation.document_id.slice(0, 16)}</span>
+        {locationLabel && <span className="citation-location">{locationLabel}</span>}
         <span className="citation-score">{citation.score.toFixed(4)}</span>
       </summary>
       <div className="citation-body">

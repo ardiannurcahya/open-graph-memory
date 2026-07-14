@@ -1,10 +1,17 @@
 from types import SimpleNamespace
 
-from app.graph_api import low_signal_entity, rank_graph_entities
+from app.graph_api import low_signal_entity, rank_graph_entities, source_location
 
 
 def entity(row_id: str, name: str, entity_type: str) -> SimpleNamespace:
     return SimpleNamespace(id=row_id, canonical_name=name, entity_type=entity_type)
+
+
+def test_graph_evidence_source_location_keeps_known_integer_fields_only() -> None:
+    assert source_location(
+        {"page_number": 2, "record_number": 4, "segment_part": 3, "untrusted": "drop"}
+    ) == {"page_number": 2, "record_number": 4, "segment_part": 3}
+    assert source_location({"page_number": "2"}) is None
 
 
 def test_low_signal_entity_filters_numeric_dates_and_identifiers() -> None:

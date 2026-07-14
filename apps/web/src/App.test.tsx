@@ -228,7 +228,14 @@ describe("App", () => {
         return {
           answer: "The answer is [1] based on the evidence.",
           citations: [
-            { index: 1, chunk_id: "chk_1", document_id: "doc_1", score: 0.95, text: "Evidence text here." },
+            {
+              index: 1,
+              chunk_id: "chk_1",
+              document_id: "doc_1",
+              score: 0.95,
+              text: "Evidence text here.",
+              source_location: { page_number: 2, record_number: 4, segment_part: 3 },
+            },
           ],
           retrieval_trace: {
             trace_id: "abc12345",
@@ -260,6 +267,7 @@ describe("App", () => {
       expect(screen.getAllByText((_, node) => node?.textContent === "The answer is [1] based on the evidence.").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Evidence text here.")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 · Record 4 · Part 3")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/v1/query"),
       expect.objectContaining({ method: "POST" }),

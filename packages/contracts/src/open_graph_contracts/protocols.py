@@ -12,6 +12,7 @@ duplication.  Protocols reference them via type hints only.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -41,6 +42,8 @@ class ChatProvider(Protocol):
     name: str
 
     async def chat(self, messages: list[dict[str, str]], model: str) -> ChatResult: ...
+
+    def stream_chat(self, messages: list[dict[str, str]], model: str) -> AsyncIterator[str]: ...
 
 
 @runtime_checkable

@@ -213,16 +213,6 @@ class DeterministicExtractor:
                 if len(found) >= 24:
                     break
         entities = sorted(found.values(), key=lambda e: (normalize_name(e.name), e.type))
-        if not relations and len(entities) > 1:
-            relations = [
-                Relation(
-                    source=entities[index].name,
-                    type="CO_OCCURS_WITH",
-                    target=entities[index + 1].name,
-                    confidence=0.45,
-                )
-                for index in range(min(len(entities) - 1, 12))
-            ]
         return Extraction(
             entities=entities,
             relations=sorted(

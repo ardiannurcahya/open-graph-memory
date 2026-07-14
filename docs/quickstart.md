@@ -17,7 +17,7 @@ After documents reach `indexed`, the durable graph job moves `graph_stage` from 
 
 ## Dashboard, SDK, plugins, and memory
 
-Dashboard at `http://localhost:3000` covers upload, datasets, query modes, citations, graph paths, and traces; see [dashboard](dashboard.md). Python SDK usage lives in [SDK docs](sdk-python.md). Provider boundaries and conformance tests live in [plugin docs](plugin-system.md). Agent Memory Preview API, scope/lifecycle, query personalization, and evaluator live in [memory docs](agent-memory-preview.md).
+Dashboard at `http://localhost:3000` covers upload, datasets, query modes, citations, graph paths, and traces; citations show available `Page N`, `Record N`, and `Part N` source locations. See [dashboard](dashboard.md). Python SDK usage lives in [SDK docs](sdk-python.md). Provider boundaries and conformance tests live in [plugin docs](plugin-system.md). Agent Memory Preview API, scope/lifecycle, query personalization, and evaluator live in [memory docs](agent-memory-preview.md).
 
 ```sh
 uv run python evaluation/memory_evaluator.py

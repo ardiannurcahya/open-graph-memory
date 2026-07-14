@@ -61,6 +61,16 @@ class SlowExtractor:
         return Extraction(entities=[Entity(name=text, type="Entity", confidence=1)], relations=[])
 
 
+class RecordingDeterministicExtractor:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.extractor = DeterministicExtractor()
+
+    def extract(self, text: str) -> Extraction:
+        self.calls.append(text)
+        return self.extractor.extract(text)
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.rows: dict[tuple[type[object], str], object] = {}
@@ -192,6 +202,37 @@ async def test_extract_chunks_respects_parallelism() -> None:
 
     assert [item.chunk.id for item in results] == ["chunk-0", "chunk-1", "chunk-2", "chunk-3"]
     assert extractor.max_active == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("location_key", "location_values"),
+    [("record_number", (1, 2)), ("page_number", (1, 2))],
+)
+async def test_source_segments_get_isolated_extractor_calls_without_cross_segment_relations(
+    location_key: str, location_values: tuple[int, int]
+) -> None:
+    project_id = uuid4()
+    chunks = [
+        Chunk(
+            id=f"chunk-{location}",
+            project_id=project_id,
+            dataset_id="dataset-a",
+            document_id="doc",
+            chunk_index=index,
+            text=f"{name} [Person]",
+            metadata_={location_key: location, "segment_part": 1},
+        )
+        for index, (location, name) in enumerate(
+            zip(location_values, ("Alice", "Bob"), strict=True)
+        )
+    ]
+    extractor = RecordingDeterministicExtractor()
+
+    results = await _extract_chunks(chunks, extractor, parallelism=1)
+
+    assert extractor.calls == ["Alice [Person]", "Bob [Person]"]
+    assert [result.extraction.relations for result in results] == [[], []]
 
 
 @pytest.mark.asyncio
