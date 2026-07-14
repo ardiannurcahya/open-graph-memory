@@ -36,7 +36,9 @@ class TextParser:
     mime_types: tuple[str, ...] = ("text/plain",)
 
     def parse(self, content: bytes) -> ParsedDocument:
-        return ParsedDocument(content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip())
+        return ParsedDocument(
+            content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip()
+        )
 
 
 class CsvParser:
@@ -51,7 +53,9 @@ class CsvParser:
             if text.count('"') % 2:
                 raise ValueError("malformed CSV: unmatched quote")
             try:
-                dialect = csv.Sniffer().sniff(text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS))
+                dialect = csv.Sniffer().sniff(
+                    text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS)
+                )
             except csv.Error:
                 dialect = csv.excel
             try:
@@ -79,7 +83,11 @@ def rows_to_document(rows: list[list[str]]) -> ParsedDocument:
         )
         for record_number, row in enumerate(body, 1)
     )
-    return ParsedDocument("\n".join(segment.text for segment in segments), {"rows": len(body), "columns": header}, segments)
+    return ParsedDocument(
+        "\n".join(segment.text for segment in segments),
+        {"rows": len(body), "columns": header},
+        segments,
+    )
 
 
 def format_csv_row(header: list[str], row: list[str]) -> str:
@@ -143,7 +151,10 @@ class ParserRegistry:
         return ParsedDocument(
             re.sub(r"\n{3,}", "\n\n", parsed.text),
             parsed.metadata,
-            tuple(ParsedSegment(re.sub(r"\n{3,}", "\n\n", segment.text), segment.metadata) for segment in parsed.segments),
+            tuple(
+                ParsedSegment(re.sub(r"\n{3,}", "\n\n", segment.text), segment.metadata)
+                for segment in parsed.segments
+            ),
         )
 
 

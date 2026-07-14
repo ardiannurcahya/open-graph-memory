@@ -36,9 +36,13 @@ class RecursiveTextChunker:
         return self._split_segments(document_id, (ParsedSegment(text),))
 
     def split_document(self, document_id: str, document: ParsedDocument) -> list[TextChunk]:
-        return self._split_segments(document_id, document.segments or (ParsedSegment(document.text),))
+        return self._split_segments(
+            document_id, document.segments or (ParsedSegment(document.text),)
+        )
 
-    def _split_segments(self, document_id: str, segments: tuple[ParsedSegment, ...]) -> list[TextChunk]:
+    def _split_segments(
+        self, document_id: str, segments: tuple[ParsedSegment, ...]
+    ) -> list[TextChunk]:
         drafts: list[tuple[str, int, int, dict[str, object]]] = []
         for segment in segments:
             text = segment.text
@@ -49,7 +53,9 @@ class RecursiveTextChunker:
                     raise ValueError("document exceeds maximum chunk count")
                 end = min(start + self.size, len(text))
                 if end < len(text):
-                    boundary = max(text.rfind(separator, start, end) for separator in ("\n\n", "\n", ". ", " "))
+                    boundary = max(
+                        text.rfind(separator, start, end) for separator in ("\n\n", "\n", ". ", " ")
+                    )
                     if boundary > start + self.size // 2:
                         end = boundary + 1
                 value = text[start:end].strip()
@@ -59,7 +65,10 @@ class RecursiveTextChunker:
                     break
                 start = max(start + 1, end - self.overlap)
             count = len(segment_drafts)
-            drafts.extend((text, start, end, {**metadata, "segment_part": part, "segment_count": count}) for part, (text, start, end, metadata) in enumerate(segment_drafts, 1))
+            drafts.extend(
+                (text, start, end, {**metadata, "segment_part": part, "segment_count": count})
+                for part, (text, start, end, metadata) in enumerate(segment_drafts, 1)
+            )
         chunks = []
         for index, (value, start, end, metadata) in enumerate(drafts):
             identity = f"{document_id}:{self.version}:{index}:{value}".encode()
