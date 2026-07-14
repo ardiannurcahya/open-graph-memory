@@ -9,6 +9,7 @@ interface QueryPlaygroundProps {
   loading: boolean;
   onQuery: (query: string, mode: RetrievalMode) => Promise<void>;
   result: QueryResponse | null;
+  streamingStatus?: string;
 }
 
 const MODES: { value: RetrievalMode; label: string; description: string }[] = [
@@ -23,6 +24,7 @@ export function QueryPlayground({
   loading,
   onQuery,
   result,
+  streamingStatus,
 }: QueryPlaygroundProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
@@ -97,6 +99,7 @@ export function QueryPlayground({
       </form>
 
       <div className="answer-zone">
+        {streamingStatus && <p className="answer-stream-status">{streamingStatus}</p>}
         {result ? <AnswerBlock result={result} /> : <EmptyAnswer />}
       </div>
     </section>
@@ -113,7 +116,7 @@ function AnswerBlock({ result }: { result: QueryResponse }) {
         </span>
         <span className="answer-citation-count">{result.citations.length} citations</span>
       </div>
-      <p className="answer-text">{result.answer}</p>
+      <FormattedAnswer answer={result.answer} />
       {result.citations.length > 0 && (
         <div className="citations">
           <p className="citations-label">Evidence</p>
@@ -124,6 +127,31 @@ function AnswerBlock({ result }: { result: QueryResponse }) {
       )}
     </>
   );
+}
+
+function FormattedAnswer({ answer }: { answer: string }) {
+  const blocks = answer.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  return <div className="answer-text">{blocks.map((block, index) => renderBlock(block, index))}</div>;
+}
+
+function renderBlock(block: string, index: number) {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.every((line) => /^[-*•]\s+/.test(line))) {
+    return <ul key={index}>{lines.map((line) => <li key={line}>{renderInline(line.replace(/^[-*•]\s+/, ""))}</li>)}</ul>;
+  }
+  if (lines.every((line) => /^\d+[.)]\s+/.test(line))) {
+    return <ol key={index}>{lines.map((line) => <li key={line}>{renderInline(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol>;
+  }
+  return <p key={index}>{renderInline(lines.join(" "))}</p>;
+}
+
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\[\d+])/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    if (/^\[\d+]$/.test(part)) return <span key={`${part}-${index}`} className="answer-citation-chip">{part}</span>;
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
 }
 
 function CitationCard({ citation }: { citation: Citation }) {

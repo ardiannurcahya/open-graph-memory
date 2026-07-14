@@ -91,6 +91,7 @@ def serialize(item: Document, duplicate: bool = False) -> dict[str, object]:
         "object_key": item.object_key,
         "status": item.status.value,
         "error_message": item.error_message,
+        "graph_stage": item.graph_stage,
         "duplicate": duplicate,
         "created_at": item.created_at,
         "updated_at": item.updated_at,

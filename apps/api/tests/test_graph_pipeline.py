@@ -149,6 +149,7 @@ def test_build_extractor_constructs_openai_compatible_adapter(
         "test-model",
         "test-prompt-v3",
     )
+    assert extractor.timeout == 300
     assert metadata.provider == "openai_compatible"
     assert metadata.extractor_version == "test-extractor-v2"
 

@@ -3,6 +3,13 @@ from app.config import Settings
 from open_graph_core.ids import new_id
 from pydantic import ValidationError
 
+PRODUCTION_URLS = {
+    "openai_base_url": "https://default.example/v1",
+    "openai_embedding_base_url": "https://embeddings.example/v1",
+    "openai_chat_base_url": "https://chat.example/v1",
+    "openai_graph_extractor_base_url": "https://extractor.example/v1",
+}
+
 
 def test_prefixed_uuid7() -> None:
     value = new_id("ds")
@@ -25,6 +32,7 @@ def test_production_rejects_placeholder_credentials() -> None:
             graph_extractor_provider="openai",
             graph_extractor_model="gpt-4o-mini",
             openai_api_key="a-secure-openai-api-key",
+            **PRODUCTION_URLS,
         )
 
 
@@ -38,6 +46,7 @@ def test_production_accepts_consistent_credentials() -> None:
         graph_extractor_provider="openai",
         graph_extractor_model="gpt-4o-mini",
         openai_api_key="a-secure-openai-api-key",
+        **PRODUCTION_URLS,
     )
     assert settings.app_env == "production"
 
@@ -65,6 +74,9 @@ def test_production_rejects_insecure_graph_endpoint() -> None:
             graph_extractor_provider="openai",
             graph_extractor_model="gpt-4o-mini",
             openai_api_key="a-secure-openai-api-key",
+            openai_base_url="https://default.example/v1",
+            openai_embedding_base_url="https://embeddings.example/v1",
+            openai_chat_base_url="https://chat.example/v1",
             openai_graph_extractor_base_url="http://localhost:8000/v1",
         )
 
@@ -79,3 +91,8 @@ def test_provider_base_urls_can_be_split() -> None:
     assert settings.embedding_base_url == "https://embeddings.example/v1"
     assert settings.chat_base_url == "https://chat.example/v1"
     assert settings.graph_extractor_base_url == "https://extractor.example/v1"
+
+
+def test_graph_extractor_timeout_must_be_positive() -> None:
+    with pytest.raises(ValidationError, match="graph timeouts"):
+        Settings(graph_extractor_timeout_seconds=0)

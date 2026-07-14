@@ -15,6 +15,16 @@ from app.models import Document, DocumentStatus
 LEASE_SECONDS = 300
 
 
+class GraphExtractionFailed(RuntimeError):
+    pass
+
+
+def lease_seconds() -> int:
+    from app.config import get_settings
+
+    return max(LEASE_SECONDS, int(get_settings().graph_extractor_timeout_seconds) + 60)
+
+
 async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> GraphExtractionJob:
     """Persist work atomically with successful vector indexing; publishing is separate."""
     metadata = extractor_metadata()
@@ -126,20 +136,21 @@ async def execute_graph_job(job_id: str) -> str:
             raise ValueError("graph extraction requires an indexed document")
         job.status, job.attempt = GraphJobStatus.RUNNING, job.attempt + 1
         job.lease_expires_at, job.error_message, document.graph_stage = (
-            now + timedelta(seconds=LEASE_SECONDS),
+            now + timedelta(seconds=lease_seconds()),
             None,
             "extracting",
         )
         await db.commit()
     try:
         await extract_document(job.document_id)
-    except BaseException as exc:
+    except Exception as exc:
+        message = sanitized_error(exc)
         async with factory() as db:
             job = await db.get(GraphExtractionJob, job_id)
             document = await db.get(Document, job.document_id) if job else None
             if job is None:
                 raise
-            job.error_message, job.lease_expires_at = sanitized_error(exc), None
+            job.error_message, job.lease_expires_at = message, None
             if job.attempt >= job.max_attempts:
                 job.status = GraphJobStatus.FAILED
                 if document:
@@ -151,7 +162,7 @@ async def execute_graph_job(job_id: str) -> str:
                 if outbox:
                     outbox.published_at = None
             await db.commit()
-        return job_id
+        raise GraphExtractionFailed(f"graph extraction failed for job {job_id}: {message}") from exc
     async with factory() as db:
         job = await db.get(GraphExtractionJob, job_id)
         if job:

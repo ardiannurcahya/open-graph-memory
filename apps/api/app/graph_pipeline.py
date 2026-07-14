@@ -70,6 +70,7 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
                     "base_url": settings.graph_extractor_base_url,
                     "model": settings.graph_extractor_model,
                     "prompt_version": settings.graph_extractor_prompt_version,
+                    "timeout": settings.graph_extractor_timeout_seconds,
                 },
                 {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
             ),

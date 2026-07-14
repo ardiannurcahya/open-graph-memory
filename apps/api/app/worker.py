@@ -7,12 +7,14 @@ from app.async_runner import runner
 from app.config import get_settings
 
 settings = get_settings()
+task_soft_time_limit = max(270, int(settings.graph_extractor_timeout_seconds) + 90)
+task_time_limit = task_soft_time_limit + 30
 celery_app = Celery("opengraphrag", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    task_soft_time_limit=270,
-    task_time_limit=300,
+    task_soft_time_limit=task_soft_time_limit,
+    task_time_limit=task_time_limit,
     task_reject_on_worker_lost=True,
     task_default_queue="default",
     task_routes={

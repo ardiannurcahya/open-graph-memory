@@ -235,13 +235,105 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("The answer is [1] based on the evidence.")).toBeInTheDocument();
+      expect(screen.getAllByText((_, node) => node?.textContent === "The answer is [1] based on the evidence.").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Evidence text here.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/v1/query"),
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("preserves the last graph and updates documents when graph refresh fails", async () => {
+    let graphCalls = 0;
+    let documentCalls = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/v1/datasets"))
+        return [{ id: "ds_1", project_id: "p", name: "Test DS", description: null, metadata: {}, status: "active", error_message: null }];
+      if (url.includes("/documents")) {
+        documentCalls += 1;
+        const first = { id: "doc_1", project_id: "p", dataset_id: "ds_1", filename: "source.pdf", mime_type: "application/pdf", size_bytes: 100, content_hash: "one", object_key: "one", status: "indexed", error_message: null, duplicate: false, created_at: "2026-01-01", updated_at: "2026-01-01" };
+        const second = { ...first, id: "doc_2", filename: "new.txt", content_hash: "two" };
+        return documentCalls === 1 ? [first] : [first, second];
+      }
+      if (url.includes("/graph")) {
+        graphCalls += 1;
+        if (graphCalls > 1) throw new ApiError("Graph projection unavailable", 503);
+        return {
+          dataset_id: "ds_1",
+          entity_count: 2,
+          relation_count: 0,
+          nodes: [
+            { id: "e1", dataset_id: "ds_1", canonical_name: "LBM", entity_type: "method", confidence: 1, version: 1, review_state: "accepted" },
+            { id: "e2", dataset_id: "ds_1", canonical_name: "Darcy", entity_type: "method", confidence: 1, version: 1, review_state: "accepted" },
+          ],
+          relations: [],
+        };
+      }
+      return [];
+    });
+
+    render(<App />);
+    connect();
+
+    await waitFor(() => expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("2 nodes"));
+    fireEvent.click(screen.getByTitle("Refresh graph"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Graph projection unavailable");
+      expect(screen.getByText("new.txt")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("2 nodes");
+    expect(screen.getByText("2 entities · 0 relations")).toBeInTheDocument();
+  });
+
+  it("preserves the last graph when a transient empty graph arrives during extraction", async () => {
+    let graphCalls = 0;
+    let documentCalls = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/v1/datasets"))
+        return [{ id: "ds_1", project_id: "p", name: "Test DS", description: null, metadata: {}, status: "active", error_message: null }];
+      if (url.includes("/documents")) {
+        documentCalls += 1;
+        const doc = { id: "doc_1", project_id: "p", dataset_id: "ds_1", filename: "source.pdf", mime_type: "application/pdf", size_bytes: 100, content_hash: "one", object_key: "one", status: "indexed", error_message: null, graph_stage: documentCalls === 1 ? "complete" : "extracting", duplicate: false, created_at: "2026-01-01", updated_at: "2026-01-01" };
+        return [doc];
+      }
+      if (url.includes("/graph")) {
+        graphCalls += 1;
+        return graphCalls === 1
+          ? { dataset_id: "ds_1", entity_count: 1, relation_count: 0, nodes: [{ id: "e1", dataset_id: "ds_1", canonical_name: "LBM", entity_type: "method", confidence: 1, version: 1, review_state: "accepted" }], relations: [] }
+          : { dataset_id: "ds_1", entity_count: 0, relation_count: 0, nodes: [], relations: [] };
+      }
+      return [];
+    });
+
+    render(<App />);
+    connect();
+
+    await waitFor(() => expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("1 nodes"));
+    fireEvent.click(screen.getByTitle("Refresh graph"));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("showing last available graph"));
+    expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("1 nodes");
+  });
+
+  it("keeps documents visible when initial graph loading fails", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/v1/datasets"))
+        return [{ id: "ds_1", project_id: "p", name: "Test DS", description: null, metadata: {}, status: "active", error_message: null }];
+      if (url.includes("/documents"))
+        return [{ id: "doc_1", project_id: "p", dataset_id: "ds_1", filename: "source.pdf", mime_type: "application/pdf", size_bytes: 100, content_hash: "one", object_key: "one", status: "indexed", error_message: null, duplicate: false, created_at: "2026-01-01", updated_at: "2026-01-01" }];
+      if (url.includes("/graph")) throw new ApiError("Graph service timed out", 504);
+      return [];
+    });
+
+    render(<App />);
+    connect();
+
+    await waitFor(() => {
+      expect(screen.getByText("source.pdf")).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("Graph service timed out");
+    });
   });
 
   it("disables the delete dataset button when no dataset is selected", async () => {
@@ -411,13 +503,13 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /run query/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("The answer is [1].")).toBeInTheDocument();
+      expect(screen.getAllByText((_, node) => node?.textContent === "The answer is [1].").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByRole("button", { name: /delete active dataset/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("The answer is [1].")).not.toBeInTheDocument();
+      expect(screen.queryAllByText((_, node) => node?.textContent === "The answer is [1].")).toHaveLength(0);
     });
 
     confirmSpy.mockRestore();

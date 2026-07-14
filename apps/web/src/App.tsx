@@ -30,6 +30,14 @@ const PROCESSING_STATES = new Set([
 ]);
 const UPLOAD_CONCURRENCY = 3;
 
+function isEmptyGraph(value: GraphSummary) {
+  return value.entity_count === 0 && value.relation_count === 0 && value.nodes.length === 0 && value.relations.length === 0;
+}
+
+function graphStillBuilding(docs: DocumentItem[]) {
+  return docs.some((doc) => doc.graph_stage && doc.graph_stage !== "complete");
+}
+
 export function App() {
   const { credentials, save, clear } = useCredentials();
   const connected = Boolean(credentials.projectId && credentials.apiKey);
@@ -50,6 +58,7 @@ export function App() {
   const [graph, setGraph] = useState<GraphSummary | null>(null);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
+  const [streamingStatus, setStreamingStatus] = useState("");
 
   const [loadingDatasets, setLoadingDatasets] = useState(false);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
@@ -88,19 +97,37 @@ export function App() {
       setLoadingWorkspace(true);
       setError("");
       try {
-        const [docs, graphData] = await Promise.all([
+        const [docs, graphResult] = await Promise.all([
           api.listDocuments(datasetId),
-          api.graph(datasetId, 100, 1).catch(() => null),
+          api.graph(datasetId, 100, 1).then(
+            (value) => ({ ok: true as const, value }),
+            (reason: unknown) => ({ ok: false as const, reason }),
+          ),
         ]);
         setDocuments(docs);
-        setGraph(graphData);
+        if (graphResult.ok) {
+          const preserveCurrentGraph = Boolean(
+            graph?.dataset_id === datasetId &&
+              !isEmptyGraph(graph) &&
+              isEmptyGraph(graphResult.value) &&
+              docs.length > 0 &&
+              graphStillBuilding(docs),
+          );
+          setGraph(preserveCurrentGraph ? graph : graphResult.value);
+          if (preserveCurrentGraph) {
+            setError("Knowledge graph: extraction still running or failed; showing last available graph.");
+          }
+        } else {
+          setGraph((current) => (current?.dataset_id === datasetId ? current : null));
+          setError(`Knowledge graph: ${errorMessage(graphResult.reason)}`);
+        }
       } catch (reason) {
         setError(errorMessage(reason));
       } finally {
         setLoadingWorkspace(false);
       }
     },
-    [],
+    [graph],
   );
 
   // Load datasets on connect.
@@ -186,19 +213,41 @@ export function App() {
       setMode(queryMode);
       setQuerying(true);
       setError("");
+      setStreamingStatus("Retrieving evidence...");
+      setResult({ answer: "", citations: [], retrieval_trace: { trace_id: "streaming", mode: queryMode, channel_candidates: { vector: [], graph: [] }, fusion: [], graph: { status: "streaming", paths: [] }, chunk_ids: [], scores: [], latency_ms: 0 }, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, estimated_cost_usd: 0 } });
+      const request = {
+        dataset_id: selectedId,
+        query,
+        mode: queryMode,
+        top_k: 5,
+        graph_depth: queryMode === "vector_only" ? undefined : 2,
+      };
       try {
-        const response = await api.query({
-          dataset_id: selectedId,
-          query,
-          mode: queryMode,
-          top_k: 5,
-          graph_depth: queryMode === "vector_only" ? undefined : 2,
+        await api.streamQuery(request, (event) => {
+          if (event.event === "status") {
+            setStreamingStatus(event.data.stage === "generating" ? "Generating answer..." : "Retrieving evidence...");
+          }
+          if (event.event === "token") {
+            setResult((current) => current ? { ...current, answer: current.answer + event.data.text } : current);
+          }
+          if (event.event === "complete") {
+            setResult(event.data);
+            setStreamingStatus("");
+          }
+          if (event.event === "error") {
+            throw new Error(event.data.message);
+          }
         });
-        setResult(response);
       } catch (reason) {
-        setError(errorMessage(reason));
-        setResult(null);
+        try {
+          const response = await api.query(request);
+          setResult(response);
+        } catch (fallbackReason) {
+          setError(errorMessage(fallbackReason || reason));
+          setResult(null);
+        }
       } finally {
+        setStreamingStatus("");
         setQuerying(false);
       }
     },
@@ -321,13 +370,14 @@ export function App() {
             )}
 
             <div className="grid-top">
-              <QueryPlayground
-                datasetName={selectedDataset?.name ?? null}
-                disabled={!selectedId}
-                loading={querying}
-                onQuery={handleQuery}
-                result={result}
-              />
+            <QueryPlayground
+              datasetName={selectedDataset?.name ?? null}
+              disabled={!selectedId}
+              loading={querying}
+              onQuery={handleQuery}
+              result={result}
+              streamingStatus={streamingStatus}
+            />
               <TraceInspector result={result} currentMode={mode} />
             </div>
 

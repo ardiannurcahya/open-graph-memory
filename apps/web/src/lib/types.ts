@@ -38,6 +38,7 @@ export interface DocumentItem {
   object_key: string;
   status: string;
   error_message: string | null;
+  graph_stage?: string | null;
   duplicate: boolean;
   created_at: string;
   updated_at: string;

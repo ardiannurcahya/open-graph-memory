@@ -31,6 +31,12 @@ interface ClientOptions {
   apiKey: string;
 }
 
+export type QueryStreamEvent =
+  | { event: "status"; data: { stage: string } }
+  | { event: "token"; data: { text: string } }
+  | { event: "complete"; data: QueryResponse }
+  | { event: "error"; data: { message: string; status: number } };
+
 export function createApiClient(opts: ClientOptions) {
   const headers = (body?: BodyInit | null): Record<string, string> => ({
     "X-Project-ID": opts.projectId,
@@ -54,6 +60,34 @@ export function createApiClient(opts: ClientOptions) {
       throw new ApiError(detail, response.status);
     }
     return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+  }
+
+  async function streamQuery(input: QueryRequest, onEvent: (event: QueryStreamEvent) => void) {
+    const response = await fetch(`${API_BASE}/v1/query/stream`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: headers(JSON.stringify(input)),
+    });
+    if (!response.ok || !response.body) {
+      const body = await response?.json?.().catch(() => ({}));
+      throw new ApiError(typeof body.detail === "string" ? body.detail : "Streaming query failed", response.status);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const event = part.match(/^event: (.+)$/m)?.[1];
+        const data = part.match(/^data: (.+)$/m)?.[1];
+        if (!event || !data) continue;
+        onEvent({ event, data: JSON.parse(data) } as QueryStreamEvent);
+      }
+    }
   }
 
   return {
@@ -84,6 +118,7 @@ export function createApiClient(opts: ClientOptions) {
     // Query
     query: (input: QueryRequest) =>
       request<QueryResponse>("/v1/query", { method: "POST", body: JSON.stringify(input) }),
+    streamQuery,
 
     // Graph
     graph: (datasetId: string, limit = 100, depth = 1) =>
