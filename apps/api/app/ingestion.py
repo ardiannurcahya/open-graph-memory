@@ -231,7 +231,7 @@ async def run_ingestion(
                 )
             await db.commit()
             await _stage(db, job, IndexingStage.COMPLETE)
-            job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.INDEXED
+            job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.PERSISTING
             document.error_message = None
             # Persist graph work in this transaction; the dispatcher publishes only committed rows.
             from app.graph_dispatch import enqueue_graph_extraction

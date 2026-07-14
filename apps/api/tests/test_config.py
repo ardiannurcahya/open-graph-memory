@@ -94,5 +94,10 @@ def test_provider_base_urls_can_be_split() -> None:
 
 
 def test_graph_extractor_timeout_must_be_positive() -> None:
-    with pytest.raises(ValidationError, match="graph timeouts"):
+    with pytest.raises(ValidationError, match="graph settings"):
         Settings(graph_extractor_timeout_seconds=0)
+
+
+def test_graph_extractor_parallelism_must_be_positive() -> None:
+    with pytest.raises(ValidationError, match="graph settings"):
+        Settings(graph_extractor_parallelism=0)

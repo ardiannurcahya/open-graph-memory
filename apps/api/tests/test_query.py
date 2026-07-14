@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from app.providers import ChatResult, Usage
+from app.providers import ChatResult, OpenAIChatProvider, Usage, load_json_response
 from app.query import (
     answer_segments,
     authoritative_hits,
@@ -35,6 +35,12 @@ def test_stream_helpers_emit_sse_and_token_segments() -> None:
         'event: status\ndata: {"stage":"retrieving"}\n\n'
     )
     assert answer_segments("Hello world") == ["Hello ", "world"]
+
+
+def test_provider_json_loader_accepts_first_object_with_trailing_data() -> None:
+    payload = load_json_response('{"choices": []}\n{"extra": true}')
+
+    assert payload == {"choices": []}
 
 
 
@@ -72,6 +78,19 @@ class ScriptedChat:
         )
 
 
+class FakeChatClient:
+    async def post(self, *args: object, **kwargs: object) -> httpx.Response:
+        request = httpx.Request("POST", "https://provider.test/chat/completions")
+        return httpx.Response(
+            200,
+            request=request,
+            text=(
+                '{"choices":[{"message":{"content":"Answer [1]."}}],'
+                '"usage":{"prompt_tokens":4,"completion_tokens":2}}\n{"extra":true}'
+            ),
+        )
+
+
 @pytest.mark.asyncio
 async def test_authoritative_hits_preserves_raw_vector_rank_and_score() -> None:
     raw = [VectorHit("first", 0.91, {}), VectorHit("second", 0.72, {})]
@@ -84,6 +103,17 @@ async def test_authoritative_hits_preserves_raw_vector_rank_and_score() -> None:
     )
 
     assert [(hit.id, hit.score) for hit in hits] == [("first", 0.91), ("second", 0.72)]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_accepts_provider_response_with_trailing_data() -> None:
+    chat = OpenAIChatProvider("https://provider.test", "key", client=FakeChatClient())  # type: ignore[arg-type]
+
+    result = await chat.chat([{"role": "user", "content": "Question"}], "model")
+
+    assert result.text == "Answer [1]."
+    assert result.usage.prompt_tokens == 4
+    assert result.usage.completion_tokens == 2
 
 
 @pytest.mark.asyncio

@@ -80,6 +80,13 @@ def validate(file: UploadFile, head: bytes, tail: bytes) -> str:
 
 
 def serialize(item: Document, duplicate: bool = False) -> dict[str, object]:
+    status = item.status.value
+    if item.status == DocumentStatus.INDEXED and item.graph_stage != "complete":
+        status = (
+            DocumentStatus.FAILED.value
+            if item.graph_stage == "failed"
+            else DocumentStatus.PERSISTING.value
+        )
     return {
         "id": item.id,
         "project_id": str(item.project_id),
@@ -89,7 +96,7 @@ def serialize(item: Document, duplicate: bool = False) -> dict[str, object]:
         "size_bytes": item.size_bytes,
         "content_hash": item.content_hash,
         "object_key": item.object_key,
-        "status": item.status.value,
+        "status": status,
         "error_message": item.error_message,
         "graph_stage": item.graph_stage,
         "duplicate": duplicate,

@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -167,6 +167,15 @@ class DeterministicExtractor:
     relation_pattern = re.compile(
         r"(?P<source>[^\n;]+?)\s*->\s*(?P<type>[A-Z][A-Z0-9_]*)\s*->\s*(?P<target>[^\n;]+)"
     )
+    phrase_pattern = re.compile(
+        r"\b(?:[A-Z][A-Za-zÀ-ÿ0-9&+./'-]*|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-zÀ-ÿ0-9&+./'-]*|[A-Z]{2,})){1,5}\b"
+    )
+    email_pattern = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
+    skill_pattern = re.compile(
+        r"\b(?:FastAPI|Next\.js|PostgreSQL|Docker|Python|Machine Learning|LLM|OCR|"
+        r"MinIO|Electron|GitHub Actions|Neo4j|Qdrant|React|TypeScript)\b",
+        re.IGNORECASE,
+    )
 
     def extract(self, text: str) -> Extraction:
         found: dict[tuple[str, str], Entity] = {}
@@ -182,8 +191,40 @@ class DeterministicExtractor:
             )
             for m in self.relation_pattern.finditer(text)
         ]
+        if not found:
+            for match in self.email_pattern.finditer(text):
+                name = match.group(0).strip()
+                found[(normalize_name(name), "contact")] = Entity(
+                    name=name, type="Contact", confidence=0.7
+                )
+            for match in self.skill_pattern.finditer(text):
+                name = match.group(0).strip()
+                found[(normalize_name(name), "skill")] = Entity(
+                    name=name, type="Skill", confidence=0.7
+                )
+            for match in self.phrase_pattern.finditer(text):
+                name = " ".join(match.group(0).split())
+                if len(name) < 4 or len(name) > 80:
+                    continue
+                found.setdefault(
+                    (normalize_name(name), "entity"),
+                    Entity(name=name, type="Entity", confidence=0.6),
+                )
+                if len(found) >= 24:
+                    break
+        entities = sorted(found.values(), key=lambda e: (normalize_name(e.name), e.type))
+        if not relations and len(entities) > 1:
+            relations = [
+                Relation(
+                    source=entities[index].name,
+                    type="CO_OCCURS_WITH",
+                    target=entities[index + 1].name,
+                    confidence=0.45,
+                )
+                for index in range(min(len(entities) - 1, 12))
+            ]
         return Extraction(
-            entities=sorted(found.values(), key=lambda e: (normalize_name(e.name), e.type)),
+            entities=entities,
             relations=sorted(
                 relations,
                 key=lambda r: (normalize_name(r.source), r.type, normalize_name(r.target)),
@@ -227,5 +268,19 @@ class OpenAICompatibleExtractor:
             timeout=self.timeout,
         )
         response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        try:
+            payload = cast(dict[str, Any], _load_openai_response(response.text))
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return DeterministicExtractor().extract(text)
         return _parse_extraction_content(content, text)
+
+
+def _load_openai_response(text: str) -> dict[str, object]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload, _ = json.JSONDecoder().raw_decode(text)
+    if not isinstance(payload, dict):
+        raise ValueError("OpenAI-compatible response is not a JSON object")
+    return payload

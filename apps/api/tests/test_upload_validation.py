@@ -1,6 +1,8 @@
 from io import BytesIO
+from uuid import uuid4
 
-from app.documents import spool, validate
+from app.documents import serialize, spool, validate
+from app.models import Document, DocumentStatus
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
@@ -49,3 +51,24 @@ async def test_spool_hashes_stream() -> None:
         assert stream.read() == b"hello"
     finally:
         stream.close()
+
+
+def test_serialize_hides_indexed_until_graph_complete() -> None:
+    document = Document(
+        id="doc_1",
+        project_id=uuid4(),
+        dataset_id="ds_1",
+        filename="a.txt",
+        mime_type="text/plain",
+        size_bytes=1,
+        content_hash="hash",
+        object_key="key",
+        status=DocumentStatus.INDEXED,
+        graph_stage="extracting",
+        metadata_={},
+    )
+
+    assert serialize(document)["status"] == "persisting"
+
+    document.graph_stage = "complete"
+    assert serialize(document)["status"] == "indexed"

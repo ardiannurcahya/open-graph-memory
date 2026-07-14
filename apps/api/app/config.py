@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     graph_extractor_version: str = "graph-extractor-v1"
     graph_extractor_prompt_version: str = "graph-v1"
     graph_extractor_timeout_seconds: float = 300
+    graph_extractor_parallelism: int = 1
     provider_version: str = "v1"
     embedding_dimensions: int = 64
     openai_base_url: str = "https://api.openai.com/v1"
@@ -71,8 +72,12 @@ class Settings(BaseSettings):
             raise ValueError("retrieval RRF and graph depth limits are invalid")
         if self.retrieval_graph_seed_limit < 1 or self.retrieval_graph_fanout < 1:
             raise ValueError("graph seed and fanout limits must be positive")
-        if self.retrieval_graph_timeout_ms < 1 or self.graph_extractor_timeout_seconds < 1:
-            raise ValueError("graph timeouts must be positive")
+        if (
+            self.retrieval_graph_timeout_ms < 1
+            or self.graph_extractor_timeout_seconds < 1
+            or self.graph_extractor_parallelism < 1
+        ):
+            raise ValueError("graph settings must be positive")
         if (
             "openai" in {self.embedding_provider, self.chat_provider, self.graph_extractor_provider}
             and not self.openai_api_key.get_secret_value()
