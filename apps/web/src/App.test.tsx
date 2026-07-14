@@ -6,12 +6,14 @@ import { App } from "./App";
 
 // Mock @xyflow/react to avoid SVG/canvas issues in jsdom.
 vi.mock("@xyflow/react", () => ({
-  ReactFlow: ({ nodes }: { nodes: { id: string }[] }) =>
-    nodes.length ? (
-      <div data-testid="react-flow-mock">{nodes.length} nodes</div>
+  ReactFlow: ({ nodes }: { nodes: { id: string; type?: string }[] }) => {
+    const visibleNodes = nodes.filter((node) => node.type !== "bubble");
+    return visibleNodes.length ? (
+      <div data-testid="react-flow-mock">{visibleNodes.length} nodes</div>
     ) : (
       <div data-testid="react-flow-empty" />
-    ),
+    );
+  },
   Background: () => null,
   Controls: () => null,
 }));

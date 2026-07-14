@@ -1,4 +1,3 @@
-import asyncio
 import json
 import re
 import time
@@ -273,7 +272,6 @@ async def execute_query(
     if body.mode == "vector_only":
         hits, fusion = vector_hits, []
     elif body.mode == "graph_only":
-        # A graph outage must not turn an otherwise retrievable request into a 5xx/refusal.
         hits, fusion = (
             (vector_hits, []) if graph_state.get("status") == "fallback" else (graph_hits, [])
         )
@@ -392,11 +390,129 @@ async def query_stream(
     async def events() -> AsyncIterator[str]:
         try:
             yield stream_event("status", {"stage": "retrieving"})
-            response = await execute_query(body, context, db, embeddings, chat, vectors, graph)
+            dataset = await db.scalar(
+                select(Dataset).where(
+                    Dataset.id == body.dataset_id, Dataset.project_id == context.project_id
+                )
+            )
+            if dataset is None:
+                raise HTTPException(404, "dataset not found")
+            started, trace_id, settings = time.perf_counter(), str(uuid4()), get_settings()
+            vector = (
+                await safe_provider_call(
+                    lambda: embeddings.embed([body.query], settings.embedding_model)
+                )
+            )[0]
+            vector_raw = await vectors.search(
+                vector, str(context.project_id), body.dataset_id, max(body.top_k, 50)
+            )
+            vector_hits = await authoritative_hits(
+                db, context.project_id, body.dataset_id, vector_raw
+            )
+            graph_evidence: list[GraphEvidence] = []
+            graph_state: dict[str, object] = {"status": "not_requested"}
+            graph_hits: list[VectorHit] = []
+            if body.mode != "vector_only":
+                graph_evidence, graph_state = await bounded_graph_search(
+                    graph,
+                    body.graph_timeout_ms or settings.retrieval_graph_timeout_ms,
+                    str(context.project_id),
+                    body.dataset_id,
+                    [hit.id for hit in vector_hits],
+                    entity_candidates(body.query),
+                    body.graph_depth or settings.retrieval_graph_max_depth,
+                    body.graph_fanout or settings.retrieval_graph_fanout,
+                    settings.retrieval_graph_seed_limit,
+                )
+                scores = {item.chunk_id: item.score for item in graph_evidence}
+                graph_hits = await authoritative_hits(
+                    db,
+                    context.project_id,
+                    body.dataset_id,
+                    [VectorHit(chunk_id, score, {}) for chunk_id, score in scores.items()],
+                )
+            fusion: list[dict[str, object]]
+            if body.mode == "vector_only":
+                hits, fusion = vector_hits, []
+            elif body.mode == "graph_only":
+                hits, fusion = (
+                    (vector_hits, [])
+                    if graph_state.get("status") == "fallback"
+                    else (graph_hits, [])
+                )
+            else:
+                hits, fusion = fuse_hits(
+                    vector_hits,
+                    graph_hits,
+                    body.fusion or settings.retrieval_fusion,
+                    settings.retrieval_rrf_k,
+                    settings.retrieval_vector_weight,
+                    settings.retrieval_graph_weight,
+                )
+            hits = hits[: body.top_k]
+            memories = await memory_hits(db, context.project_id, body)
+            messages = [
+                {"role": "system", "content": build_context(hits, memories)},
+                {"role": "user", "content": body.query},
+            ]
             yield stream_event("status", {"stage": "generating"})
-            for segment in answer_segments(response.answer):
+            answer = ""
+            async for segment in chat.stream_chat(messages, settings.chat_model):
+                answer += segment
                 yield stream_event("token", {"text": segment})
-                await asyncio.sleep(0)
+            referenced = citation_indexes(answer)
+            latency_ms = round((time.perf_counter() - started) * 1000, 3)
+            trace: dict[str, object] = {
+                "trace_id": trace_id,
+                "mode": body.mode,
+                "channel_candidates": {
+                    "vector": [{"chunk_id": hit.id, "score": hit.score} for hit in vector_hits],
+                    "graph": [{"chunk_id": hit.id, "score": hit.score} for hit in graph_hits],
+                },
+                "fusion": fusion,
+                "graph": {
+                    **graph_state,
+                    "paths": [
+                        {
+                            "chunk_id": item.chunk_id,
+                            "path": list(item.path),
+                            "relation_ids": list(item.relation_ids),
+                            "evidence_chunk_ids": list(item.evidence_chunk_ids),
+                        }
+                        for item in graph_evidence
+                    ],
+                },
+                "chunk_ids": [hit.id for hit in hits],
+                "scores": [hit.score for hit in hits],
+                "memory": {
+                    "fact_ids": [fact.id for fact in memories],
+                    "scopes": [fact.scope for fact in memories],
+                    "source_message_ids": [fact.source_message_id for fact in memories],
+                },
+                "latency_ms": latency_ms,
+            }
+            usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": len(answer.split()),
+                "total_tokens": len(answer.split()),
+                "estimated_cost_usd": 0.0,
+            }
+            response = QueryResponse(
+                answer=answer,
+                citations=[
+                    Citation(
+                        index=i,
+                        chunk_id=hit.id,
+                        document_id=str(hit.payload["document_id"]),
+                        score=hit.score,
+                        text=str(hit.payload["text"]),
+                    )
+                    for i, hit in enumerate(hits, 1)
+                    if i in referenced
+                ],
+                retrieval_trace=trace,
+                usage=usage,
+            )
             yield stream_event("complete", response.model_dump(mode="json"))
         except HTTPException as exc:
             yield stream_event("error", {"message": str(exc.detail), "status": exc.status_code})

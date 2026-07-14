@@ -214,7 +214,24 @@ export function App() {
       setQuerying(true);
       setError("");
       setStreamingStatus("Retrieving evidence...");
-      setResult({ answer: "", citations: [], retrieval_trace: { trace_id: "streaming", mode: queryMode, channel_candidates: { vector: [], graph: [] }, fusion: [], graph: { status: "streaming", paths: [] }, chunk_ids: [], scores: [], latency_ms: 0 }, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, estimated_cost_usd: 0 } });
+      const startedAt = performance.now();
+      let firstTokenLatency: number | null = null;
+      const streamingResult: QueryResponse = {
+        answer: "",
+        citations: [],
+        retrieval_trace: {
+          trace_id: "streaming",
+          mode: queryMode,
+          channel_candidates: { vector: [], graph: [] },
+          fusion: [],
+          graph: { status: "streaming", paths: [] },
+          chunk_ids: [],
+          scores: [],
+          latency_ms: 0,
+        },
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, estimated_cost_usd: 0 },
+      };
+      setResult(streamingResult);
       const request = {
         dataset_id: selectedId,
         query,
@@ -228,10 +245,28 @@ export function App() {
             setStreamingStatus(event.data.stage === "generating" ? "Generating answer..." : "Retrieving evidence...");
           }
           if (event.event === "token") {
-            setResult((current) => current ? { ...current, answer: current.answer + event.data.text } : current);
+            if (firstTokenLatency === null) firstTokenLatency = performance.now() - startedAt;
+            setResult((current) =>
+              current
+                ? {
+                    ...current,
+                    answer: current.answer + event.data.text,
+                    retrieval_trace: {
+                      ...current.retrieval_trace,
+                      latency_ms: firstTokenLatency ?? current.retrieval_trace.latency_ms,
+                    },
+                  }
+                : current,
+            );
           }
           if (event.event === "complete") {
-            setResult(event.data);
+            setResult({
+              ...event.data,
+              retrieval_trace: {
+                ...event.data.retrieval_trace,
+                latency_ms: firstTokenLatency ?? event.data.retrieval_trace.latency_ms,
+              },
+            });
             setStreamingStatus("");
           }
           if (event.event === "error") {

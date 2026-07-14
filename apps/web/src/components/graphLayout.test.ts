@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   KNOWLEDGE_NODE_GAP,
   knowledgeNodeSize,
+  layoutKnowledgeBubbles,
   layoutKnowledgeNodes,
 } from "./graphLayout";
 
@@ -47,5 +48,22 @@ describe("knowledge graph layout", () => {
       data: { degree: 2 },
     }));
     expect(layoutKnowledgeNodes(nodes, false)).toEqual(layoutKnowledgeNodes(nodes, false));
+  });
+
+  it("groups nodes into stable typed bubbles", () => {
+    const nodes = [
+      { id: "person", data: { degree: 4, entityType: "Person", color: "#8b9cff" } },
+      { id: "skill", data: { degree: 2, entityType: "Skill", color: "#55d6be" } },
+      { id: "tool", data: { degree: 1, entityType: "Skill", color: "#55d6be" } },
+    ];
+
+    const layout = layoutKnowledgeBubbles(nodes);
+
+    expect(layout.nodes).toHaveLength(3);
+    expect(layout.bubbles.map((bubble) => [bubble.label, bubble.count])).toEqual([
+      ["Person", 1],
+      ["Skill", 2],
+    ]);
+    expect(layout.bubbles.every((bubble) => bubble.width > 0 && bubble.height > 0)).toBe(true);
   });
 });

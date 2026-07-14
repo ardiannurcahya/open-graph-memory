@@ -37,6 +37,8 @@ def test_stream_helpers_emit_sse_and_token_segments() -> None:
     assert answer_segments("Hello world") == ["Hello ", "world"]
 
 
+
+
 class ScalarRows:
     def __init__(self, rows: list[object]) -> None:
         self.rows = rows

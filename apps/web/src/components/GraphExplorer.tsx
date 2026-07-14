@@ -14,7 +14,7 @@ import { Network, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 
 import type { EntityView, GraphSummary } from "../lib/types";
-import { knowledgeNodeSize, layoutKnowledgeNodes } from "./graphLayout";
+import { knowledgeNodeSize, layoutKnowledgeBubbles } from "./graphLayout";
 
 interface GraphExplorerProps {
   graph: GraphSummary | null;
@@ -31,6 +31,14 @@ interface KnowledgeNodeData extends Record<string, unknown> {
 }
 
 type KnowledgeNode = Node<KnowledgeNodeData, "knowledge">;
+
+interface BubbleNodeData extends Record<string, unknown> {
+  label: string;
+  count: number;
+  color: string;
+}
+
+type BubbleNode = Node<BubbleNodeData, "bubble">;
 
 const TYPE_COLORS = ["#55d6be", "#8b9cff", "#f0b35a", "#d98cff", "#58b8f5", "#ef7d8f"];
 const SEMANTIC_COLORS: Record<string, string> = {
@@ -76,7 +84,22 @@ function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
   );
 }
 
-const nodeTypes = { knowledge: KnowledgeNodeView };
+function BubbleNodeView({ data }: NodeProps<BubbleNode>) {
+  return (
+    <div
+      className="knowledge-bubble"
+      style={{
+        borderColor: data.color,
+        background: `radial-gradient(circle at 35% 30%, ${data.color}24, ${data.color}08 62%, transparent 78%)`,
+      }}
+    >
+      <span style={{ color: data.color }}>{data.label}</span>
+      <strong>{data.count}</strong>
+    </div>
+  );
+}
+
+const nodeTypes = { knowledge: KnowledgeNodeView, bubble: BubbleNodeView };
 
 export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
   const { nodes, edges, legend } = useMemo(() => {
@@ -92,8 +115,7 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
     const ordered = [...rawNodes].sort(
       (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.canonical_name.localeCompare(b.canonical_name),
     );
-    const maxDegree = Math.max(0, ...degree.values());
-    const flowNodes: KnowledgeNode[] = layoutKnowledgeNodes(
+    const layout = layoutKnowledgeBubbles(
       ordered.map((entity) => ({
         id: entity.id,
         type: "knowledge" as const,
@@ -106,8 +128,17 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
         },
         draggable: true,
       })),
-      maxDegree > 2,
     );
+    const bubbleNodes: BubbleNode[] = layout.bubbles.map((bubble) => ({
+      id: bubble.id,
+      type: "bubble",
+      data: { label: bubble.label, count: bubble.count, color: bubble.color },
+      position: bubble.position,
+      style: { width: bubble.width, height: bubble.height, zIndex: -1, pointerEvents: "none" },
+      selectable: false,
+      draggable: false,
+    }));
+    const flowNodes: Array<KnowledgeNode | BubbleNode> = [...bubbleNodes, ...layout.nodes];
 
     const flowEdges: Edge[] = (graph?.relations ?? [])
       .filter((relation) => nodeIds.has(relation.source_entity_id) && nodeIds.has(relation.target_entity_id))
