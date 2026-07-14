@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from qdrant_client import AsyncQdrantClient, models
@@ -13,7 +13,7 @@ class VectorPoint:
     document_id: str
     text: str
     pipeline_version: str
-    metadata: dict[str, object]
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

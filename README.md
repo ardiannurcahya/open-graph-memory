@@ -15,6 +15,7 @@ OpenGraphMemory is self-hosted GraphRAG platform for document ingestion, vector 
 ### Vector RAG
 
 - Deterministic or provider-backed chunk embeddings.
+- Source-aware chunks: PDF pages and CSV logical records never cross chunk boundaries; citations retain page, record, and part location.
 - Qdrant vector indexing and retrieval.
 - Grounded answers with document citations.
 - Evidence validation and unanswerable-query handling.

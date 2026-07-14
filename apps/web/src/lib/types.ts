@@ -63,6 +63,11 @@ export interface Citation {
   document_id: string;
   score: number;
   text: string;
+  source_location?: {
+    page_number?: number;
+    record_number?: number;
+    segment_part?: number;
+  } | null;
 }
 
 export interface ChannelCandidate {

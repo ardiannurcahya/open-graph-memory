@@ -46,6 +46,7 @@ class Citation(BaseModel):
     document_id: str
     score: float
     text: str
+    source_location: dict[str, int] | None = None
 
 
 class QueryResponse(BaseModel):
@@ -55,10 +56,19 @@ class QueryResponse(BaseModel):
     usage: dict[str, int | float]
 
 
+def source_location(payload: dict[str, object]) -> dict[str, int] | None:
+    location = {
+        key: value
+        for key, value in payload.items()
+        if key in {"page_number", "record_number", "segment_part"} and isinstance(value, int)
+    }
+    return location or None
+
+
 def build_context(hits: list[VectorHit], memory_facts: list[MemoryFact] | None = None) -> str:
     evidence = "\n\n".join(
-        f"[{i}] chunk_id={hit.id} document_id={hit.payload.get('document_id')}\n"
-        f"{hit.payload.get('text', '')}"
+        f"[{i}] chunk_id={hit.id} document_id={hit.payload.get('document_id')} "
+        f"source={source_location(hit.payload)}\n{hit.payload.get('text', '')}"
         for i, hit in enumerate(hits, 1)
     )
     memory = ""
@@ -297,9 +307,7 @@ async def execute_query(
         )
         graph_ms = round((time.perf_counter() - graph_started) * 1000, 3)
         hydrate_started = time.perf_counter()
-        graph_chunk_ids = graph_evidence_chunk_ids(
-            graph_evidence, max(body.top_k, body.top_k * 3)
-        )
+        graph_chunk_ids = graph_evidence_chunk_ids(graph_evidence, max(body.top_k, body.top_k * 3))
         scores = graph_evidence_scores(graph_evidence, graph_chunk_ids)
         graph_hits = await authoritative_hits(
             db,
@@ -412,6 +420,7 @@ async def execute_query(
                 document_id=str(hit.payload["document_id"]),
                 score=hit.score,
                 text=str(hit.payload["text"]),
+                source_location=source_location(hit.payload),
             )
             for i, hit in enumerate(hits, 1)
             if i in referenced
@@ -456,9 +465,7 @@ async def query_stream(
                     lambda: embeddings.embed([body.query], settings.embedding_model)
                 )
             )[0]
-            vector_limit = (
-                max(body.top_k, 10) if body.mode == "graph_only" else max(body.top_k, 50)
-            )
+            vector_limit = max(body.top_k, 10) if body.mode == "graph_only" else max(body.top_k, 50)
             vector_raw = await vectors.search(
                 vector, str(context.project_id), body.dataset_id, vector_limit
             )
