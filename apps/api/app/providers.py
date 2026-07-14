@@ -1,10 +1,22 @@
 import hashlib
+import json
 import math
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import httpx
+
+
+def load_json_response(text: str) -> dict[str, object]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload, _ = json.JSONDecoder().raw_decode(text)
+    if not isinstance(payload, dict):
+        raise ValueError("provider response is not a JSON object")
+    return payload
 
 
 @dataclass(frozen=True)
@@ -31,6 +43,8 @@ class ChatProvider(Protocol):
     name: str
 
     async def chat(self, messages: list[dict[str, str]], model: str) -> ChatResult: ...
+
+    def stream_chat(self, messages: list[dict[str, str]], model: str) -> AsyncIterator[str]: ...
 
 
 class OpenAIEmbeddingProvider:
@@ -72,12 +86,34 @@ class OpenAIChatProvider:
             json={"messages": messages, "model": model, "temperature": 0.2},
         )
         response.raise_for_status()
-        body = response.json()
+        body = cast(dict[str, Any], load_json_response(response.text))
         usage = body.get("usage", {})
         return ChatResult(
             body["choices"][0]["message"]["content"],
             Usage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)),
         )
+
+    async def stream_chat(self, messages: list[dict[str, str]], model: str) -> AsyncIterator[str]:
+        async with self.client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"messages": messages, "model": model, "temperature": 0.2, "stream": True},
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line.removeprefix("data:").strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    body = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                content = body.get("choices", [{}])[0].get("delta", {}).get("content")
+                if content:
+                    yield str(content)
 
 
 class DeterministicProvider:
@@ -324,3 +360,10 @@ class DeterministicProvider:
         else:
             answer = "I cannot answer from the supplied evidence."
         return ChatResult(answer, Usage(len(context.split()), len(answer.split())))
+
+    async def stream_chat(
+        self, messages: list[dict[str, str]], model: str = "mock-v1"
+    ) -> AsyncIterator[str]:
+        result = await self.chat(messages, model)
+        for token in re.findall(r"\S+\s*", result.text):
+            yield token

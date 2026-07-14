@@ -1,5 +1,7 @@
 .git
 .env
+.venv
+**/.venv
 **/__pycache__
 **/.pytest_cache
 **/.mypy_cache
@@ -10,5 +12,16 @@
 **/*.log
 apps/web/node_modules
 apps/web/dist
+**/*.tsbuildinfo
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
+**/coverage
+**/htmlcov
+**/.hypothesis
+**/.tox
+**/.nox
+**/*.egg-info
+.idea
+.vscode
 docs/opengraphrag-plan.md
 docs/implementation-strategy.md

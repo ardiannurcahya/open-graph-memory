@@ -3,11 +3,13 @@
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS build
 WORKDIR /app
 ARG NPM_VERSION=12.0.1
-RUN npm install --global "npm@${NPM_VERSION}" \
+RUN --mount=type=cache,id=opengraphrag-web-npm,target=/root/.npm,sharing=locked \
+    npm install --global "npm@${NPM_VERSION}" \
     && node --version \
     && npm --version
 COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci \
+RUN --mount=type=cache,id=opengraphrag-web-npm,target=/root/.npm,sharing=locked \
+    npm ci \
     --no-audit \
     --no-fund \
     --fetch-retries=5 \

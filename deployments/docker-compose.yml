@@ -33,31 +33,34 @@ services:
     restart: "no"
     volumes: [./rustfs/bootstrap.sh:/bootstrap/bootstrap.sh:ro]
   migrate:
-    build: {context: .., dockerfile: apps/api/Dockerfile}
+    image: opengraphrag-api:latest
     command: alembic upgrade head
     env_file: [../.env]
     environment: {DATABASE_URL: "${COMPOSE_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-opengraphrag}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-opengraphrag}}"}
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"
   api:
+    image: opengraphrag-api:latest
     build: {context: .., dockerfile: apps/api/Dockerfile}
     env_file: [../.env]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, qdrant: {condition: service_healthy}, neo4j: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"], interval: 10s, timeout: 5s, retries: 8}
   worker:
+    image: opengraphrag-worker:latest
     build: {context: .., dockerfile: apps/worker/Dockerfile}
     command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}"]
     env_file: [../.env]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
   graph-worker:
-    build: {context: .., dockerfile: apps/worker/Dockerfile}
+    image: opengraphrag-worker:latest
     command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${GRAPH_WORKER_CONCURRENCY:-1}", -Q, graph]
     env_file: [../.env]
+    deploy: {replicas: "${GRAPH_WORKER_REPLICAS:-1}"}
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
   dispatcher:
-    build: {context: .., dockerfile: apps/worker/Dockerfile}
+    image: opengraphrag-worker:latest
     command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
     env_file: [../.env]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}

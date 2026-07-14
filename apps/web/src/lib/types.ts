@@ -38,6 +38,7 @@ export interface DocumentItem {
   object_key: string;
   status: string;
   error_message: string | null;
+  graph_stage?: string | null;
   duplicate: boolean;
   created_at: string;
   updated_at: string;
@@ -86,7 +87,18 @@ export interface GraphTrace {
   status: string;
   reason?: string;
   latency_ms?: number;
+  paths_found?: number;
+  evidence_chunk_ids?: number;
+  hydrated_chunks?: number;
+  missing_chunks?: number;
   paths: GraphPath[];
+}
+
+export interface RetrievalTimings {
+  vector?: number;
+  graph?: number;
+  hydrate?: number;
+  generation?: number;
 }
 
 export interface RetrievalTrace {
@@ -100,6 +112,7 @@ export interface RetrievalTrace {
   graph: GraphTrace;
   chunk_ids: string[];
   scores: number[];
+  timings_ms?: RetrievalTimings;
   latency_ms: number;
 }
 

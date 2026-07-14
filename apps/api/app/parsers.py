@@ -8,6 +8,10 @@ from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
 from pypdf import PdfReader
 
+CSV_FIELD_SIZE_LIMIT = 10 * 1024 * 1024
+CSV_SAMPLE_SIZE = 4096
+CSV_DELIMITERS = (",", ";", "\t", "|")
+
 
 @dataclass(frozen=True)
 class ParsedDocument:
@@ -25,22 +29,66 @@ class TextParser:
     mime_types: tuple[str, ...] = ("text/plain",)
 
     def parse(self, content: bytes) -> ParsedDocument:
-        return ParsedDocument(content.decode("utf-8").replace("\r\n", "\n").strip())
+        text = content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip()
+        return ParsedDocument(text)
 
 
 class CsvParser:
     mime_types: tuple[str, ...] = ("text/csv", "application/csv")
 
     def parse(self, content: bytes) -> ParsedDocument:
-        rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
-        if not rows:
-            return ParsedDocument("")
-        header, *body = rows
-        text = "\n".join(
-            "; ".join(f"{key}: {value}" for key, value in zip(header, row, strict=False))
-            for row in body
-        )
-        return ParsedDocument(text, {"rows": len(body), "columns": header})
+        previous_limit = csv.field_size_limit()
+        if previous_limit < CSV_FIELD_SIZE_LIMIT:
+            csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
+        text = content.decode("utf-8-sig", errors="replace")
+        if text.count('"') % 2:
+            return fallback_csv_parse(text)
+        try:
+            dialect = csv.Sniffer().sniff(
+                text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS)
+            )
+        except csv.Error:
+            dialect = csv.excel
+        try:
+            rows = list(csv.reader(io.StringIO(text, newline=""), dialect))
+        except csv.Error:
+            return fallback_csv_parse(text)
+        return rows_to_document(rows)
+
+
+def rows_to_document(rows: list[list[str]]) -> ParsedDocument:
+    rows = [[value.strip() for value in row] for row in rows if any(value.strip() for value in row)]
+    if not rows:
+        return ParsedDocument("")
+    header, *body = rows
+    lines = [format_csv_row(header, row) for row in body]
+    return ParsedDocument("\n".join(lines), {"rows": len(body), "columns": header})
+
+
+def fallback_csv_parse(text: str) -> ParsedDocument:
+    source_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not source_lines:
+        return ParsedDocument("")
+    delimiter = max(CSV_DELIMITERS, key=lambda item: source_lines[0].count(item))
+    header = [value.strip().strip('"') for value in source_lines[0].split(delimiter)]
+    rows = []
+    for line in source_lines[1:]:
+        values = [value.strip().strip('"') for value in line.split(delimiter)]
+        rows.append(normalize_csv_row(header, values))
+    lines = [format_csv_row(header, row) for row in rows]
+    return ParsedDocument(
+        "\n".join(lines), {"rows": len(rows), "columns": header, "repaired": True}
+    )
+
+
+def normalize_csv_row(header: list[str], row: list[str]) -> list[str]:
+    if len(row) <= len(header):
+        return row
+    return [*row[: len(header) - 1], " ".join(row[len(header) - 1 :])]
+
+
+def format_csv_row(header: list[str], row: list[str]) -> str:
+    return "; ".join(f"{key}: {value}" for key, value in zip(header, row, strict=False))
 
 
 class MarkdownParser:

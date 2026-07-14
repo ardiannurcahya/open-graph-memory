@@ -28,16 +28,20 @@ from app.runtime import Runtime, clear_runtime, install_runtime
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     structlog.configure(processors=[structlog.processors.JSONRenderer()])
     settings = get_settings()
-    provider_config = PluginConfig(
-        {"base_url": settings.openai_base_url, "dimensions": settings.embedding_dimensions},
+    embedding_config = PluginConfig(
+        {"base_url": settings.embedding_base_url, "dimensions": settings.embedding_dimensions},
         {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
     )
-    embedding_provider = create_embedding(settings.embedding_provider, provider_config)
+    chat_config = PluginConfig(
+        {"base_url": settings.chat_base_url, "dimensions": settings.embedding_dimensions},
+        {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
+    )
+    embedding_provider = create_embedding(settings.embedding_provider, embedding_config)
     chat_provider: ChatProvider = (
         cast(ChatProvider, embedding_provider)
         if settings.chat_provider == "deterministic"
         and settings.embedding_provider == "deterministic"
-        else create_chat(settings.chat_provider, provider_config)
+        else create_chat(settings.chat_provider, chat_config)
     )
     vector_store = create_vector_store(
         PluginConfig(

@@ -73,6 +73,13 @@ def _integer(config: PluginConfig, key: str) -> int:
     return value
 
 
+def _number(config: PluginConfig, key: str, default: float) -> float:
+    value = config.get(key, default)
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise TypeError(f"config key '{key}' must be a number")
+    return float(value)
+
+
 def _deterministic_factory(**kwargs: object) -> DeterministicProvider:
     return DeterministicProvider(_integer(_config(kwargs), "dimensions"))
 
@@ -103,6 +110,7 @@ def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
         api_key=config.require_secret("api_key").get(),
         model=_string(config, "model"),
         prompt_version=_string(config, "prompt_version"),
+        timeout=_number(config, "timeout", 30.0),
     )
 
 

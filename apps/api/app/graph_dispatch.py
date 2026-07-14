@@ -15,6 +15,16 @@ from app.models import Document, DocumentStatus
 LEASE_SECONDS = 300
 
 
+class GraphExtractionFailed(RuntimeError):
+    pass
+
+
+def lease_seconds() -> int:
+    from app.config import get_settings
+
+    return max(LEASE_SECONDS, int(get_settings().graph_extractor_timeout_seconds) + 60)
+
+
 async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> GraphExtractionJob:
     """Persist work atomically with successful vector indexing; publishing is separate."""
     metadata = extractor_metadata()
@@ -104,7 +114,7 @@ async def execute_graph_job(job_id: str) -> str:
             select(GraphExtractionJob).where(GraphExtractionJob.id == job_id).with_for_update()
         )
         if job is None:
-            raise ValueError("graph extraction job not found")
+            return job_id
         if job.status == GraphJobStatus.SUCCEEDED or (
             job.status == GraphJobStatus.RUNNING
             and job.lease_expires_at
@@ -122,28 +132,33 @@ async def execute_graph_job(job_id: str) -> str:
             or document.dataset_id != job.dataset_id
         ):
             raise ValueError("graph job document scope mismatch")
-        if document.status != DocumentStatus.INDEXED:
-            raise ValueError("graph extraction requires an indexed document")
+        if document.status not in {DocumentStatus.INDEXED, DocumentStatus.PERSISTING}:
+            raise ValueError("graph extraction requires a persisted document")
         job.status, job.attempt = GraphJobStatus.RUNNING, job.attempt + 1
         job.lease_expires_at, job.error_message, document.graph_stage = (
-            now + timedelta(seconds=LEASE_SECONDS),
+            now + timedelta(seconds=lease_seconds()),
             None,
             "extracting",
         )
         await db.commit()
     try:
         await extract_document(job.document_id)
-    except BaseException as exc:
+    except Exception as exc:
+        message = sanitized_error(exc)
         async with factory() as db:
             job = await db.get(GraphExtractionJob, job_id)
             document = await db.get(Document, job.document_id) if job else None
             if job is None:
                 raise
-            job.error_message, job.lease_expires_at = sanitized_error(exc), None
+            job.error_message, job.lease_expires_at = message, None
             if job.attempt >= job.max_attempts:
                 job.status = GraphJobStatus.FAILED
                 if document:
-                    document.graph_stage = "failed"
+                    document.status, document.graph_stage, document.error_message = (
+                        DocumentStatus.FAILED,
+                        "failed",
+                        message,
+                    )
             else:
                 job.status = GraphJobStatus.QUEUED
                 job.next_attempt_at = datetime.now(UTC) + timedelta(seconds=min(60, 2**job.attempt))
@@ -151,7 +166,7 @@ async def execute_graph_job(job_id: str) -> str:
                 if outbox:
                     outbox.published_at = None
             await db.commit()
-        return job_id
+        raise GraphExtractionFailed(f"graph extraction failed for job {job_id}: {message}") from exc
     async with factory() as db:
         job = await db.get(GraphExtractionJob, job_id)
         if job:
@@ -162,6 +177,10 @@ async def execute_graph_job(job_id: str) -> str:
                 None,
             )
             if document:
-                document.graph_stage = "complete"
+                document.status, document.graph_stage, document.error_message = (
+                    DocumentStatus.INDEXED,
+                    "complete",
+                    None,
+                )
             await db.commit()
     return job_id

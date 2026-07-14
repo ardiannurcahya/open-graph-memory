@@ -1,4 +1,19 @@
-from app.query import build_context
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from app.providers import ChatResult, OpenAIChatProvider, Usage, load_json_response
+from app.query import (
+    answer_segments,
+    authoritative_hits,
+    build_context,
+    chat_with_citation_repair,
+    graph_evidence_chunk_ids,
+    graph_evidence_scores,
+    safe_provider_call,
+    stream_event,
+)
+from app.retrieval import GraphEvidence
 from app.vector_store import VectorHit
 
 
@@ -16,3 +31,184 @@ def test_build_context_keeps_evidence_blocks_and_citation_indexes_aligned() -> N
     assert "[1] chunk_id=people document_id=people-doc" in context
     assert "[2] chunk_id=product document_id=product-doc" in context
     assert context.index("[1]") < context.index("[2]")
+
+
+def test_stream_helpers_emit_sse_and_token_segments() -> None:
+    assert stream_event("status", {"stage": "retrieving"}) == (
+        'event: status\ndata: {"stage":"retrieving"}\n\n'
+    )
+    assert answer_segments("Hello world") == ["Hello ", "world"]
+
+
+def test_provider_json_loader_accepts_first_object_with_trailing_data() -> None:
+    payload = load_json_response('{"choices": []}\n{"extra": true}')
+
+    assert payload == {"choices": []}
+
+
+def test_graph_hydration_uses_relation_evidence_chunk_ids() -> None:
+    evidence = [
+        GraphEvidence(
+            chunk_id="path-only",
+            score=0.7,
+            path=("Alice", "Acme"),
+            entity_ids=("ent-1", "ent-2"),
+            relation_ids=("rel-1",),
+            evidence_chunk_ids=("source-a", "source-b"),
+        ),
+        GraphEvidence(
+            chunk_id="source-b",
+            score=0.9,
+            path=("Acme", "Atlas"),
+            entity_ids=("ent-2", "ent-3"),
+            relation_ids=("rel-2",),
+            evidence_chunk_ids=("source-b", "source-c"),
+        ),
+    ]
+
+    chunk_ids = graph_evidence_chunk_ids(evidence, 4)
+
+    assert chunk_ids == ["source-a", "source-b", "path-only", "source-c"]
+    assert graph_evidence_scores(evidence, chunk_ids) == {
+        "source-a": 0.7,
+        "source-b": 0.9,
+        "path-only": 0.7,
+        "source-c": 0.9,
+    }
+
+
+
+
+class ScalarRows:
+    def __init__(self, rows: list[object]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[object]:
+        return self.rows
+
+
+class ReverseOrderSession:
+    async def scalars(self, statement: object) -> ScalarRows:
+        return ScalarRows(
+            [
+                SimpleNamespace(id="second", document_id="doc-2", text="second text"),
+                SimpleNamespace(id="first", document_id="doc-1", text="first text"),
+            ]
+        )
+
+
+class ScriptedChat:
+    name = "scripted"
+
+    def __init__(self, texts: list[str]) -> None:
+        self.texts = texts
+        self.calls: list[list[dict[str, str]]] = []
+
+    async def chat(self, messages: list[dict[str, str]], model: str) -> ChatResult:
+        self.calls.append(messages)
+        return ChatResult(
+            self.texts[len(self.calls) - 1],
+            Usage(prompt_tokens=2, completion_tokens=3, estimated_cost_usd=0.01),
+        )
+
+
+class FakeChatClient:
+    async def post(self, *args: object, **kwargs: object) -> httpx.Response:
+        request = httpx.Request("POST", "https://provider.test/chat/completions")
+        return httpx.Response(
+            200,
+            request=request,
+            text=(
+                '{"choices":[{"message":{"content":"Answer [1]."}}],'
+                '"usage":{"prompt_tokens":4,"completion_tokens":2}}\n{"extra":true}'
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_authoritative_hits_preserves_raw_vector_rank_and_score() -> None:
+    raw = [VectorHit("first", 0.91, {}), VectorHit("second", 0.72, {})]
+
+    hits = await authoritative_hits(
+        ReverseOrderSession(),  # type: ignore[arg-type]
+        "project",
+        "dataset",
+        raw,
+    )
+
+    assert [(hit.id, hit.score) for hit in hits] == [("first", 0.91), ("second", 0.72)]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_accepts_provider_response_with_trailing_data() -> None:
+    chat = OpenAIChatProvider("https://provider.test", "key", client=FakeChatClient())  # type: ignore[arg-type]
+
+    result = await chat.chat([{"role": "user", "content": "Question"}], "model")
+
+    assert result.text == "Answer [1]."
+    assert result.usage.prompt_tokens == 4
+    assert result.usage.completion_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_repairs_citation_format_once() -> None:
+    chat = ScriptedChat(["Supported answer without citation.", "Supported answer [1]."])
+
+    result, referenced = await chat_with_citation_repair(
+        chat,  # type: ignore[arg-type]
+        [{"role": "user", "content": "Question"}],
+        "model",
+        1,
+    )
+
+    assert result.text == "Supported answer [1]."
+    assert referenced == {1}
+    assert len(chat.calls) == 2
+    assert result.usage.prompt_tokens == 4
+    assert result.usage.completion_tokens == 6
+    assert result.usage.estimated_cost_usd == 0.02
+
+
+@pytest.mark.asyncio
+async def test_chat_stops_after_one_failed_citation_repair() -> None:
+    chat = ScriptedChat(["Answer [9].", "Still wrong [2]."])
+
+    with pytest.raises(Exception) as caught:
+        await chat_with_citation_repair(
+            chat,  # type: ignore[arg-type]
+            [{"role": "user", "content": "Question"}],
+            "model",
+            1,
+        )
+
+    assert getattr(caught.value, "status_code", None) == 502
+    assert len(chat.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_provider_timeout_maps_to_safe_504() -> None:
+    request = httpx.Request("POST", "https://provider.invalid/chat")
+
+    async def fail() -> object:
+        raise httpx.ReadTimeout("private upstream timeout", request=request)
+
+    with pytest.raises(Exception) as caught:
+        await safe_provider_call(fail)
+
+    assert getattr(caught.value, "status_code", None) == 504
+    assert getattr(caught.value, "detail", None) == "provider request timed out"
+
+
+@pytest.mark.asyncio
+async def test_provider_http_error_maps_to_safe_502() -> None:
+    request = httpx.Request("POST", "https://provider.invalid/chat")
+    response = httpx.Response(503, request=request)
+
+    async def fail() -> object:
+        raise httpx.HTTPStatusError("secret diagnostics", request=request, response=response)
+
+    with pytest.raises(Exception) as caught:
+        await safe_provider_call(fail)
+
+    assert getattr(caught.value, "status_code", None) == 502
+    assert getattr(caught.value, "detail", None) == "provider request failed"

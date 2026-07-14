@@ -36,9 +36,14 @@ class Settings(BaseSettings):
     graph_extractor_model: str = "deterministic-graph-v1"
     graph_extractor_version: str = "graph-extractor-v1"
     graph_extractor_prompt_version: str = "graph-v1"
+    graph_extractor_timeout_seconds: float = 300
+    graph_extractor_parallelism: int = 1
     provider_version: str = "v1"
     embedding_dimensions: int = 64
     openai_base_url: str = "https://api.openai.com/v1"
+    openai_embedding_base_url: str | None = None
+    openai_chat_base_url: str | None = None
+    openai_graph_extractor_base_url: str | None = None
     openai_api_key: SecretStr = SecretStr("")
     qdrant_url: str = "http://qdrant:6333"
     qdrant_api_key: SecretStr = SecretStr("")
@@ -67,8 +72,12 @@ class Settings(BaseSettings):
             raise ValueError("retrieval RRF and graph depth limits are invalid")
         if self.retrieval_graph_seed_limit < 1 or self.retrieval_graph_fanout < 1:
             raise ValueError("graph seed and fanout limits must be positive")
-        if self.retrieval_graph_timeout_ms < 1:
-            raise ValueError("graph timeout must be positive")
+        if (
+            self.retrieval_graph_timeout_ms < 1
+            or self.graph_extractor_timeout_seconds < 1
+            or self.graph_extractor_parallelism < 1
+        ):
+            raise ValueError("graph settings must be positive")
         if (
             "openai" in {self.embedding_provider, self.chat_provider, self.graph_extractor_provider}
             and not self.openai_api_key.get_secret_value()
@@ -78,8 +87,14 @@ class Settings(BaseSettings):
             return self
         if self.graph_extractor_provider != "openai":
             raise ValueError("GRAPH_EXTRACTOR_PROVIDER must be openai in production")
-        if urlparse(self.openai_base_url).scheme != "https":
-            raise ValueError("OPENAI_BASE_URL must use https in production")
+        provider_urls = {
+            "OPENAI_EMBEDDING_BASE_URL": self.embedding_base_url,
+            "OPENAI_CHAT_BASE_URL": self.chat_base_url,
+            "OPENAI_GRAPH_EXTRACTOR_BASE_URL": self.graph_extractor_base_url,
+        }
+        for name, value in provider_urls.items():
+            if urlparse(value).scheme != "https":
+                raise ValueError(f"{name} must use https in production")
         values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),
@@ -96,6 +111,18 @@ class Settings(BaseSettings):
         if not separator or not user or not password:
             raise ValueError("NEO4J_AUTH must be formatted as user/password")
         return self
+
+    @property
+    def embedding_base_url(self) -> str:
+        return self.openai_embedding_base_url or self.openai_base_url
+
+    @property
+    def chat_base_url(self) -> str:
+        return self.openai_chat_base_url or self.openai_base_url
+
+    @property
+    def graph_extractor_base_url(self) -> str:
+        return self.openai_graph_extractor_base_url or self.openai_base_url
 
 
 @lru_cache

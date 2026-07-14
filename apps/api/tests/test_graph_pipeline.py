@@ -1,5 +1,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from threading import Lock
+from time import sleep
 from uuid import uuid4
 
 import pytest
@@ -12,7 +14,7 @@ from app.graph_models import (
     RelationAssertion,
     RunStatus,
 )
-from app.graph_pipeline import ExtractorMetadata, _persist_chunk, build_extractor
+from app.graph_pipeline import ExtractorMetadata, _extract_chunks, _persist_chunk, build_extractor
 from app.graph_store import (
     ChunkProjection,
     DocumentProjection,
@@ -41,6 +43,22 @@ class Extractor:
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
+
+
+class SlowExtractor:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+        self.lock = Lock()
+
+    def extract(self, text: str) -> Extraction:
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        sleep(0.04)
+        with self.lock:
+            self.active -= 1
+        return Extraction(entities=[Entity(name=text, type="Entity", confidence=1)], relations=[])
 
 
 class FakeSession:
@@ -108,7 +126,13 @@ def inputs(dataset_id: str = "dataset-a") -> tuple[Document, Chunk]:
 
 
 def test_build_extractor_defaults_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: Settings())
+    monkeypatch.setattr(
+        "app.graph_pipeline.get_settings",
+        lambda: Settings(
+            graph_extractor_provider="deterministic",
+            graph_extractor_model="deterministic-graph-v1",
+        ),
+    )
 
     extractor, metadata = build_extractor()
 
@@ -129,7 +153,7 @@ def test_build_extractor_constructs_openai_compatible_adapter(
         graph_extractor_model="test-model",
         graph_extractor_version="test-extractor-v2",
         graph_extractor_prompt_version="test-prompt-v3",
-        openai_base_url="https://extractor.example/v1",
+        openai_graph_extractor_base_url="https://extractor.example/v1",
         openai_api_key="test-secret",
     )
     monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)
@@ -143,8 +167,31 @@ def test_build_extractor_constructs_openai_compatible_adapter(
         "test-model",
         "test-prompt-v3",
     )
+    assert extractor.timeout == 300
     assert metadata.provider == "openai_compatible"
     assert metadata.extractor_version == "test-extractor-v2"
+
+
+@pytest.mark.asyncio
+async def test_extract_chunks_respects_parallelism() -> None:
+    project_id = uuid4()
+    chunks = [
+        Chunk(
+            id=f"chunk-{index}",
+            project_id=project_id,
+            dataset_id="dataset-a",
+            document_id="doc",
+            chunk_index=index,
+            text=f"Entity {index}",
+        )
+        for index in range(4)
+    ]
+    extractor = SlowExtractor()
+
+    results = await _extract_chunks(chunks, extractor, parallelism=2)  # type: ignore[arg-type]
+
+    assert [item.chunk.id for item in results] == ["chunk-0", "chunk-1", "chunk-2", "chunk-3"]
+    assert extractor.max_active == 2
 
 
 @pytest.mark.asyncio

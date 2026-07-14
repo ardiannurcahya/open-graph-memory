@@ -22,7 +22,7 @@ class Chunker(Protocol):
 class RecursiveTextChunker:
     version = "recursive-v1"
 
-    def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 500) -> None:
+    def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 5000) -> None:
         if size <= overlap or overlap < 0:
             raise ValueError("chunk size must exceed non-negative overlap")
         self.size, self.overlap, self.maximum = size, overlap, maximum

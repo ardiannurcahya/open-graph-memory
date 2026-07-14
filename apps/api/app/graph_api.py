@@ -1,5 +1,6 @@
 """Bounded, PostgreSQL-authoritative graph inspection and review API."""
 
+import re
 from datetime import datetime
 from typing import Annotated
 
@@ -25,6 +26,23 @@ Project = Annotated[ProjectContext, Depends(require_project)]
 Db = Annotated[AsyncSession, Depends(get_session)]
 MAX_NEIGHBORS = 100
 MAX_NODES = 200
+GRAPH_CANDIDATE_LIMIT = 2_000
+LOW_SIGNAL_ENTITY_TYPES = {
+    "access_date",
+    "accepted_date",
+    "article_number",
+    "contract",
+    "doi",
+    "iteration_limit",
+    "journal_volume",
+    "numeric value",
+    "publication_date",
+    "publication_year",
+    "received_date",
+    "revised_date",
+    "sample size",
+    "value",
+}
 
 
 class Citation(BaseModel):
@@ -116,6 +134,37 @@ class ReviewInput(BaseModel):
 
 def entity_view(item: CanonicalEntity) -> EntityView:
     return EntityView.model_validate(item, from_attributes=True)
+
+
+def low_signal_entity(name: str, entity_type: str) -> bool:
+    normalized_type = entity_type.strip().lower()
+    normalized_name = name.strip().lower()
+    if normalized_type in LOW_SIGNAL_ENTITY_TYPES:
+        return True
+    if normalized_type.endswith("_date") or normalized_type.endswith("_year"):
+        return True
+    if re.fullmatch(r"[\d\s.,%×x/–\-]+", normalized_name):
+        return True
+    return False
+
+
+def rank_graph_entities(
+    entities: list[CanonicalEntity], degree: dict[str, int], limit: int
+) -> list[CanonicalEntity]:
+    useful = [
+        item for item in entities if not low_signal_entity(item.canonical_name, item.entity_type)
+    ]
+    fallback = useful or entities
+    return sorted(
+        fallback,
+        key=lambda item: (
+            -(degree.get(item.id, 0)),
+            low_signal_entity(item.canonical_name, item.entity_type),
+            item.entity_type.lower(),
+            item.canonical_name.lower(),
+            item.id,
+        ),
+    )[:limit]
 
 
 async def citations(db: AsyncSession, relation_id: str) -> list[Citation]:
@@ -217,17 +266,37 @@ async def graph(
     depth: int = Query(1, ge=0, le=1),
 ) -> GraphSummary:
     await owned(db, project, dataset_id)
-    entities = list(
+    candidate_entities = list(
         await db.scalars(
             select(CanonicalEntity)
             .where(
                 CanonicalEntity.project_id == project.project_id,
                 CanonicalEntity.dataset_id == dataset_id,
             )
-            .order_by(CanonicalEntity.id)
-            .limit(limit)
+            .order_by(CanonicalEntity.canonical_name)
+            .limit(GRAPH_CANDIDATE_LIMIT)
         )
     )
+    degree_rows = await db.execute(
+        select(RelationAssertion.source_entity_id, func.count())
+        .where(
+            RelationAssertion.project_id == project.project_id,
+            RelationAssertion.dataset_id == dataset_id,
+        )
+        .group_by(RelationAssertion.source_entity_id)
+    )
+    degree = {str(entity_id): int(count) for entity_id, count in degree_rows}
+    target_degree_rows = await db.execute(
+        select(RelationAssertion.target_entity_id, func.count())
+        .where(
+            RelationAssertion.project_id == project.project_id,
+            RelationAssertion.dataset_id == dataset_id,
+        )
+        .group_by(RelationAssertion.target_entity_id)
+    )
+    for entity_id, count in target_degree_rows:
+        degree[str(entity_id)] = degree.get(str(entity_id), 0) + int(count)
+    entities = rank_graph_entities(candidate_entities, degree, limit)
     entity_ids = [item.id for item in entities]
     relations = (
         []

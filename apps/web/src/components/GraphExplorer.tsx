@@ -14,6 +14,7 @@ import { Network, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 
 import type { EntityView, GraphSummary } from "../lib/types";
+import { knowledgeNodeSize, layoutKnowledgeBubbles } from "./graphLayout";
 
 interface GraphExplorerProps {
   graph: GraphSummary | null;
@@ -50,7 +51,7 @@ function colorForType(type: string): string {
 }
 
 function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
-  const size = Math.min(116, 76 + data.degree * 7);
+  const size = knowledgeNodeSize(data.degree);
   return (
     <div
       className="knowledge-node"
@@ -63,32 +64,13 @@ function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
       title={`${data.label} · ${data.entityType} · ${Math.round(data.confidence * 100)}% confidence`}
     >
       <Handle type="target" position={Position.Top} className="knowledge-handle" />
-      <span className="knowledge-node-type" style={{ color: data.color }}>
-        {data.entityType}
-      </span>
       <strong>{data.label}</strong>
-      <span className="knowledge-node-degree">
-        {data.degree} {data.degree === 1 ? "link" : "links"}
-      </span>
       <Handle type="source" position={Position.Bottom} className="knowledge-handle" />
     </div>
   );
 }
 
 const nodeTypes = { knowledge: KnowledgeNodeView };
-
-function radialPosition(index: number, total: number, degree: number, maxDegree: number) {
-  if (index === 0 && maxDegree > 2) return { x: 450, y: 210 };
-  const orbitIndex = maxDegree > 2 ? index - 1 : index;
-  const orbitTotal = maxDegree > 2 ? total - 1 : total;
-  const angle = (orbitIndex / Math.max(orbitTotal, 1)) * Math.PI * 2 - Math.PI / 2;
-  const radiusX = orbitTotal > 10 ? 390 : 330;
-  const radiusY = orbitTotal > 10 ? 245 : 205;
-  return {
-    x: 450 + Math.cos(angle) * radiusX,
-    y: 210 + Math.sin(angle) * radiusY,
-  };
-}
 
 export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
   const { nodes, edges, legend } = useMemo(() => {
@@ -104,20 +86,21 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
     const ordered = [...rawNodes].sort(
       (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.canonical_name.localeCompare(b.canonical_name),
     );
-    const maxDegree = Math.max(0, ...degree.values());
-    const flowNodes: KnowledgeNode[] = ordered.map((entity, index) => ({
-      id: entity.id,
-      type: "knowledge",
-      position: radialPosition(index, ordered.length, degree.get(entity.id) ?? 0, maxDegree),
-      data: {
-        label: entity.canonical_name,
-        entityType: entity.entity_type,
-        confidence: entity.confidence,
-        degree: degree.get(entity.id) ?? 0,
-        color: colorForType(entity.entity_type),
-      },
-      draggable: true,
-    }));
+    const layout = layoutKnowledgeBubbles(
+      ordered.map((entity) => ({
+        id: entity.id,
+        type: "knowledge" as const,
+        data: {
+          label: entity.canonical_name,
+          entityType: entity.entity_type,
+          confidence: entity.confidence,
+          degree: degree.get(entity.id) ?? 0,
+          color: colorForType(entity.entity_type),
+        },
+        draggable: true,
+      })),
+    );
+    const flowNodes: KnowledgeNode[] = layout.nodes;
 
     const flowEdges: Edge[] = (graph?.relations ?? [])
       .filter((relation) => nodeIds.has(relation.source_entity_id) && nodeIds.has(relation.target_entity_id))
@@ -172,7 +155,7 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
             edges={edges}
             nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.16, minZoom: 0.55, maxZoom: 1.15 }}
+            fitViewOptions={{ padding: 0.16, minZoom: 0.35, maxZoom: 1.15 }}
             minZoom={0.35}
             maxZoom={1.8}
             proOptions={{ hideAttribution: true }}

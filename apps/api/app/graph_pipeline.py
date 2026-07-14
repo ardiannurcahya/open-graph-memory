@@ -2,11 +2,13 @@
 
 import hashlib
 import logging
+from asyncio import Semaphore, gather, to_thread
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.extraction import (
+    Extraction,
     Extractor,
     normalize_name,
     stable_id,
@@ -47,6 +49,12 @@ class ExtractorMetadata:
     prompt_version: str
 
 
+@dataclass(frozen=True)
+class ChunkExtractionResult:
+    chunk: Chunk
+    extraction: Extraction
+
+
 def extractor_metadata() -> ExtractorMetadata:
     settings = get_settings()
     return ExtractorMetadata(
@@ -67,9 +75,10 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
             settings.graph_extractor_provider,
             PluginConfig(
                 {
-                    "base_url": settings.openai_base_url,
+                    "base_url": settings.graph_extractor_base_url,
                     "model": settings.graph_extractor_model,
                     "prompt_version": settings.graph_extractor_prompt_version,
+                    "timeout": settings.graph_extractor_timeout_seconds,
                 },
                 {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
             ),
@@ -102,8 +111,11 @@ async def extract_document(
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
         document = await db.get(Document, document_id)
-        if document is None or document.status != DocumentStatus.INDEXED:
-            raise ValueError("graph extraction requires an indexed document")
+        if document is None or document.status not in {
+            DocumentStatus.INDEXED,
+            DocumentStatus.PERSISTING,
+        }:
+            raise ValueError("graph extraction requires a persisted document")
         chunks = list(
             await db.scalars(
                 select(Chunk)
@@ -117,10 +129,34 @@ async def extract_document(
         )
         chunk_inputs = [(chunk.id, chunk.text) for chunk in chunks]
         try:
-            for chunk in chunks:
-                await _persist_chunk(db, document, chunk, selected_extractor, metadata)
+            pending_chunks = [
+                chunk
+                for chunk in chunks
+                if not await _chunk_run_succeeded(db, chunk, metadata)
+            ]
+            parallelism = get_settings().graph_extractor_parallelism
+            logger.info(
+                "graph extraction started document=%s chunks=%d pending=%d parallelism=%d",
+                document.id,
+                len(chunks),
+                len(pending_chunks),
+                parallelism,
+            )
+            for chunk in pending_chunks:
+                await _ensure_running_run(db, document, chunk, metadata)
+            await db.commit()
+            extracted = await _extract_chunks(pending_chunks, selected_extractor, parallelism)
+            for index, item in enumerate(extracted, start=1):
+                await _persist_chunk_result(db, document, item.chunk, item.extraction, metadata)
+                logger.info(
+                    "graph extraction chunk persisted document=%s progress=%d/%d",
+                    document.id,
+                    index,
+                    len(extracted),
+                )
             await db.commit()
             await project_document(db, document, graph or _store())
+            logger.info("graph projection completed document=%s", document.id)
             return document.id
         except BaseException as exc:
             await db.rollback()
@@ -141,19 +177,20 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-async def _persist_chunk(
-    db: AsyncSession,
-    document: Document,
-    chunk: Chunk,
-    extractor: Extractor,
-    metadata: ExtractorMetadata | None = None,
-) -> None:
-    metadata = metadata or extractor_metadata()
+async def _chunk_run_succeeded(
+    db: AsyncSession, chunk: Chunk, metadata: ExtractorMetadata
+) -> bool:
+    run_id = stable_id("run", chunk.id, metadata.extractor_version, _hash(chunk.text))
+    run = await db.get(GraphExtractionRun, run_id)
+    return run is not None and run.status == RunStatus.SUCCEEDED
+
+
+async def _ensure_running_run(
+    db: AsyncSession, document: Document, chunk: Chunk, metadata: ExtractorMetadata
+) -> GraphExtractionRun:
     input_hash = _hash(chunk.text)
     run_id = stable_id("run", chunk.id, metadata.extractor_version, input_hash)
     run = await db.get(GraphExtractionRun, run_id)
-    if run is not None and run.status == RunStatus.SUCCEEDED:
-        return
     if run is None:
         run = GraphExtractionRun(
             id=run_id,
@@ -175,9 +212,60 @@ async def _persist_chunk(
         run.status = RunStatus.RUNNING
         run.error_message = None
         run.completed_at = None
+    return run
+
+
+async def _extract_chunks(
+    chunks: list[Chunk], extractor: Extractor, parallelism: int
+) -> list[ChunkExtractionResult]:
+    if parallelism <= 1:
+        return [ChunkExtractionResult(chunk, extractor.extract(chunk.text)) for chunk in chunks]
+    semaphore = Semaphore(parallelism)
+
+    async def run(chunk: Chunk) -> ChunkExtractionResult:
+        async with semaphore:
+            return ChunkExtractionResult(chunk, await to_thread(extractor.extract, chunk.text))
+
+    return list(await gather(*(run(chunk) for chunk in chunks)))
+
+
+async def _persist_chunk(
+    db: AsyncSession,
+    document: Document,
+    chunk: Chunk,
+    extractor: Extractor,
+    metadata: ExtractorMetadata | None = None,
+) -> None:
+    metadata = metadata or extractor_metadata()
+    if await _chunk_run_succeeded(db, chunk, metadata):
+        return
+    run = await _ensure_running_run(db, document, chunk, metadata)
     # Keep the attempt record if provider extraction fails.
     await db.commit()
     result = extractor.extract(chunk.text)
+    await _persist_chunk_result(db, document, chunk, result, metadata, run)
+
+
+async def _persist_chunk_result(
+    db: AsyncSession,
+    document: Document,
+    chunk: Chunk,
+    result: Extraction,
+    metadata: ExtractorMetadata,
+    run: GraphExtractionRun | None = None,
+) -> None:
+    input_hash = _hash(chunk.text)
+    run_id = stable_id("run", chunk.id, metadata.extractor_version, input_hash)
+    if run is None:
+        run = await db.get(GraphExtractionRun, run_id)
+    if run is not None and run.status == RunStatus.SUCCEEDED:
+        return
+    if run is None:
+        run = await _ensure_running_run(db, document, chunk, metadata)
+    else:
+        run.status = RunStatus.RUNNING
+        run.error_message = None
+        run.completed_at = None
     entities: dict[str, list[CanonicalEntity]] = {}
     for entity_item in result.entities:
         normalized = normalize_name(entity_item.name)
