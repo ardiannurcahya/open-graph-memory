@@ -108,7 +108,13 @@ def inputs(dataset_id: str = "dataset-a") -> tuple[Document, Chunk]:
 
 
 def test_build_extractor_defaults_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: Settings())
+    monkeypatch.setattr(
+        "app.graph_pipeline.get_settings",
+        lambda: Settings(
+            graph_extractor_provider="deterministic",
+            graph_extractor_model="deterministic-graph-v1",
+        ),
+    )
 
     extractor, metadata = build_extractor()
 
@@ -129,7 +135,7 @@ def test_build_extractor_constructs_openai_compatible_adapter(
         graph_extractor_model="test-model",
         graph_extractor_version="test-extractor-v2",
         graph_extractor_prompt_version="test-prompt-v3",
-        openai_base_url="https://extractor.example/v1",
+        openai_graph_extractor_base_url="https://extractor.example/v1",
         openai_api_key="test-secret",
     )
     monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)

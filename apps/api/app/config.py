@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     provider_version: str = "v1"
     embedding_dimensions: int = 64
     openai_base_url: str = "https://api.openai.com/v1"
+    openai_embedding_base_url: str | None = None
+    openai_chat_base_url: str | None = None
+    openai_graph_extractor_base_url: str | None = None
     openai_api_key: SecretStr = SecretStr("")
     qdrant_url: str = "http://qdrant:6333"
     qdrant_api_key: SecretStr = SecretStr("")
@@ -78,8 +81,14 @@ class Settings(BaseSettings):
             return self
         if self.graph_extractor_provider != "openai":
             raise ValueError("GRAPH_EXTRACTOR_PROVIDER must be openai in production")
-        if urlparse(self.openai_base_url).scheme != "https":
-            raise ValueError("OPENAI_BASE_URL must use https in production")
+        provider_urls = {
+            "OPENAI_EMBEDDING_BASE_URL": self.embedding_base_url,
+            "OPENAI_CHAT_BASE_URL": self.chat_base_url,
+            "OPENAI_GRAPH_EXTRACTOR_BASE_URL": self.graph_extractor_base_url,
+        }
+        for name, value in provider_urls.items():
+            if urlparse(value).scheme != "https":
+                raise ValueError(f"{name} must use https in production")
         values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),
@@ -96,6 +105,18 @@ class Settings(BaseSettings):
         if not separator or not user or not password:
             raise ValueError("NEO4J_AUTH must be formatted as user/password")
         return self
+
+    @property
+    def embedding_base_url(self) -> str:
+        return self.openai_embedding_base_url or self.openai_base_url
+
+    @property
+    def chat_base_url(self) -> str:
+        return self.openai_chat_base_url or self.openai_base_url
+
+    @property
+    def graph_extractor_base_url(self) -> str:
+        return self.openai_graph_extractor_base_url or self.openai_base_url
 
 
 @lru_cache

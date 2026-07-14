@@ -1,10 +1,14 @@
 FROM python:3.12-slim
 WORKDIR /app
+ARG UV_VERSION=0.6.3
 COPY pyproject.toml uv.lock ./
-RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+RUN --mount=type=cache,id=opengraphrag-pip,target=/root/.cache/pip,sharing=locked \
+    --mount=type=cache,id=opengraphrag-uv,target=/root/.cache/uv,sharing=locked \
+    pip install "uv==${UV_VERSION}" && uv sync --frozen --no-dev
 COPY apps/api/app ./app
 COPY apps/worker/worker ./worker
 COPY packages/core/src ./packages/core/src
-ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH="/app:/app/packages/core/src"
+COPY packages/contracts/src ./packages/contracts/src
+ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH="/app:/app/packages/core/src:/app/packages/contracts/src"
 USER 65532
 CMD ["celery","-A","worker.main.celery_app","worker","--loglevel=INFO","--concurrency=1"]

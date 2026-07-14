@@ -98,7 +98,7 @@ def _runtime() -> tuple[EmbeddingProvider, VectorStore, str]:
     provider = create_embedding(
         settings.embedding_provider,
         PluginConfig(
-            {"base_url": settings.openai_base_url, "dimensions": settings.embedding_dimensions},
+            {"base_url": settings.embedding_base_url, "dimensions": settings.embedding_dimensions},
             {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
         ),
     )

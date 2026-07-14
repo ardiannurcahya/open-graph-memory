@@ -7,7 +7,7 @@ interface DocumentManagerProps {
   documents: DocumentItem[];
   loading: boolean;
   uploading: boolean;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (files: File[]) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRefresh: () => void;
 }
@@ -66,9 +66,12 @@ export function DocumentManager({
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (file) await onUpload(file);
-    if (inputRef.current) inputRef.current.value = "";
+    const files = Array.from(event.target.files ?? []);
+    try {
+      if (files.length > 0) await onUpload(files);
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
   return (
@@ -104,7 +107,9 @@ export function DocumentManager({
             <input
               ref={inputRef}
               type="file"
+              aria-label="Upload files"
               accept={ACCEPTED}
+              multiple
               onChange={handleFileChange}
               disabled={uploading}
               hidden

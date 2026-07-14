@@ -67,7 +67,7 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
             settings.graph_extractor_provider,
             PluginConfig(
                 {
-                    "base_url": settings.openai_base_url,
+                    "base_url": settings.graph_extractor_base_url,
                     "model": settings.graph_extractor_model,
                     "prompt_version": settings.graph_extractor_prompt_version,
                 },

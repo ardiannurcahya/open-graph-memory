@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +36,97 @@ class Extraction(BaseModel):
 
 class Extractor(Protocol):
     def extract(self, text: str) -> Extraction: ...
+
+
+def _object_map(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return cast(dict[str, object], value)
+    return {}
+
+
+def _object_list(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _string(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _confidence(value: object) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return max(0.0, min(1.0, float(value)))
+    return 0.8
+
+
+def _load_json_object(content: str) -> object:
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start, end = stripped.find("{"), stripped.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        return json.loads(stripped[start : end + 1])
+
+
+def _normalize_extraction_payload(payload: object) -> dict[str, list[dict[str, object]]]:
+    root = _object_map(payload)
+    raw_entities = _object_list(root.get("entities") or root.get("nodes"))
+    raw_relations = _object_list(root.get("relations") or root.get("edges"))
+    entities: list[dict[str, object]] = []
+    id_to_name: dict[str, str] = {}
+    for raw in raw_entities:
+        item = _object_map(raw)
+        name = _string(item.get("name")) or _string(item.get("label")) or _string(item.get("id"))
+        if name is None:
+            continue
+        entity_type = _string(item.get("type")) or "Entity"
+        entity = {
+            "name": name,
+            "type": entity_type,
+            "confidence": _confidence(item.get("confidence")),
+        }
+        entities.append(entity)
+        entity_id = _string(item.get("id"))
+        if entity_id is not None:
+            id_to_name[entity_id] = name
+    relations: list[dict[str, object]] = []
+    for raw in raw_relations:
+        item = _object_map(raw)
+        source = _string(item.get("source")) or _string(item.get("from"))
+        target = _string(item.get("target")) or _string(item.get("to"))
+        relation_type = _string(item.get("type")) or _string(item.get("relation"))
+        if source is None or target is None or relation_type is None:
+            continue
+        relations.append(
+            {
+                "source": id_to_name.get(source, source),
+                "target": id_to_name.get(target, target),
+                "type": relation_type,
+                "confidence": _confidence(item.get("confidence")),
+            }
+        )
+    return {"entities": entities, "relations": relations}
+
+
+def _parse_extraction_content(content: str, source_text: str) -> Extraction:
+    deterministic = DeterministicExtractor().extract(source_text)
+    try:
+        extracted = Extraction.model_validate(
+            _normalize_extraction_payload(_load_json_object(content))
+        )
+    except (json.JSONDecodeError, ValueError):
+        return deterministic
+    if not extracted.entities and not extracted.relations and (
+        deterministic.entities or deterministic.relations
+    ):
+        return deterministic
+    return extracted
 
 
 def normalize_name(value: str) -> str:
@@ -120,7 +211,10 @@ class OpenAICompatibleExtractor:
                     {
                         "role": "system",
                         "content": (
-                            f"Extract entities and relations. Prompt version: {self.prompt_version}"
+                            "Extract entities and relations. Return only valid JSON with top-level "
+                            "entities and relations arrays. Entity fields: name, type, confidence. "
+                            "Relation fields: source, target, type, confidence. No markdown, "
+                            f"prose, or explanations. Prompt version: {self.prompt_version}"
                         ),
                     },
                     {"role": "user", "content": text},
@@ -134,4 +228,4 @@ class OpenAICompatibleExtractor:
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
-        return Extraction.model_validate(json.loads(content))
+        return _parse_extraction_content(content, text)

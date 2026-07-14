@@ -31,25 +31,28 @@ MIMES = {
 
 async def spool(
     file: UploadFile, max_bytes: int | None = None
-) -> tuple[tempfile.SpooledTemporaryFile[bytes], int, str, bytes]:
+) -> tuple[tempfile.SpooledTemporaryFile[bytes], int, str, bytes, bytes]:
     settings = get_settings()
     limit = max_bytes or settings.upload_max_bytes
     output = tempfile.SpooledTemporaryFile(max_size=settings.upload_spool_max_bytes, mode="w+b")
-    digest, size, sample = hashlib.sha256(), 0, bytearray()
+    digest, size, head, tail = hashlib.sha256(), 0, bytearray(), bytearray()
     while chunk := await file.read(64 * 1024):
         size += len(chunk)
         if size > limit:
             output.close()
             raise HTTPException(413, f"file exceeds {limit} byte limit")
-        if len(sample) < 8192:
-            sample.extend(chunk[: 8192 - len(sample)])
+        if len(head) < 8192:
+            head.extend(chunk[: 8192 - len(head)])
+        tail.extend(chunk)
+        if len(tail) > 8192:
+            del tail[:-8192]
         digest.update(chunk)
         output.write(chunk)
     output.seek(0)
-    return output, size, digest.hexdigest(), bytes(sample)
+    return output, size, digest.hexdigest(), bytes(head), bytes(tail)
 
 
-def validate(file: UploadFile, content: bytes) -> str:
+def validate(file: UploadFile, head: bytes, tail: bytes) -> str:
     filename = Path(file.filename or "").name
     extension = Path(filename).suffix.lower()
     if not filename or filename != file.filename or extension not in MIMES:
@@ -57,13 +60,13 @@ def validate(file: UploadFile, content: bytes) -> str:
     mime = (file.content_type or "").split(";", 1)[0].lower()
     if mime not in MIMES[extension]:
         raise HTTPException(415, "MIME type does not match extension")
-    if not content:
+    if not head:
         raise HTTPException(415, "empty files are not supported")
-    if extension == ".pdf" and (not content.startswith(b"%PDF-") or b"%%EOF" not in content):
+    if extension == ".pdf" and (not head.startswith(b"%PDF-") or b"%%EOF" not in tail):
         raise HTTPException(415, "invalid PDF signature")
     if extension != ".pdf":
         try:
-            text = content.decode("utf-8")
+            text = head.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise HTTPException(415, "text upload is not UTF-8") from exc
         if "\x00" in text:
@@ -103,9 +106,9 @@ async def upload(
     store: Annotated[ObjectStore, Depends(get_object_store)],
 ) -> dict[str, object]:
     await owned(db, project, dataset_id)
-    stream, size, digest, sample = await spool(file)
+    stream, size, digest, head, tail = await spool(file)
     try:
-        filename = validate(file, sample)
+        filename = validate(file, head, tail)
         query = (
             select(Document)
             .where(

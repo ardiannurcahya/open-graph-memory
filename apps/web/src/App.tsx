@@ -28,6 +28,7 @@ const PROCESSING_STATES = new Set([
   "persisting",
   "deleting",
 ]);
+const UPLOAD_CONCURRENCY = 3;
 
 export function App() {
   const { credentials, save, clear } = useCredentials();
@@ -205,16 +206,33 @@ export function App() {
   );
 
   const handleUpload = useCallback(
-    async (file: File) => {
+    async (files: File[]) => {
       const api = apiRef.current;
-      if (!api || !selectedId) return;
+      if (!api || !selectedId || files.length === 0) return;
+      const uploadApi = api;
       setUploading(true);
       setError("");
       try {
-        await api.uploadDocument(selectedId, file);
+        const failures: string[] = [];
+        let nextIndex = 0;
+        async function uploadNext() {
+          while (nextIndex < files.length) {
+            const file = files[nextIndex];
+            nextIndex += 1;
+            try {
+              await uploadApi.uploadDocument(selectedId, file);
+            } catch (reason) {
+              failures.push(`${file.name}: ${errorMessage(reason)}`);
+            }
+          }
+        }
+        await Promise.all(
+          Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, uploadNext),
+        );
         await loadWorkspace(selectedId);
-      } catch (reason) {
-        setError(errorMessage(reason));
+        if (failures.length > 0) {
+          setError(`${files.length - failures.length} of ${files.length} files uploaded. ${failures.join("; ")}`);
+        }
       } finally {
         setUploading(false);
       }

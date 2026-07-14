@@ -50,11 +50,12 @@ def test_production_requires_openai_graph_extractor() -> None:
             s3_secret_key="a-secure-object-secret",
             neo4j_auth="neo4j/a-secure-neo4j-password",
             database_url="postgresql+asyncpg://user:a-secure-db-password@postgres/db",
+            graph_extractor_provider="deterministic",
         )
 
 
 def test_production_rejects_insecure_graph_endpoint() -> None:
-    with pytest.raises(ValidationError, match="OPENAI_BASE_URL"):
+    with pytest.raises(ValidationError, match="OPENAI_GRAPH_EXTRACTOR_BASE_URL"):
         Settings(
             app_env="production",
             admin_api_key="a-secure-admin-api-key",
@@ -64,5 +65,17 @@ def test_production_rejects_insecure_graph_endpoint() -> None:
             graph_extractor_provider="openai",
             graph_extractor_model="gpt-4o-mini",
             openai_api_key="a-secure-openai-api-key",
-            openai_base_url="http://localhost:8000/v1",
+            openai_graph_extractor_base_url="http://localhost:8000/v1",
         )
+
+
+def test_provider_base_urls_can_be_split() -> None:
+    settings = Settings(
+        openai_base_url="https://default.example/v1",
+        openai_embedding_base_url="https://embeddings.example/v1",
+        openai_chat_base_url="https://chat.example/v1",
+        openai_graph_extractor_base_url="https://extractor.example/v1",
+    )
+    assert settings.embedding_base_url == "https://embeddings.example/v1"
+    assert settings.chat_base_url == "https://chat.example/v1"
+    assert settings.graph_extractor_base_url == "https://extractor.example/v1"
