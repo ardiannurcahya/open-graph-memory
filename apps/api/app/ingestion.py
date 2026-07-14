@@ -30,6 +30,7 @@ from app.storage import ObjectStore, get_object_store
 from app.vector_store import VectorPoint, VectorStore
 
 PIPELINE_VERSION = "ingestion-v1:parser-v1:recursive-v1:embedding-v1"
+EMBEDDING_BATCH_SIZE = 64
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
 
@@ -47,6 +48,18 @@ def deterministic_point_id(*parts: object) -> str:
 def sanitized_error(exc: BaseException) -> str:
     message = re.sub(r"(?i)(password|secret|token|key)=\S+", r"\1=[redacted]", str(exc))
     return " ".join(message.split())[:1000] or type(exc).__name__
+
+
+async def embed_in_batches(
+    embeddings: EmbeddingProvider,
+    texts: list[str],
+    model: str,
+    batch_size: int = EMBEDDING_BATCH_SIZE,
+) -> list[list[float]]:
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        vectors.extend(await embeddings.embed(texts[start : start + batch_size], model))
+    return vectors
 
 
 async def enqueue_document(db: AsyncSession, document: Document) -> IndexingJob:
@@ -159,7 +172,9 @@ async def run_ingestion(
                 runtime_model = runtime_model or default_model
             document.status = DocumentStatus.EMBEDDING
             await _stage(db, job, IndexingStage.EMBEDDING)
-            embedded = await embeddings.embed([item.text for item in chunks], runtime_model)
+            embedded = await embed_in_batches(
+                embeddings, [item.text for item in chunks], runtime_model
+            )
             if len(embedded) != len(chunks):
                 raise ValueError("embedding response count mismatch")
 

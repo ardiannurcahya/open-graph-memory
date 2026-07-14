@@ -1,7 +1,7 @@
 from io import BytesIO
 
 from app.chunking import RecursiveTextChunker
-from app.ingestion import PIPELINE_VERSION, deterministic_id, sanitized_error
+from app.ingestion import PIPELINE_VERSION, deterministic_id, embed_in_batches, sanitized_error
 from app.parsers import default_registry
 from pypdf import PdfWriter
 
@@ -17,6 +17,60 @@ def test_parser_chunker_orchestration_inputs() -> None:
     chunks = RecursiveTextChunker(size=20, overlap=2).split("doc_1", parsed.text)
     assert chunks
     assert "Heading" in chunks[0].text
+
+
+def test_default_chunker_accepts_large_tabular_text() -> None:
+    text = "\n".join(f"name: project-{index}; value: {'x' * 900}" for index in range(650))
+
+    chunks = RecursiveTextChunker().split("doc_1", text)
+
+    assert len(chunks) > 500
+    assert chunks[-1].text
+
+
+def test_text_parser_accepts_utf8_sig_text() -> None:
+    parsed = default_registry().parse("text/plain", b"\xef\xbb\xbfHello\r\nworld", "notes.txt")
+
+    assert parsed.text == "Hello\nworld"
+
+
+def test_csv_parser_accepts_large_field() -> None:
+    large_value = "x" * (140 * 1024)
+    content = f"name,description\nproject,{large_value}\n".encode()
+
+    parsed = default_registry().parse("text/csv", content, "documents.csv")
+
+    assert parsed.metadata["rows"] == 1
+    assert parsed.metadata["columns"] == ["name", "description"]
+    assert f"description: {large_value}" in parsed.text
+
+
+def test_plain_text_csv_filename_uses_csv_parser() -> None:
+    parsed = default_registry().parse("text/plain", b"name,value\nalpha,1\n", "rows.csv")
+
+    assert parsed.metadata == {"rows": 1, "columns": ["name", "value"]}
+    assert parsed.text == "name: alpha; value: 1"
+
+
+class RecordingEmbeddings:
+    name = "recording"
+    dimensions = 1
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        self.calls.append(texts)
+        return [[float(len(text))] for text in texts]
+
+
+async def test_embed_in_batches_preserves_order() -> None:
+    embeddings = RecordingEmbeddings()
+
+    vectors = await embed_in_batches(embeddings, ["a", "bb", "ccc", "dddd", "eeeee"], "model", 2)
+
+    assert embeddings.calls == [["a", "bb"], ["ccc", "dddd"], ["eeeee"]]
+    assert vectors == [[1.0], [2.0], [3.0], [4.0], [5.0]]
 
 
 def test_pdf_parser_accepts_a_real_large_pdf() -> None:

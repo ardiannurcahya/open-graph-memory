@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
 from pypdf import PdfReader
 
+CSV_FIELD_SIZE_LIMIT = 10 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ParsedDocument:
@@ -25,22 +27,31 @@ class TextParser:
     mime_types: tuple[str, ...] = ("text/plain",)
 
     def parse(self, content: bytes) -> ParsedDocument:
-        return ParsedDocument(content.decode("utf-8").replace("\r\n", "\n").strip())
+        text = content.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").strip()
+        return ParsedDocument(text)
 
 
 class CsvParser:
     mime_types: tuple[str, ...] = ("text/csv", "application/csv")
 
     def parse(self, content: bytes) -> ParsedDocument:
-        rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
-        if not rows:
+        previous_limit = csv.field_size_limit()
+        if previous_limit < CSV_FIELD_SIZE_LIMIT:
+            csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
+        reader = csv.reader(io.StringIO(content.decode("utf-8-sig", errors="replace")))
+        header = next(reader, None)
+        if not header:
             return ParsedDocument("")
-        header, *body = rows
-        text = "\n".join(
-            "; ".join(f"{key}: {value}" for key, value in zip(header, row, strict=False))
-            for row in body
-        )
-        return ParsedDocument(text, {"rows": len(body), "columns": header})
+        rows = 0
+        lines: list[str] = []
+        for row in reader:
+            if not any(value.strip() for value in row):
+                continue
+            rows += 1
+            lines.append(
+                "; ".join(f"{key}: {value}" for key, value in zip(header, row, strict=False))
+            )
+        return ParsedDocument("\n".join(lines), {"rows": rows, "columns": header})
 
 
 class MarkdownParser:

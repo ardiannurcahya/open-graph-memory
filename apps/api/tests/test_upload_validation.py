@@ -31,6 +31,27 @@ def test_pdf_accepts_eof_signature_at_end_of_large_file() -> None:
     assert validate(file, head, tail) == "report.pdf"
 
 
+def test_txt_upload_is_accepted() -> None:
+    file = upload("notes.txt", "text/plain", b"plain notes")
+
+    assert validate(file, b"plain notes", b"plain notes") == "notes.txt"
+
+
+def test_csv_upload_is_accepted() -> None:
+    file = upload("rows.csv", "text/csv", b"name,value\nalpha,1\n")
+
+    data = b"name,value\nalpha,1\n"
+
+    assert validate(file, data, data) == "rows.csv"
+
+
+def test_html_upload_is_accepted() -> None:
+    data = b"<!doctype html><html><body>hello</body></html>"
+    file = upload("page.html", "text/html", data)
+
+    assert validate(file, data, data) == "page.html"
+
+
 def test_path_traversal_is_rejected() -> None:
     file = upload("../secret.txt", "text/plain", b"safe")
     try:

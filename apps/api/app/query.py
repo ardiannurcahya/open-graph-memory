@@ -182,6 +182,33 @@ def entity_candidates(text: str) -> list[str]:
     return sorted(candidates)[:8]
 
 
+def graph_evidence_chunk_ids(evidence: list[GraphEvidence], limit: int) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for item in evidence:
+        for chunk_id in (*item.evidence_chunk_ids, item.chunk_id):
+            if chunk_id in seen:
+                continue
+            seen.add(chunk_id)
+            ids.append(chunk_id)
+            if len(ids) >= limit:
+                return ids
+    return ids
+
+
+def graph_evidence_scores(evidence: list[GraphEvidence], chunk_ids: list[str]) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for chunk_id in chunk_ids:
+        matching = [
+            item.score
+            for item in evidence
+            if chunk_id == item.chunk_id or chunk_id in item.evidence_chunk_ids
+        ]
+        if matching:
+            scores[chunk_id] = max(matching)
+    return scores
+
+
 async def authoritative_hits(
     db: AsyncSession, project_id: object, dataset_id: str, raw: list[VectorHit]
 ) -> list[VectorHit]:
@@ -239,17 +266,24 @@ async def execute_query(
     if dataset is None:
         raise HTTPException(404, "dataset not found")
     started, trace_id, settings = time.perf_counter(), str(uuid4()), get_settings()
+    vector_started = time.perf_counter()
     vector = (
         await safe_provider_call(lambda: embeddings.embed([body.query], settings.embedding_model))
     )[0]
+    vector_limit = max(body.top_k, 10) if body.mode == "graph_only" else max(body.top_k, 50)
     vector_raw = await vectors.search(
-        vector, str(context.project_id), body.dataset_id, max(body.top_k, 50)
+        vector, str(context.project_id), body.dataset_id, vector_limit
     )
     vector_hits = await authoritative_hits(db, context.project_id, body.dataset_id, vector_raw)
+    vector_ms = round((time.perf_counter() - vector_started) * 1000, 3)
     graph_evidence: list[GraphEvidence] = []
     graph_state: dict[str, object] = {"status": "not_requested"}
     graph_hits: list[VectorHit] = []
+    graph_ms = 0.0
+    hydrate_ms = 0.0
+    graph_chunk_ids: list[str] = []
     if body.mode != "vector_only":
+        graph_started = time.perf_counter()
         graph_evidence, graph_state = await bounded_graph_search(
             graph,
             body.graph_timeout_ms or settings.retrieval_graph_timeout_ms,
@@ -261,13 +295,19 @@ async def execute_query(
             body.graph_fanout or settings.retrieval_graph_fanout,
             settings.retrieval_graph_seed_limit,
         )
-        scores = {item.chunk_id: item.score for item in graph_evidence}
+        graph_ms = round((time.perf_counter() - graph_started) * 1000, 3)
+        hydrate_started = time.perf_counter()
+        graph_chunk_ids = graph_evidence_chunk_ids(
+            graph_evidence, max(body.top_k, body.top_k * 3)
+        )
+        scores = graph_evidence_scores(graph_evidence, graph_chunk_ids)
         graph_hits = await authoritative_hits(
             db,
             context.project_id,
             body.dataset_id,
             [VectorHit(chunk_id, score, {}) for chunk_id, score in scores.items()],
         )
+        hydrate_ms = round((time.perf_counter() - hydrate_started) * 1000, 3)
     fusion: list[dict[str, object]]
     if body.mode == "vector_only":
         hits, fusion = vector_hits, []
@@ -286,6 +326,7 @@ async def execute_query(
         )
     hits = hits[: body.top_k]
     memories = await memory_hits(db, context.project_id, body)
+    generation_started = time.perf_counter()
     result, referenced = await chat_with_citation_repair(
         chat,
         [
@@ -295,6 +336,7 @@ async def execute_query(
         settings.chat_model,
         len(hits),
     )
+    generation_ms = round((time.perf_counter() - generation_started) * 1000, 3)
     latency_ms = round((time.perf_counter() - started) * 1000, 3)
     trace: dict[str, object] = {
         "trace_id": trace_id,
@@ -306,6 +348,10 @@ async def execute_query(
         "fusion": fusion,
         "graph": {
             **graph_state,
+            "paths_found": len(graph_evidence),
+            "evidence_chunk_ids": len(graph_chunk_ids),
+            "hydrated_chunks": len(graph_hits),
+            "missing_chunks": max(len(graph_chunk_ids) - len(graph_hits), 0),
             "paths": [
                 {
                     "chunk_id": item.chunk_id,
@@ -318,6 +364,12 @@ async def execute_query(
         },
         "chunk_ids": [hit.id for hit in hits],
         "scores": [hit.score for hit in hits],
+        "timings_ms": {
+            "vector": vector_ms,
+            "graph": graph_ms,
+            "hydrate": hydrate_ms,
+            "generation": generation_ms,
+        },
         "memory": {
             "fact_ids": [fact.id for fact in memories],
             "scopes": [fact.scope for fact in memories],
@@ -398,21 +450,30 @@ async def query_stream(
             if dataset is None:
                 raise HTTPException(404, "dataset not found")
             started, trace_id, settings = time.perf_counter(), str(uuid4()), get_settings()
+            vector_started = time.perf_counter()
             vector = (
                 await safe_provider_call(
                     lambda: embeddings.embed([body.query], settings.embedding_model)
                 )
             )[0]
+            vector_limit = (
+                max(body.top_k, 10) if body.mode == "graph_only" else max(body.top_k, 50)
+            )
             vector_raw = await vectors.search(
-                vector, str(context.project_id), body.dataset_id, max(body.top_k, 50)
+                vector, str(context.project_id), body.dataset_id, vector_limit
             )
             vector_hits = await authoritative_hits(
                 db, context.project_id, body.dataset_id, vector_raw
             )
+            vector_ms = round((time.perf_counter() - vector_started) * 1000, 3)
             graph_evidence: list[GraphEvidence] = []
             graph_state: dict[str, object] = {"status": "not_requested"}
             graph_hits: list[VectorHit] = []
+            graph_ms = 0.0
+            hydrate_ms = 0.0
+            graph_chunk_ids: list[str] = []
             if body.mode != "vector_only":
+                graph_started = time.perf_counter()
                 graph_evidence, graph_state = await bounded_graph_search(
                     graph,
                     body.graph_timeout_ms or settings.retrieval_graph_timeout_ms,
@@ -424,13 +485,19 @@ async def query_stream(
                     body.graph_fanout or settings.retrieval_graph_fanout,
                     settings.retrieval_graph_seed_limit,
                 )
-                scores = {item.chunk_id: item.score for item in graph_evidence}
+                graph_ms = round((time.perf_counter() - graph_started) * 1000, 3)
+                hydrate_started = time.perf_counter()
+                graph_chunk_ids = graph_evidence_chunk_ids(
+                    graph_evidence, max(body.top_k, body.top_k * 3)
+                )
+                scores = graph_evidence_scores(graph_evidence, graph_chunk_ids)
                 graph_hits = await authoritative_hits(
                     db,
                     context.project_id,
                     body.dataset_id,
                     [VectorHit(chunk_id, score, {}) for chunk_id, score in scores.items()],
                 )
+                hydrate_ms = round((time.perf_counter() - hydrate_started) * 1000, 3)
             fusion: list[dict[str, object]]
             if body.mode == "vector_only":
                 hits, fusion = vector_hits, []
@@ -457,9 +524,11 @@ async def query_stream(
             ]
             yield stream_event("status", {"stage": "generating"})
             answer = ""
+            generation_started = time.perf_counter()
             async for segment in chat.stream_chat(messages, settings.chat_model):
                 answer += segment
                 yield stream_event("token", {"text": segment})
+            generation_ms = round((time.perf_counter() - generation_started) * 1000, 3)
             referenced = citation_indexes(answer)
             latency_ms = round((time.perf_counter() - started) * 1000, 3)
             trace: dict[str, object] = {
@@ -472,6 +541,10 @@ async def query_stream(
                 "fusion": fusion,
                 "graph": {
                     **graph_state,
+                    "paths_found": len(graph_evidence),
+                    "evidence_chunk_ids": len(graph_chunk_ids),
+                    "hydrated_chunks": len(graph_hits),
+                    "missing_chunks": max(len(graph_chunk_ids) - len(graph_hits), 0),
                     "paths": [
                         {
                             "chunk_id": item.chunk_id,
@@ -484,6 +557,12 @@ async def query_stream(
                 },
                 "chunk_ids": [hit.id for hit in hits],
                 "scores": [hit.score for hit in hits],
+                "timings_ms": {
+                    "vector": vector_ms,
+                    "graph": graph_ms,
+                    "hydrate": hydrate_ms,
+                    "generation": generation_ms,
+                },
                 "memory": {
                     "fact_ids": [fact.id for fact in memories],
                     "scopes": [fact.scope for fact in memories],

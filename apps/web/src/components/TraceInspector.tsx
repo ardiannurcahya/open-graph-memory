@@ -17,6 +17,8 @@ export function TraceInspector({ result, currentMode }: TraceInspectorProps) {
   const trace = result?.retrieval_trace;
   const graphTrace = trace?.graph;
   const graphStatus = graphTrace?.status ?? "not_requested";
+  const timings = trace?.timings_ms;
+  const graphDetail = graphTrace ? formatGraphDetail(graphTrace) : "waiting";
   const statusMeta = GRAPH_STATUS_META[graphStatus] ?? {
     label: graphStatus,
     variant: "idle",
@@ -59,6 +61,29 @@ export function TraceInspector({ result, currentMode }: TraceInspectorProps) {
 
       <div className="trace-metrics">
         <Metric
+          icon={<Clock size={14} strokeWidth={2} />}
+          label="Vector"
+          value={formatMs(timings?.vector)}
+        />
+        <Metric
+          icon={<Clock size={14} strokeWidth={2} />}
+          label="Graph"
+          value={formatMs(timings?.graph)}
+        />
+        <Metric
+          icon={<Clock size={14} strokeWidth={2} />}
+          label="Hydrate"
+          value={formatMs(timings?.hydrate)}
+        />
+        <Metric
+          icon={<Clock size={14} strokeWidth={2} />}
+          label="Generation"
+          value={formatMs(timings?.generation)}
+        />
+      </div>
+
+      <div className="trace-metrics">
+        <Metric
           icon={<Layers size={14} strokeWidth={2} />}
           label="Prompt Tokens"
           value={result ? String(result.usage.prompt_tokens) : "—"}
@@ -85,11 +110,7 @@ export function TraceInspector({ result, currentMode }: TraceInspectorProps) {
         <PipelineStage
           step="02"
           label="Graph Traversal"
-          detail={
-            graphTrace
-              ? `${graphTrace.paths.length} paths${graphTrace.reason ? ` (${graphTrace.reason})` : ""}`
-              : "waiting"
-          }
+          detail={graphDetail}
           done={Boolean(graphTrace) && graphStatus !== "not_requested"}
           fallback={graphStatus === "fallback"}
         />
@@ -131,6 +152,19 @@ export function TraceInspector({ result, currentMode }: TraceInspectorProps) {
       </details>
     </section>
   );
+}
+
+function formatMs(value?: number) {
+  return typeof value === "number" ? `${value.toFixed(1)} ms` : "—";
+}
+
+function formatGraphDetail(graphTrace: NonNullable<QueryResponse["retrieval_trace"]["graph"]>) {
+  const paths = graphTrace.paths_found ?? graphTrace.paths.length;
+  const hydrated = graphTrace.hydrated_chunks ?? 0;
+  const missing = graphTrace.missing_chunks ? `, ${graphTrace.missing_chunks} missing` : "";
+  const reason = graphTrace.reason ? ` (${graphTrace.reason})` : "";
+
+  return `${paths} paths, ${hydrated} hydrated${missing}${reason}`;
 }
 
 function Metric({

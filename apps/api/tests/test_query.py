@@ -8,9 +8,12 @@ from app.query import (
     authoritative_hits,
     build_context,
     chat_with_citation_repair,
+    graph_evidence_chunk_ids,
+    graph_evidence_scores,
     safe_provider_call,
     stream_event,
 )
+from app.retrieval import GraphEvidence
 from app.vector_store import VectorHit
 
 
@@ -41,6 +44,37 @@ def test_provider_json_loader_accepts_first_object_with_trailing_data() -> None:
     payload = load_json_response('{"choices": []}\n{"extra": true}')
 
     assert payload == {"choices": []}
+
+
+def test_graph_hydration_uses_relation_evidence_chunk_ids() -> None:
+    evidence = [
+        GraphEvidence(
+            chunk_id="path-only",
+            score=0.7,
+            path=("Alice", "Acme"),
+            entity_ids=("ent-1", "ent-2"),
+            relation_ids=("rel-1",),
+            evidence_chunk_ids=("source-a", "source-b"),
+        ),
+        GraphEvidence(
+            chunk_id="source-b",
+            score=0.9,
+            path=("Acme", "Atlas"),
+            entity_ids=("ent-2", "ent-3"),
+            relation_ids=("rel-2",),
+            evidence_chunk_ids=("source-b", "source-c"),
+        ),
+    ]
+
+    chunk_ids = graph_evidence_chunk_ids(evidence, 4)
+
+    assert chunk_ids == ["source-a", "source-b", "path-only", "source-c"]
+    assert graph_evidence_scores(evidence, chunk_ids) == {
+        "source-a": 0.7,
+        "source-b": 0.9,
+        "path-only": 0.7,
+        "source-c": 0.9,
+    }
 
 
 
