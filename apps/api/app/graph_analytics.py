@@ -104,7 +104,7 @@ def analyze_graph(entity_ids: list[str], relations: list[tuple[str, str, float]]
             if left != right:
                 quotient.add_edge(left, right, weight=quotient.get_edge_data(left, right, {}).get("weight", 0.0) + float(data["weight"]))
         quotient_labels = cast(
-            nx.Graph[str],
+            "nx.Graph[str]",
             nx.relabel_nodes(quotient, {index: str(index) for index in quotient.nodes}),
         )
         parent_indexes = _groups(quotient_labels, resolution)
