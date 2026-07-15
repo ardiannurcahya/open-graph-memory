@@ -13,7 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.auth import ProjectContext, require_project
 from app.datasets import owned
 from app.dependencies import get_session
-from app.graph_analytics import refresh_dataset_analytics
+from app.graph_analytics import refresh_dataset_analytics, snapshot_hash
 from app.graph_models import (
     CanonicalEntity,
     GraphEvidence,
@@ -22,7 +22,13 @@ from app.graph_models import (
     RelationAssertion,
     ReviewState,
 )
-from app.models import Chunk
+from app.models import (
+    Chunk,
+    GraphAnalyticsCommunity,
+    GraphAnalyticsEntityMetric,
+    GraphAnalyticsMembership,
+    GraphAnalyticsRun,
+)
 
 router = APIRouter(prefix="/v1", tags=["graph"])
 Project = Annotated[ProjectContext, Depends(require_project)]
@@ -154,13 +160,60 @@ class AnalyticsRunView(BaseModel):
     community_count: int
 
 
+class ExplorerAnalyticsView(AnalyticsRunView):
+    created_at: datetime | None
+    stale: bool
+
+
+class ExplorerStats(BaseModel):
+    entity_count: int
+    relation_count: int
+    density: float
+
+
+class ExplorerNode(BaseModel):
+    id: str
+    canonical_name: str
+    entity_type: str
+    community_id: str | None
+    degree: int
+    weighted_degree: float
+    importance: float
+
+
+class ExplorerRelation(BaseModel):
+    id: str
+    source: str
+    target: str
+    type: str
+    weight: float
+    confidence: float
+
+
+class ExplorerCommunity(BaseModel):
+    id: str
+    entity_count: int
+
+
+class ExplorerView(BaseModel):
+    dataset_id: str
+    analytics: ExplorerAnalyticsView | None
+    refresh_required: bool
+    stats: ExplorerStats
+    nodes: list[ExplorerNode]
+    relations: list[ExplorerRelation]
+    communities: list[ExplorerCommunity]
+
+
 def entity_view(item: CanonicalEntity) -> EntityView:
     return EntityView.model_validate(item, from_attributes=True)
 
 
 def supported_relation() -> ColumnElement[bool]:
-    """Relation needs at least one authoritative citation."""
-    return exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    """Relation needs authoritative citation and must not be rejected."""
+    return (RelationAssertion.review_state != ReviewState.REJECTED) & exists().where(
+        GraphEvidence.relation_id == RelationAssertion.id
+    )
 
 
 def supported_entity() -> ColumnElement[bool]:
@@ -416,6 +469,177 @@ async def graph(
         relation_count=relation_count,
         nodes=[entity_view(item) for item in entities],
         relations=[await relation_view(db, item) for item in relations],
+    )
+
+
+@router.get("/datasets/{dataset_id}/graph/explorer", response_model=ExplorerView)
+async def explorer(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    node_limit: int = Query(100, ge=1, le=MAX_NODES),
+    relation_limit: int = Query(200, ge=1, le=MAX_NODES),
+) -> ExplorerView:
+    """Bounded Postgres graph view. Analytics enriches but never gates nodes."""
+    await owned(db, project, dataset_id)
+    base_entities = (
+        CanonicalEntity.project_id == project.project_id,
+        CanonicalEntity.dataset_id == dataset_id,
+        supported_entity(),
+    )
+    base_relations = (
+        RelationAssertion.project_id == project.project_id,
+        RelationAssertion.dataset_id == dataset_id,
+        supported_relation(),
+    )
+    latest = await db.scalar(
+        select(GraphAnalyticsRun)
+        .where(
+            GraphAnalyticsRun.project_id == project.project_id,
+            GraphAnalyticsRun.dataset_id == dataset_id,
+        )
+        .order_by(GraphAnalyticsRun.created_at.desc(), GraphAnalyticsRun.id.desc())
+        .limit(1)
+    )
+    entity_count = int(
+        await db.scalar(select(func.count()).select_from(CanonicalEntity).where(*base_entities))
+        or 0
+    )
+    relation_count = int(
+        await db.scalar(select(func.count()).select_from(RelationAssertion).where(*base_relations))
+        or 0
+    )
+    source_ids = list(
+        await db.scalars(
+            select(CanonicalEntity.id).where(*base_entities).order_by(CanonicalEntity.id)
+        )
+    )
+    source_relations = list(
+        await db.execute(
+            select(
+                RelationAssertion.source_entity_id,
+                RelationAssertion.target_entity_id,
+                RelationAssertion.confidence,
+            )
+            .where(*base_relations)
+            .order_by(RelationAssertion.id)
+        )
+    )
+    current_hash = snapshot_hash(
+        source_ids,
+        [(source, target, float(confidence)) for source, target, confidence in source_relations],
+    )
+    stale = latest is None or latest.snapshot_hash != current_hash
+    if latest is None:
+        node_rows = list(
+            await db.scalars(
+                select(CanonicalEntity)
+                .where(*base_entities)
+                .order_by(CanonicalEntity.canonical_name, CanonicalEntity.id)
+                .limit(node_limit)
+            )
+        )
+        nodes = [
+            ExplorerNode(
+                id=item.id,
+                canonical_name=item.canonical_name,
+                entity_type=item.entity_type,
+                community_id=None,
+                degree=0,
+                weighted_degree=0.0,
+                importance=0.0,
+            )
+            for item in node_rows
+        ]
+        communities: list[ExplorerCommunity] = []
+    else:
+        node_metric_rows = await db.execute(
+            select(
+                CanonicalEntity,
+                GraphAnalyticsMembership.community_id,
+                GraphAnalyticsEntityMetric,
+            )
+            .join(
+                GraphAnalyticsMembership,
+                (GraphAnalyticsMembership.entity_id == CanonicalEntity.id)
+                & (GraphAnalyticsMembership.run_id == latest.id),
+            )
+            .join(
+                GraphAnalyticsEntityMetric,
+                (GraphAnalyticsEntityMetric.entity_id == CanonicalEntity.id)
+                & (GraphAnalyticsEntityMetric.run_id == latest.id),
+            )
+            .where(*base_entities)
+            .order_by(GraphAnalyticsEntityMetric.importance.desc(), CanonicalEntity.id)
+            .limit(node_limit)
+        )
+        nodes = [
+            ExplorerNode(
+                id=item.id,
+                canonical_name=item.canonical_name,
+                entity_type=item.entity_type,
+                community_id=community_id,
+                degree=metric.degree,
+                weighted_degree=metric.weighted_degree,
+                importance=metric.importance,
+            )
+            for item, community_id, metric in node_metric_rows
+        ]
+        communities = [
+            ExplorerCommunity(id=item.community_id, entity_count=item.entity_count)
+            for item in await db.scalars(
+                select(GraphAnalyticsCommunity)
+                .where(GraphAnalyticsCommunity.run_id == latest.id)
+                .order_by(GraphAnalyticsCommunity.community_id)
+            )
+        ]
+    node_ids = [item.id for item in nodes]
+    relation_rows = (
+        []
+        if not node_ids
+        else list(
+            await db.scalars(
+                select(RelationAssertion)
+                .where(
+                    *base_relations,
+                    RelationAssertion.source_entity_id.in_(node_ids),
+                    RelationAssertion.target_entity_id.in_(node_ids),
+                )
+                .order_by(RelationAssertion.id)
+                .limit(relation_limit)
+            )
+        )
+    )
+    return ExplorerView(
+        dataset_id=dataset_id,
+        analytics=None
+        if latest is None
+        else ExplorerAnalyticsView(
+            **AnalyticsRunView.model_validate(latest, from_attributes=True).model_dump(),
+            created_at=latest.created_at,
+            stale=stale,
+        ),
+        refresh_required=stale,
+        stats=ExplorerStats(
+            entity_count=entity_count,
+            relation_count=relation_count,
+            density=0.0
+            if entity_count < 2
+            else (2 * relation_count) / (entity_count * (entity_count - 1)),
+        ),
+        nodes=nodes,
+        relations=[
+            ExplorerRelation(
+                id=item.id,
+                source=item.source_entity_id,
+                target=item.target_entity_id,
+                type=item.relation_type,
+                weight=float(item.confidence),
+                confidence=item.confidence,
+            )
+            for item in relation_rows
+        ],
+        communities=communities,
     )
 
 
