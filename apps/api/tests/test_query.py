@@ -8,8 +8,11 @@ from app.query import (
     authoritative_hits,
     build_context,
     chat_with_citation_repair,
+    community_hits,
     graph_evidence_chunk_ids,
     graph_evidence_scores,
+    rank_community_reports,
+    retrieval_plan,
     safe_provider_call,
     stream_event,
 )
@@ -51,6 +54,34 @@ def test_build_context_includes_source_location_when_present() -> None:
     )
 
     assert "source={'page_number': 2, 'record_number': 4, 'segment_part': 3}" in context
+
+
+def test_community_ranking_is_lexical_and_deterministic() -> None:
+    reports = [
+        SimpleNamespace(id="z", title="Atlas", summary="launch", key_points=[]),
+        SimpleNamespace(id="a", title="Atlas", summary="launch", key_points=[]),
+        SimpleNamespace(id="b", title="Other", summary="", key_points=[]),
+    ]
+
+    ranked = rank_community_reports(reports, "Atlas launch", 3)
+
+    assert [(score, report.id) for score, report in ranked] == [(2, "a"), (2, "z"), (0, "b")]
+
+
+@pytest.mark.parametrize(
+    ("mode", "query", "override", "expected"),
+    [
+        ("graph_global", "What happened?", None, ("graph_global", "local", False, True)),
+        ("graph_local", "global overview", None, ("graph_local", "global_summary", True, False)),
+        ("graph_only", "What happened?", None, ("graph_local", "local", True, False)),
+        ("hybrid", "Give global overview", None, ("hybrid", "global_summary", True, True)),
+        ("vector_only", "What happened?", True, ("vector_only", "local", False, True)),
+    ],
+)
+def test_retrieval_plan_keeps_mode_contracts(
+    mode: str, query: str, override: bool | None, expected: tuple[str, str, bool, bool]
+) -> None:
+    assert retrieval_plan(mode, query, override) == expected
 
 
 def test_stream_helpers_emit_sse_and_token_segments() -> None:
@@ -99,9 +130,55 @@ def test_graph_hydration_uses_relation_evidence_chunk_ids() -> None:
 
 
 
+class CommunitySession:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    async def scalar(self, statement: object) -> object:
+        self.statements.append(str(statement))
+        return SimpleNamespace(id="run-latest")
+
+    async def scalars(self, statement: object) -> "ScalarRows":
+        self.statements.append(str(statement))
+        text = str(statement)
+        if "community_reports" in text:
+            return ScalarRows(
+                [
+                    SimpleNamespace(
+                        id="report-1", title="Atlas", summary="REPORT PROSE", key_points=[]
+                    )
+                ]
+            )
+        if "community_report_evidence" in text:
+            return ScalarRows([SimpleNamespace(chunk_id="backing-chunk", rank=1)])
+        return ScalarRows(
+            [SimpleNamespace(id="backing-chunk", document_id="doc", text="backing evidence")]
+        )
+
+
+@pytest.mark.asyncio
+async def test_community_hits_scope_latest_run_and_hydrate_backing_chunks_only() -> None:
+    db = CommunitySession()
+
+    hits, trace = await community_hits(db, "project", "dataset", "Atlas", 5)  # type: ignore[arg-type]
+
+    assert [hit.id for hit in hits] == ["backing-chunk"]
+    assert "REPORT PROSE" not in build_context(hits)
+    assert trace["report_ids"] == ["report-1"]
+    assert trace["backing_chunk_ids"] == ["backing-chunk"]
+    statements = "\n".join(db.statements)
+    assert "graph_analytics_runs.project_id" in statements
+    assert "graph_analytics_runs.dataset_id" in statements
+    assert "community_reports.analytics_run_id" in statements
+    assert "chunks.project_id" in statements and "chunks.dataset_id" in statements
+
+
 class ScalarRows:
     def __init__(self, rows: list[object]) -> None:
         self.rows = rows
+
+    def __iter__(self):
+        return iter(self.rows)
 
     def all(self) -> list[object]:
         return self.rows

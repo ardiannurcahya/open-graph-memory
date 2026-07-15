@@ -251,6 +251,40 @@ def global_summary_intent(query: str) -> bool:
     )
 
 
+def retrieval_plan(
+    mode: str, query: str, include_communities: bool | None
+) -> tuple[str, str, bool, bool]:
+    """Resolve channels without coupling mode behavior to provider calls."""
+    resolved_mode = "graph_local" if mode == "graph_only" else mode
+    intent = "global_summary" if global_summary_intent(query) else "local"
+    use_communities = include_communities if include_communities is not None else (
+        resolved_mode == "graph_global"
+        or (resolved_mode == "hybrid" and intent == "global_summary")
+    )
+    return resolved_mode, intent, resolved_mode in {"graph_local", "hybrid"}, use_communities
+
+
+def rank_community_reports(
+    reports: list[CommunityReport], query: str, limit: int
+) -> list[tuple[int, CommunityReport]]:
+    terms = memory_terms(query)
+    return sorted(
+        (
+            (
+                len(
+                    terms
+                    & memory_terms(
+                        " ".join([report.title, report.summary, *map(str, report.key_points)])
+                    )
+                ),
+                report,
+            )
+            for report in reports
+        ),
+        key=lambda item: (-item[0], item[1].id),
+    )[:limit]
+
+
 async def community_hits(
     db: AsyncSession, project_id: object, dataset_id: str, query: str, limit: int
 ) -> tuple[list[VectorHit], dict[str, object]]:
@@ -281,22 +315,7 @@ async def community_hits(
             )
         )
     )
-    terms = memory_terms(query)
-    ranked = sorted(
-        (
-            (
-                len(
-                    terms
-                    & memory_terms(
-                        " ".join([report.title, report.summary, *map(str, report.key_points)])
-                    )
-                ),
-                report,
-            )
-            for report in reports
-        ),
-        key=lambda item: (-item[0], item[1].id),
-    )[:limit]
+    ranked = rank_community_reports(reports, query, limit)
     report_ids = [report.id for score, report in ranked if score > 0] or [
         report.id for _, report in ranked
     ]
@@ -401,15 +420,8 @@ async def execute_query(
         await safe_provider_call(lambda: embeddings.embed([body.query], settings.embedding_model))
     )[0]
     requested_mode = body.mode
-    resolved_mode = "graph_local" if body.mode == "graph_only" else body.mode
-    intent = "global_summary" if global_summary_intent(body.query) else "local"
-    use_communities = (
-        body.include_communities
-        if body.include_communities is not None
-        else (
-            resolved_mode == "graph_global"
-            or (resolved_mode == "hybrid" and intent == "global_summary")
-        )
+    resolved_mode, intent, use_graph, use_communities = retrieval_plan(
+        body.mode, body.query, body.include_communities
     )
     vector_limit = max(body.top_k, 10) if requested_mode == "graph_only" else max(body.top_k, 50)
     vector_raw = await vectors.search(
@@ -425,7 +437,7 @@ async def execute_query(
     graph_ms = 0.0
     hydrate_ms = 0.0
     graph_chunk_ids: list[str] = []
-    if resolved_mode in {"graph_local", "hybrid"}:
+    if use_graph:
         graph_started = time.perf_counter()
         graph_evidence, graph_state = await bounded_graph_search(
             graph,
