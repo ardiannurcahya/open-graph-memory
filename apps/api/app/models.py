@@ -337,6 +337,9 @@ class GraphAnalyticsRun(Base):
     community_count: Mapped[int]
     resolution: Mapped[float]
     seed: Mapped[int]
+    levels: Mapped[int] = mapped_column(default=1)
+    algorithm_version: Mapped[str] = mapped_column(String(100), default="louvain-v1")
+    config: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -348,6 +351,7 @@ class GraphAnalyticsMembership(Base):
     entity_id: Mapped[str] = mapped_column(
         ForeignKey("canonical_entities.id", ondelete="CASCADE"), primary_key=True
     )
+    level: Mapped[int] = mapped_column(primary_key=True, default=0)
     community_id: Mapped[str] = mapped_column(String(32))
 
 
@@ -370,7 +374,13 @@ class GraphAnalyticsCommunity(Base):
         ForeignKey("graph_analytics_runs.id", ondelete="CASCADE"), primary_key=True
     )
     community_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    level: Mapped[int] = mapped_column(primary_key=True, default=0)
+    parent_community_id: Mapped[str | None] = mapped_column(String(32))
     entity_count: Mapped[int]
+    internal_edges: Mapped[int] = mapped_column(default=0)
+    external_edges: Mapped[int] = mapped_column(default=0)
+    density: Mapped[float] = mapped_column(default=0.0)
+    importance: Mapped[float] = mapped_column(default=0.0)
 
 
 class CommunityReportStatus(StrEnum):
@@ -396,6 +406,7 @@ class CommunityReportJob(Base):
         ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
     )
     community_id: Mapped[str] = mapped_column(String(32))
+    level: Mapped[int] = mapped_column(default=0)
     status: Mapped[CommunityReportStatus] = mapped_column(
         Enum(CommunityReportStatus, name="community_report_status"),
         default=CommunityReportStatus.QUEUED,
@@ -452,6 +463,7 @@ class CommunityReport(Base):
         ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
     )
     community_id: Mapped[str] = mapped_column(String(32))
+    level: Mapped[int] = mapped_column(default=0)
     title: Mapped[str] = mapped_column(String(500))
     summary: Mapped[str] = mapped_column(Text)
     key_points: Mapped[list[object]] = mapped_column(JSONB, default=list)

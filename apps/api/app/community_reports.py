@@ -38,11 +38,12 @@ class ReportPayload(BaseModel):
 
 
 def community_report_input_hash(
-    analytics_run_id: str, community_id: str, settings: Settings
+    analytics_run_id: str, community_id: str, settings: Settings, level: int = 0
 ) -> str:
     payload = {
         "analytics_run_id": analytics_run_id,
         "community_id": community_id,
+        "level": level,
         "max_chunks": settings.community_report_max_chunks,
         "max_members": settings.community_report_max_members,
         "max_relations": settings.community_report_max_relations,
@@ -64,19 +65,20 @@ async def enqueue_community_report_jobs(
     settings: Settings,
 ) -> list[CommunityReportJob]:
     communities = list(
-        await db.scalars(
-            select(GraphAnalyticsCommunity.community_id)
+        await db.execute(
+            select(GraphAnalyticsCommunity.community_id, GraphAnalyticsCommunity.level)
             .where(GraphAnalyticsCommunity.run_id == analytics_run.id)
-            .order_by(GraphAnalyticsCommunity.community_id)
+            .order_by(GraphAnalyticsCommunity.level, GraphAnalyticsCommunity.community_id)
         )
     )
     jobs = []
-    for community_id in communities:
-        input_hash = community_report_input_hash(analytics_run.id, community_id, settings)
+    for community_id, level in communities:
+        input_hash = community_report_input_hash(analytics_run.id, community_id, settings, level)
         job = await db.scalar(
             select(CommunityReportJob).where(
                 CommunityReportJob.analytics_run_id == analytics_run.id,
                 CommunityReportJob.community_id == community_id,
+                CommunityReportJob.level == level,
                 CommunityReportJob.input_hash == input_hash,
             )
         )
@@ -87,6 +89,7 @@ async def enqueue_community_report_jobs(
                 dataset_id=dataset_id,
                 analytics_run_id=analytics_run.id,
                 community_id=community_id,
+                level=level,
                 status=CommunityReportStatus.QUEUED,
                 max_attempts=settings.community_report_max_attempts,
                 provider=settings.resolved_community_report_provider,
@@ -110,6 +113,7 @@ async def _context(db: AsyncSession, job: CommunityReportJob) -> tuple[list[str]
             .where(
                 GraphAnalyticsMembership.run_id == job.analytics_run_id,
                 GraphAnalyticsMembership.community_id == job.community_id,
+                GraphAnalyticsMembership.level == job.level,
             )
             .order_by(GraphAnalyticsMembership.entity_id)
             .limit(get_settings().community_report_max_members)
@@ -275,6 +279,7 @@ async def execute_community_report_job(job_id: str) -> str:
                     dataset_id=job.dataset_id,
                     analytics_run_id=job.analytics_run_id,
                     community_id=job.community_id,
+                    level=job.level,
                     title=payload.title,
                     summary=payload.summary,
                     key_points=payload.key_points,
