@@ -4,19 +4,6 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { ApiError } from "./lib/api";
 import { App } from "./App";
 
-// Mock @xyflow/react to avoid SVG/canvas issues in jsdom.
-vi.mock("@xyflow/react", () => ({
-  ReactFlow: ({ nodes }: { nodes: { id: string; type?: string }[] }) => {
-    const visibleNodes = nodes.filter((node) => node.type !== "bubble");
-    return visibleNodes.length ? (
-      <div data-testid="react-flow-mock">{visibleNodes.length} nodes</div>
-    ) : (
-      <div data-testid="react-flow-empty" />
-    );
-  },
-  Background: () => null,
-  Controls: () => null,
-}));
 
 function jsonResponse(data: unknown, ok = true, status = 200) {
   return {
@@ -306,14 +293,14 @@ describe("App", () => {
     render(<App />);
     connect();
 
-    await waitFor(() => expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("2 nodes"));
+    await waitFor(() => expect(screen.getByTestId("d3-graph").querySelectorAll(".d3-node")).toHaveLength(2));
     fireEvent.click(screen.getByTitle("Refresh graph"));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Graph projection unavailable");
       expect(screen.getByText("new.txt")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("2 nodes");
+    expect(screen.getByTestId("d3-graph").querySelectorAll(".d3-node")).toHaveLength(2);
     expect(screen.getByText("2 entities · 0 relations")).toBeInTheDocument();
   });
 
@@ -340,11 +327,11 @@ describe("App", () => {
     render(<App />);
     connect();
 
-    await waitFor(() => expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("1 nodes"));
+    await waitFor(() => expect(screen.getByTestId("d3-graph").querySelectorAll(".d3-node")).toHaveLength(1));
     fireEvent.click(screen.getByTitle("Refresh graph"));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("showing last available graph"));
-    expect(screen.getByTestId("react-flow-mock")).toHaveTextContent("1 nodes");
+    expect(screen.getByTestId("d3-graph").querySelectorAll(".d3-node")).toHaveLength(1);
   });
 
   it("keeps documents visible when initial graph loading fails", async () => {
