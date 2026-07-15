@@ -40,6 +40,7 @@ class QueryRequest(BaseModel):
     dataset_id: str
     query: str
     mode: QueryMode = QueryMode.VECTOR_ONLY
+    include_communities: bool | None = None
     top_k: int = 5
     graph_depth: int | None = None
     graph_fanout: int | None = None

@@ -188,6 +188,7 @@ class AsyncOGMClient:
         dataset_id: str,
         query: str,
         mode: str = "vector_only",
+        include_communities: bool | None = None,
         top_k: int = 5,
         graph_depth: int | None = None,
         graph_fanout: int | None = None,
@@ -202,6 +203,7 @@ class AsyncOGMClient:
             dataset_id=dataset_id,
             query=query,
             mode=mode,  # type: ignore[arg-type]
+            include_communities=include_communities,
             top_k=top_k,
             graph_depth=graph_depth,
             graph_fanout=graph_fanout,

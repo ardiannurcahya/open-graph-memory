@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -30,6 +29,8 @@ class DocumentStatus(StrEnum):
 class QueryMode(StrEnum):
     VECTOR_ONLY = "vector_only"
     GRAPH_ONLY = "graph_only"
+    GRAPH_LOCAL = "graph_local"
+    GRAPH_GLOBAL = "graph_global"
     HYBRID = "hybrid"
 
 

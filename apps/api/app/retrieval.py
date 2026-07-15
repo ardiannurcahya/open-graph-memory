@@ -48,13 +48,22 @@ def fuse_hits(
     rrf_k: int,
     vector_weight: float,
     graph_weight: float,
+    community_hits: list[VectorHit] | None = None,
+    community_weight: float | None = None,
 ) -> tuple[list[VectorHit], list[dict[str, object]]]:
+    # Omit empty community channel. This keeps legacy two-channel scores byte-for-byte stable.
     channels = {"vector": vector_hits, "graph": graph_hits}
+    if community_hits:
+        channels["community"] = community_hits
     scores: dict[str, float] = {}
     sources: dict[str, VectorHit] = {}
     decisions: list[tuple[str, float, list[str]]] = []
     if method == "weighted":
-        weights = {"vector": vector_weight, "graph": graph_weight}
+        weights = {
+            "vector": vector_weight,
+            "graph": graph_weight,
+            "community": community_weight if community_weight is not None else graph_weight,
+        }
         for channel, hits in channels.items():
             for hit in hits:
                 sources.setdefault(hit.id, hit)

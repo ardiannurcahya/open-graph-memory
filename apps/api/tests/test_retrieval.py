@@ -24,6 +24,14 @@ def test_weighted_normalizes_channel_scores() -> None:
     assert [item.id for item in results] == ["a", "b", "c"]
 
 
+def test_three_way_fusion_dedupes_community_evidence() -> None:
+    results, trace = fuse_hits(
+        [hit("a", 1)], [hit("b", 1)], "rrf", 60, 0.5, 0.5, [hit("a", 1), hit("c", 1)]
+    )
+    assert [item.id for item in results] == ["a", "b", "c"]
+    assert trace[0]["channels"] == ["vector", "community"]
+
+
 class Outage:
     async def traverse(self, *args: object) -> list[GraphEvidence]:
         raise RuntimeError("down")
