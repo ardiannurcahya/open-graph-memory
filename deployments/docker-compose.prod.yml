@@ -29,6 +29,15 @@ services:
     stop_grace_period: 60s
     logging: *production-logging
     environment: {APP_ENV: production}
+  community-worker:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
+    build: !reset null
+    restart: unless-stopped
+    mem_limit: 384m
+    pids_limit: 256
+    stop_grace_period: 60s
+    logging: *production-logging
+    environment: {APP_ENV: production}
   dispatcher:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
     build: !reset null

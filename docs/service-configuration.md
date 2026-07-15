@@ -23,7 +23,7 @@ Provider names are capability names, not vendor names. Current runtime accepts o
 | Chat inference | Deterministic test provider | Verified OpenAI-compatible local inference server or cloud API | Built in/OpenAI-compatible | Used for grounded answers |
 | Graph extraction | Deterministic development extractor | Verified OpenAI-compatible chat endpoint with structured JSON support | Built in/OpenAI-compatible | Production requires `openai` provider |
 | API | FastAPI container | Scale behind trusted ingress after load testing | Application service | Stateless except dependencies |
-| Background processing | Celery worker, graph worker, dispatcher | Scale worker replicas/concurrency | Application service | Uses Redis and PostgreSQL outboxes |
+| Background processing | Celery worker, graph worker, community worker, dispatcher | Scale worker replicas/concurrency | Application service | Uses Redis and PostgreSQL outboxes; community jobs use leases/retries |
 | Web | React/Vite served by Caddy | Any deployment preserving same-origin `/api` proxy | Application service | Stateless |
 | Bootstrap | `migrate`, `bucket-init` | Explicit migration job; provider-side bucket provisioning | One-shot services | Must complete before application start |
 
@@ -194,7 +194,10 @@ CADDY_SITE_ADDRESS=:80
 WORKER_CONCURRENCY=1
 GRAPH_WORKER_CONCURRENCY=1
 GRAPH_WORKER_REPLICAS=1
+COMMUNITY_WORKER_CONCURRENCY=1
 ```
+
+Community report settings: `COMMUNITY_REPORT_PROVIDER`, `COMMUNITY_REPORT_MODEL`, `COMMUNITY_REPORT_VERSION`, `COMMUNITY_REPORT_PROMPT_VERSION`, `COMMUNITY_REPORT_MAX_MEMBERS`, `COMMUNITY_REPORT_MAX_RELATIONS`, `COMMUNITY_REPORT_MAX_CHUNKS`, `COMMUNITY_REPORT_TIMEOUT_SECONDS`, `COMMUNITY_REPORT_LEASE_SECONDS`, and `COMMUNITY_REPORT_MAX_ATTEMPTS`. See [Community GraphRAG](community-graphrag.md) for bounds and lifecycle.
 
 Production also needs immutable `IMAGE_TAG`, `GHCR_NAMESPACE`, TLS, backups, monitoring, and non-placeholder secrets.
 

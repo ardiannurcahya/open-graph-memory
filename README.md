@@ -30,8 +30,9 @@ OpenGraphMemory is self-hosted GraphRAG platform for document ingestion, vector 
 
 ### Hybrid retrieval
 
-- `vector_only`, `graph_only`, and `hybrid` modes.
+- `vector_only`, `graph_only`/`graph_local`, `graph_global`, and `hybrid` modes.
 - Bounded graph traversal with depth 1–2.
+- Community report selection with source-chunk-only citations.
 - RRF or weighted candidate fusion.
 - Timeout fallback when graph projection is unavailable.
 - Retrieval traces containing candidates, graph paths, provenance, latency, and fallback state.
@@ -73,7 +74,7 @@ OpenGraphMemory is self-hosted GraphRAG platform for document ingestion, vector 
 
 Authoritative stores:
 
-- **PostgreSQL:** projects, datasets, documents, ingestion state, graph records, traces, outboxes, and memory.
+- **PostgreSQL:** projects, datasets, documents, ingestion state, graph/community records, traces, outboxes, and memory.
 - **S3-compatible object storage:** uploaded source documents.
 
 Rebuildable projections:
@@ -85,6 +86,7 @@ Runtime services:
 
 - **FastAPI:** HTTP API, authentication, retrieval, graph review, and memory endpoints.
 - **Celery workers:** ingestion, indexing, graph extraction, projection, cleanup, and retries.
+- **Community worker:** durable community-report jobs from PostgreSQL outbox, leases, and retries.
 - **Redis:** Celery broker/runtime queue.
 - **React/Vite:** dashboard and trace explorer.
 - **Caddy:** static web serving and `/api` reverse proxy.
@@ -179,6 +181,7 @@ Important variables:
 | `NEO4J_URL` | Neo4j HTTP endpoint |
 | `NEO4J_AUTH` | Neo4j `username/password` |
 | `WORKER_CONCURRENCY` | Ingestion worker concurrency |
+| `COMMUNITY_WORKER_CONCURRENCY` | Community report worker concurrency |
 
 Default deterministic providers require no external model credentials and support reproducible local tests.
 
@@ -186,9 +189,9 @@ For complete service inventory, local/cloud replacement matrix, per-service envi
 variables, and full-local/hybrid/managed deployment profiles, see
 [Service and Provider Configuration](docs/service-configuration.md).
 
-## Community graph explorer
+## Community GraphRAG
 
-Dashboard knowledge graph uses deterministic Louvain communities computed from PostgreSQL-authoritative entities and non-rejected relations. Neo4j remains a rebuildable projection.
+Dashboard hierarchy uses deterministic Louvain communities over PostgreSQL-authoritative entities and non-rejected relations. Quotient-graph passes build stable parent hierarchy: level `0` detailed, `1` thematic, `2` overview. Neo4j remains rebuildable projection.
 
 ```text
 POST /v1/datasets/{dataset_id}/analytics/refresh
@@ -196,6 +199,10 @@ GET  /v1/datasets/{dataset_id}/graph/explorer
 ```
 
 Explorer provides bounded nodes, weighted relations, stable community colors, degree/importance metrics, graph density, search/filter controls, force-layout tuning, neighborhood highlighting, and entity details. Current synchronous analytics refresh is limited to 5,000 entities and 20,000 relations per dataset; larger datasets require a later asynchronous analytics worker.
+
+Semantic zoom selects detail, thematic, or overview membership from viewport density. Manual selection locks level until unlocked. Community reports use durable PostgreSQL jobs/outbox/retries and grounded provenance; reports select and hydrate backing chunks, while answers cite chunks only.
+
+Report and explorer API paths, query-mode behavior, report-selection limitation, migrations, limits, and operational checks: [Community GraphRAG](docs/community-graphrag.md).
 
 OpenAI-compatible providers:
 
@@ -236,9 +243,11 @@ Example query body:
 {
   "dataset_id": "<dataset-id>",
   "query": "What does the document say about recovery?",
-  "retrieval_mode": "hybrid",
+  "mode": "hybrid",
   "top_k": 8,
-  "graph_depth": 2
+  "graph_depth": 2,
+  "include_communities": true,
+  "community_level": 0
 }
 ```
 

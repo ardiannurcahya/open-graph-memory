@@ -12,9 +12,11 @@ Use 64-bit Linux with Docker Compose. Build images in CI, never on constrained p
 
 ## Render and Deploy
 
+GitHub Actions builds and publishes multi-architecture (`linux/amd64`, `linux/arm64`) GHCR images on `main`. Pull released images on host; do not build source there.
+
 ```sh
 cp .env.example .env
-# Replace all change-me values and set non-latest IMAGE_TAG or immutable refs.
+# Replace all change-me values. Set GHCR_NAMESPACE=ardiannurcahya and IMAGE_TAG=latest for local image pull.
 docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml config --quiet
 scripts/backup.sh
 docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull
@@ -23,7 +25,9 @@ docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.p
 curl -fsS http://localhost:3000/api/ready
 ```
 
-Production override sets one API process, Celery concurrency 1 by default, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. `graph-worker` and `dispatcher` use worker image and do not build on host.
+For local image pull, set `GHCR_NAMESPACE=ardiannurcahya`, `IMAGE_TAG=latest`, then run `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull` followed by `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml up -d --no-build`. Do not build source on host. Pin immutable tag or digest for production rollout.
+
+Production override sets one API process, Celery concurrency 1 by default, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. `graph-worker`, `community-worker`, and `dispatcher` use worker image and do not build on host.
 
 For external S3-compatible storage, set S3 variables and include `deployments/docker-compose.external-s3.yml`; local RustFS services become profile-disabled. Use provider-native bucket versioning/export.
 
@@ -43,7 +47,7 @@ Back up PostgreSQL and object storage. Redis is transient. Qdrant and Neo4j are 
 - `/api/metrics`: Prometheus text metrics; restrict network access.
 - Caddy emits JSON access logs; Docker rotates service logs.
 
-Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, and projection drift. See `docs/runbooks/operations.md`.
+Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, and projection drift. For Community GraphRAG, also check analytics refresh, `community-worker`/dispatcher health, report-job failures or expired leases, and source-chunk citations for global queries. See `docs/runbooks/operations.md` and [Community GraphRAG](community-graphrag.md).
 
 ## Upgrade and Rollback
 
