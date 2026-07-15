@@ -15,6 +15,7 @@ import type {
 import { DatasetBar } from "./components/DatasetBar";
 import { DocumentManager } from "./components/DocumentManager";
 import { GraphExplorer } from "./components/GraphExplorer";
+import type { CommunityLevel } from "./components/semanticZoom";
 import { QueryPlayground } from "./components/QueryPlayground";
 import { Sidebar } from "./components/Sidebar";
 import { TraceInspector } from "./components/TraceInspector";
@@ -47,6 +48,8 @@ function explorerFromGraph(graph: GraphSummary): GraphExplorerView {
   }
   return {
     dataset_id: graph.dataset_id,
+    community_level: 0,
+    available_levels: [],
     analytics: null,
     refresh_required: true,
     stats: { entity_count: graph.entity_count, relation_count: graph.relation_count, density: 0 },
@@ -85,6 +88,8 @@ export function App() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [graph, setGraph] = useState<GraphSummary | null>(null);
   const [explorer, setExplorer] = useState<GraphExplorerView | null>(null);
+  const [communityLevel, setCommunityLevel] = useState<CommunityLevel>(0);
+  const [communityLevelLocked, setCommunityLevelLocked] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
   const [streamingStatus, setStreamingStatus] = useState("");
@@ -121,7 +126,7 @@ export function App() {
   }, []);
 
   const loadWorkspace = useCallback(
-    async (datasetId: string) => {
+    async (datasetId: string, level = communityLevel) => {
       const api = apiRef.current;
       if (!api || !datasetId) return;
       setLoadingWorkspace(true);
@@ -133,7 +138,7 @@ export function App() {
             (value) => ({ ok: true as const, value }),
             (reason: unknown) => ({ ok: false as const, reason }),
           ),
-          api.explorer(datasetId).then(
+          api.explorer(datasetId, 100, 200, level).then(
             (value) => ({ ok: true as const, value }),
             (reason: unknown) => ({ ok: false as const, reason }),
           ),
@@ -172,7 +177,7 @@ export function App() {
         setLoadingWorkspace(false);
       }
     },
-    [graph],
+    [graph, communityLevel],
   );
 
   // Load datasets on connect.
@@ -199,6 +204,15 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, connected]);
+
+  const handleCommunityLevel = useCallback((level: CommunityLevel, manual = true) => {
+    if (manual) setCommunityLevelLocked(true);
+    setCommunityLevel((current) => current === level ? current : level);
+  }, []);
+
+  useEffect(() => {
+    if (connected && selectedId) void loadWorkspace(selectedId, communityLevel);
+  }, [communityLevel]); // fetch selected membership level
 
   // Poll for document status updates while processing.
   useEffect(() => {
@@ -490,8 +504,11 @@ export function App() {
               <GraphExplorer
                 graph={explorer}
                 loading={loadingWorkspace}
+                levelLocked={communityLevelLocked}
                 refreshingAnalytics={refreshingAnalytics}
                 onRefresh={() => void loadWorkspace(selectedId)}
+                onCommunityLevelChange={handleCommunityLevel}
+                onCommunityLevelLockChange={setCommunityLevelLocked}
                 onRefreshAnalytics={() => void handleRefreshAnalytics()}
               />
             </div>

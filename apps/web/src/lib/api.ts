@@ -130,9 +130,9 @@ export function createApiClient(opts: ClientOptions) {
     // Graph
     graph: (datasetId: string, limit = 100, depth = 1) =>
       request<GraphSummary>(`/v1/datasets/${datasetId}/graph?limit=${limit}&depth=${depth}`),
-    explorer: (datasetId: string, nodeLimit = 100, relationLimit = 200) =>
+    explorer: (datasetId: string, nodeLimit = 100, relationLimit = 200, communityLevel = 0) =>
       request<GraphExplorerView>(
-        `/v1/datasets/${datasetId}/graph/explorer?node_limit=${nodeLimit}&relation_limit=${relationLimit}`,
+        `/v1/datasets/${datasetId}/graph/explorer?node_limit=${nodeLimit}&relation_limit=${relationLimit}&community_level=${communityLevel}`,
       ),
     refreshGraphAnalytics: (datasetId: string) =>
       request(`/v1/datasets/${datasetId}/analytics/refresh`, { method: "POST" }),

@@ -209,10 +209,18 @@ export interface ExplorerRelation {
 export interface ExplorerCommunity {
   id: string;
   entity_count: number;
+  parent_id: string | null;
+  child_ids: string[];
+  internal_edges: number;
+  external_edges: number;
+  density: number;
+  importance: number;
 }
 
 export interface GraphExplorerView {
   dataset_id: string;
+  community_level: number;
+  available_levels: number[];
   analytics: ExplorerAnalytics | null;
   refresh_required: boolean;
   stats: { entity_count: number; relation_count: number; density: number };
