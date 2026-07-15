@@ -371,3 +371,106 @@ class GraphAnalyticsCommunity(Base):
     )
     community_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     entity_count: Mapped[int]
+
+
+class CommunityReportStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class CommunityReportJob(Base):
+    __tablename__ = "community_report_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "analytics_run_id", "community_id", "input_hash", name="uq_community_report_job_input"
+        ),
+        Index("ix_community_report_jobs_scope", "project_id", "dataset_id", "analytics_run_id"),
+        Index("ix_community_report_jobs_dispatch", "status", "next_attempt_at"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
+    analytics_run_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
+    )
+    community_id: Mapped[str] = mapped_column(String(32))
+    status: Mapped[CommunityReportStatus] = mapped_column(
+        Enum(CommunityReportStatus, name="community_report_status"),
+        default=CommunityReportStatus.QUEUED,
+    )
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int]
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(String(100))
+    model: Mapped[str] = mapped_column(String(255))
+    report_version: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(100))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CommunityReportOutbox(Base):
+    __tablename__ = "community_report_outbox"
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("community_report_jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CommunityReport(Base):
+    __tablename__ = "community_reports"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_community_report_job"),
+        Index(
+            "ix_community_reports_scope",
+            "project_id",
+            "dataset_id",
+            "analytics_run_id",
+            "community_id",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("community_report_jobs.id", ondelete="CASCADE"))
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
+    analytics_run_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
+    )
+    community_id: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[str] = mapped_column(Text)
+    key_points: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CommunityReportEvidence(Base):
+    __tablename__ = "community_report_evidence"
+    __table_args__ = (
+        UniqueConstraint("report_id", "chunk_id", name="uq_community_report_evidence"),
+    )
+    report_id: Mapped[str] = mapped_column(
+        ForeignKey("community_reports.id", ondelete="CASCADE"), primary_key=True
+    )
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    rank: Mapped[int]

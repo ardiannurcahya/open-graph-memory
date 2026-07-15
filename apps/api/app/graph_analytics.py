@@ -13,6 +13,8 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.community_reports import enqueue_community_report_jobs
+from app.config import get_settings
 from app.graph_models import CanonicalEntity, GraphEvidence, RelationAssertion, ReviewState
 from app.models import (
     GraphAnalyticsCommunity,
@@ -136,6 +138,7 @@ async def refresh_dataset_analytics(
         )
     )
     if existing is not None:
+        await enqueue_community_report_jobs(db, project_id, dataset_id, existing, get_settings())
         return existing
     run = GraphAnalyticsRun(
         id=str(uuid4()),
@@ -167,4 +170,5 @@ async def refresh_dataset_analytics(
     for community_id, size in result.community_sizes.items():
         db.add(GraphAnalyticsCommunity(run_id=run.id, community_id=community_id, entity_count=size))
     await db.flush()
+    await enqueue_community_report_jobs(db, project_id, dataset_id, run, get_settings())
     return run

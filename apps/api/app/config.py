@@ -17,13 +17,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     s3_endpoint_url: str = "http://rustfs:9000"
     s3_access_key: str = "opengraphrag"
-    s3_secret_key: SecretStr = SecretStr("change-me-object-secret")
+    s3_secret_key: SecretStr = SecretStr("change-me-s3-secret")
     s3_bucket: str = "opengraphrag"
     s3_region: str = "us-east-1"
     s3_force_path_style: bool = True
     neo4j_url: str = "http://neo4j:7474"
-    neo4j_auth: SecretStr = SecretStr("neo4j/change-me-now")
-    readiness_timeout_seconds: float = 2
+    neo4j_auth: SecretStr = SecretStr("neo4j/change-me-neo4j")
+    readiness_timeout_seconds: int = 2
     admin_api_key: SecretStr = SecretStr("change-me-admin-key")
     upload_max_bytes: int = 25 * 1024 * 1024
     upload_spool_max_bytes: int = 1024 * 1024
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     graph_extractor_model: str = "deterministic-graph-v1"
     graph_extractor_version: str = "graph-extractor-v1"
     graph_extractor_prompt_version: str = "graph-v1"
-    graph_extractor_timeout_seconds: float = 300
+    graph_extractor_timeout_seconds: int = 300
     graph_extractor_parallelism: int = 1
     provider_version: str = "v1"
     embedding_dimensions: int = 64
@@ -50,12 +50,22 @@ class Settings(BaseSettings):
     qdrant_collection: str = "chunks"
     retrieval_fusion: str = "rrf"
     retrieval_rrf_k: int = 60
-    retrieval_vector_weight: float = 0.5
-    retrieval_graph_weight: float = 0.5
-    retrieval_graph_max_depth: int = 2
-    retrieval_graph_seed_limit: int = 8
+    retrieval_vector_weight: float = 1.0
+    retrieval_graph_weight: float = 1.0
+    retrieval_graph_max_depth: int = 1
+    retrieval_graph_seed_limit: int = 10
     retrieval_graph_fanout: int = 10
-    retrieval_graph_timeout_ms: int = 2_000
+    retrieval_graph_timeout_ms: int = 1000
+    community_report_provider: str | None = None
+    community_report_model: str | None = None
+    community_report_version: str = "community-report-v1"
+    community_report_prompt_version: str = "community-report-v1"
+    community_report_max_members: int = 100
+    community_report_max_relations: int = 200
+    community_report_max_chunks: int = 20
+    community_report_timeout_seconds: int = 300
+    community_report_lease_seconds: int = 300
+    community_report_max_attempts: int = 5
 
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":
@@ -78,6 +88,18 @@ class Settings(BaseSettings):
             or self.graph_extractor_parallelism < 1
         ):
             raise ValueError("graph settings must be positive")
+        if any(
+            value < 1
+            for value in (
+                self.community_report_max_members,
+                self.community_report_max_relations,
+                self.community_report_max_chunks,
+                self.community_report_timeout_seconds,
+                self.community_report_lease_seconds,
+                self.community_report_max_attempts,
+            )
+        ):
+            raise ValueError("community report settings must be positive")
         if (
             "openai" in {self.embedding_provider, self.chat_provider, self.graph_extractor_provider}
             and not self.openai_api_key.get_secret_value()
@@ -87,12 +109,11 @@ class Settings(BaseSettings):
             return self
         if self.graph_extractor_provider != "openai":
             raise ValueError("GRAPH_EXTRACTOR_PROVIDER must be openai in production")
-        provider_urls = {
+        for name, value in {
             "OPENAI_EMBEDDING_BASE_URL": self.embedding_base_url,
             "OPENAI_CHAT_BASE_URL": self.chat_base_url,
             "OPENAI_GRAPH_EXTRACTOR_BASE_URL": self.graph_extractor_base_url,
-        }
-        for name, value in provider_urls.items():
+        }.items():
             if urlparse(value).scheme != "https":
                 raise ValueError(f"{name} must use https in production")
         values = {
@@ -123,6 +144,14 @@ class Settings(BaseSettings):
     @property
     def graph_extractor_base_url(self) -> str:
         return self.openai_graph_extractor_base_url or self.openai_base_url
+
+    @property
+    def resolved_community_report_provider(self) -> str:
+        return self.community_report_provider or self.chat_provider
+
+    @property
+    def resolved_community_report_model(self) -> str:
+        return self.community_report_model or self.chat_model
 
 
 @lru_cache
