@@ -182,6 +182,10 @@ Important variables:
 
 Default deterministic providers require no external model credentials and support reproducible local tests.
 
+For complete service inventory, local/cloud replacement matrix, per-service environment
+variables, and full-local/hybrid/managed deployment profiles, see
+[Service and Provider Configuration](docs/service-configuration.md).
+
 OpenAI-compatible providers:
 
 ```dotenv
@@ -279,6 +283,7 @@ Implement required protocol, register provider through application plugin regist
 See:
 
 - [Plugin system](docs/plugin-system.md)
+- [Service and provider configuration](docs/service-configuration.md)
 - `examples/plugins/deterministic_embedding.py`
 
 ## Development

@@ -27,6 +27,11 @@ Production override sets one API process, Celery concurrency 1 by default, app i
 
 For external S3-compatible storage, set S3 variables and include `deployments/docker-compose.external-s3.yml`; local RustFS services become profile-disabled. Use provider-native bucket versioning/export.
 
+See [Service and Provider Configuration](service-configuration.md) for service inventory,
+supported local/cloud replacements, exact environment variables, provider examples, and
+preflight checks. Compatibility labels there distinguish environment-only replacements
+from integrations that require a registered plugin or code change.
+
 ## Authority and Recovery
 
 Back up PostgreSQL and object storage. Redis is transient. Qdrant and Neo4j are rebuildable projections. Run `scripts/backup.sh`, encrypt result, copy off-host, alert on backup age, and drill `scripts/restore.sh` in isolation. See `docs/runbooks/backup-restore.md`.
