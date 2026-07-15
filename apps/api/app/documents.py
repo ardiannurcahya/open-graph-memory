@@ -1,7 +1,8 @@
 import hashlib
+import json
 import tempfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from open_graph_core.ids import new_id
@@ -20,10 +21,23 @@ from app.models import Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 
 router = APIRouter(tags=["documents"])
+
+
+class SeekableByteStream(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
+
+    def seek(self, offset: int, whence: int = 0, /) -> int: ...
+
+
+def reject_json_constant(constant: str) -> object:
+    raise ValueError(f"invalid JSON constant: {constant}")
+
+
 MIMES = {
     ".txt": ("text/plain",),
     ".md": ("text/markdown", "text/plain"),
     ".html": ("text/html",),
+    ".json": ("application/json", "text/json", "text/plain"),
     ".pdf": ("application/pdf",),
     ".csv": ("text/csv", "text/plain", "application/csv"),
 }
@@ -79,6 +93,16 @@ def validate(file: UploadFile, head: bytes, tail: bytes) -> str:
     return filename
 
 
+def validate_json_stream(stream: SeekableByteStream) -> None:
+    stream.seek(0)
+    try:
+        json.load(stream, parse_constant=reject_json_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(415, "invalid JSON content") from exc
+    finally:
+        stream.seek(0)
+
+
 def serialize(item: Document, duplicate: bool = False) -> dict[str, object]:
     status = item.status.value
     if item.status == DocumentStatus.INDEXED and item.graph_stage != "complete":
@@ -117,6 +141,8 @@ async def upload(
     stream, size, digest, head, tail = await spool(file)
     try:
         filename = validate(file, head, tail)
+        if Path(filename).suffix.lower() == ".json":
+            validate_json_stream(stream)
         query = (
             select(Document)
             .where(

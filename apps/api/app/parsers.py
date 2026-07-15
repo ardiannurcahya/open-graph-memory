@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -11,6 +12,10 @@ from pypdf import PdfReader
 CSV_FIELD_SIZE_LIMIT = 10 * 1024 * 1024
 CSV_SAMPLE_SIZE = 4096
 CSV_DELIMITERS = (",", ";", "\t", "|")
+
+
+def reject_json_constant(constant: str) -> object:
+    raise ValueError(f"invalid JSON constant: {constant}")
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,49 @@ def format_csv_row(header: list[str], row: list[str]) -> str:
     return "; ".join(f"{key}: {value}" for key, value in zip(header, row, strict=False))
 
 
+class JsonParser:
+    mime_types: tuple[str, ...] = ("application/json", "text/json")
+
+    def parse(self, content: bytes) -> ParsedDocument:
+        try:
+            value = json.loads(content.decode("utf-8-sig"), parse_constant=reject_json_constant)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"invalid JSON: {exc}") from exc
+        if isinstance(value, list):
+            segments = tuple(
+                ParsedSegment(
+                    format_json_value(item),
+                    {"record_number": record_number, "json_path": f"$[{record_number - 1}]"},
+                )
+                for record_number, item in enumerate(value, 1)
+            )
+            return ParsedDocument(
+                "\n".join(segment.text for segment in segments),
+                {"root_type": "array", "records": len(segments)},
+                segments,
+            )
+        return ParsedDocument(
+            format_json_value(value),
+            {"root_type": json_type_name(value), "json_path": "$"},
+        )
+
+
+def format_json_value(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def json_type_name(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "object"
+
+
 class MarkdownParser:
     mime_types: tuple[str, ...] = ("text/markdown",)
 
@@ -145,6 +193,8 @@ class ParserRegistry:
             parser = self._parsers.get("text/markdown")
         if mime_type == "text/plain" and filename.lower().endswith(".csv"):
             parser = self._parsers.get("text/csv")
+        if mime_type == "text/plain" and filename.lower().endswith(".json"):
+            parser = self._parsers.get("application/json")
         if parser is None:
             raise ValueError(f"unsupported MIME type: {mime_type}")
         parsed = parser.parse(content)
@@ -162,6 +212,7 @@ def default_registry() -> ParserRegistry:
     registry = ParserRegistry()
     registry.register(TextParser())
     registry.register(CsvParser())
+    registry.register(JsonParser())
     registry.register(MarkdownParser())
     registry.register(HtmlParser())
     registry.register(PdfParser())

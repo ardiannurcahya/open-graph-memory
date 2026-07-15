@@ -1,7 +1,7 @@
 from io import BytesIO
 from uuid import uuid4
 
-from app.documents import serialize, spool, validate
+from app.documents import serialize, spool, validate, validate_json_stream
 from app.models import Document, DocumentStatus
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
@@ -50,6 +50,51 @@ def test_html_upload_is_accepted() -> None:
     file = upload("page.html", "text/html", data)
 
     assert validate(file, data, data) == "page.html"
+
+
+def test_json_upload_is_accepted() -> None:
+    data = b'{"name":"OpenGraphRAG","enabled":true}'
+    file = upload("config.json", "application/json", data)
+
+    assert validate(file, data, data) == "config.json"
+
+
+def test_invalid_json_upload_is_rejected() -> None:
+    data = b'{"name":'
+    file = upload("config.json", "application/json", data)
+
+    try:
+        assert validate(file, data, data) == "config.json"
+        validate_json_stream(file.file)
+    except HTTPException as exc:
+        assert exc.status_code == 415
+        assert exc.detail == "invalid JSON content"
+    else:
+        raise AssertionError("expected invalid JSON upload to fail")
+
+
+def test_full_json_stream_validation_catches_error_after_head_window() -> None:
+    data = b'{"padding":"' + b"x" * 9000 + b'","broken":}'
+    stream = BytesIO(data)
+
+    try:
+        validate_json_stream(stream)
+    except HTTPException as exc:
+        assert exc.status_code == 415
+        assert exc.detail == "invalid JSON content"
+    else:
+        raise AssertionError("malformed large JSON accepted")
+    assert stream.tell() == 0
+
+
+def test_full_json_stream_accepts_large_utf8_bom_document_and_resets() -> None:
+    data = b"\xef\xbb\xbf" + ('{"text":"' + "é" * 9000 + '"}').encode()
+    stream = BytesIO(data)
+
+    validate_json_stream(stream)
+
+    assert stream.tell() == 0
+    assert stream.read(3) == b"\xef\xbb\xbf"
 
 
 def test_path_traversal_is_rejected() -> None:

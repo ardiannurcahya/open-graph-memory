@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DocumentManager } from "./DocumentManager";
 
 describe("DocumentManager", () => {
-  it("accepts PDF and passes every selected file in order", async () => {
+  it("shows JSON uploads and passes every selected file in order", async () => {
     const onUpload = vi.fn(async () => undefined);
     render(
       <DocumentManager
@@ -19,11 +19,13 @@ describe("DocumentManager", () => {
     const input = screen.getByLabelText("Upload files");
     const files = [
       new File(["%PDF-1.7\n%%EOF"], "report.pdf", { type: "application/pdf" }),
+      new File(['{"service":"OpenGraphRAG"}'], "config.json", { type: "application/json" }),
       new File(["notes"], "notes.txt", { type: "text/plain" }),
     ];
 
-    expect(input).toHaveAttribute("accept", ".txt,.md,.html,.pdf,.csv");
+    expect(input).toHaveAttribute("accept", ".txt,.md,.html,.json,.pdf,.csv");
     expect(input).toHaveAttribute("multiple");
+    expect(screen.getByText(/\.json/)).toBeInTheDocument();
     fireEvent.change(input, { target: { files } });
 
     await waitFor(() => expect(onUpload).toHaveBeenCalledWith(files));

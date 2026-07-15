@@ -30,7 +30,10 @@ from app.providers import EmbeddingProvider
 from app.storage import ObjectStore, get_object_store
 from app.vector_store import VectorPoint, VectorStore
 
-PIPELINE_VERSION = "ingestion-v3:parser-v2:recursive-v3-source-aware-segment-offsets:embedding-v1"
+PIPELINE_VERSION = (
+    "ingestion-v3:parser-v3-json-source-aware:"
+    "recursive-v3-source-aware-segment-offsets:embedding-v1"
+)
 EMBEDDING_BATCH_SIZE = 64
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
@@ -193,7 +196,7 @@ async def run_ingestion(
                     text=item.text,
                     pipeline_version=PIPELINE_VERSION,
                     metadata={
-                        "parser": "parser-v2",
+                        "parser": "parser-v3-json-source-aware",
                         "chunker": chunker.version,
                         **item.metadata,
                         **parsed.metadata,
@@ -227,7 +230,7 @@ async def run_ingestion(
                         text=item.text,
                         token_count=item.token_count,
                         metadata_={
-                            "parser": "parser-v2",
+                            "parser": "parser-v3-json-source-aware",
                             "chunker": chunker.version,
                             **item.metadata,
                             **parsed.metadata,

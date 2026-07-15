@@ -12,7 +12,7 @@ interface DocumentManagerProps {
   onRefresh: () => void;
 }
 
-const ACCEPTED = ".txt,.md,.html,.pdf,.csv";
+const ACCEPTED = ".txt,.md,.html,.json,.pdf,.csv";
 
 const STATUS_LABELS: Record<string, string> = {
   pending_upload: "Pending",
@@ -122,7 +122,7 @@ export function DocumentManager({
         {documents.length === 0 && !loading ? (
           <div className="empty-state">
             <FileText size={28} strokeWidth={1.5} />
-            <p>No documents yet. Upload a .txt, .md, .html, .pdf, or .csv file to begin indexing.</p>
+            <p>No documents yet. Upload a .txt, .md, .html, .json, .pdf, or .csv file to begin indexing.</p>
           </div>
         ) : (
           documents.map((doc) => (

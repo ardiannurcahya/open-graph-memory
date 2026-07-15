@@ -35,6 +35,58 @@ def test_text_parser_accepts_utf8_sig_text() -> None:
     assert parsed.text == "Hello\nworld"
 
 
+def test_json_parser_normalizes_structured_document() -> None:
+    parsed = default_registry().parse(
+        "application/json",
+        b'{"items":[{"name":"beta"}],"enabled":true}',
+        "record.json",
+    )
+
+    assert parsed.text == (
+        '{\n  "enabled": true,\n  "items": [\n    {\n      "name": "beta"\n    }\n  ]\n}'
+    )
+    assert parsed.metadata == {"root_type": "object", "json_path": "$"}
+
+
+def test_json_array_chunks_preserve_record_paths_and_unicode() -> None:
+    parsed = default_registry().parse(
+        "application/json",
+        '[{"id":"a","name":"München"},{"id":"b","body":"'.encode()
+        + b"x" * 100
+        + b'"}]',
+        "records.json",
+    )
+    chunks = RecursiveTextChunker(size=40, overlap=5).split_document("doc", parsed)
+
+    assert parsed.metadata == {"root_type": "array", "records": 2}
+    assert parsed.segments[0].metadata == {"record_number": 1, "json_path": "$[0]"}
+    assert "München" in parsed.segments[0].text
+    assert {chunk.metadata["json_path"] for chunk in chunks} == {"$[0]", "$[1]"}
+    long_record = [chunk for chunk in chunks if chunk.metadata["json_path"] == "$[1]"]
+    assert len(long_record) > 1
+    assert {chunk.metadata["record_number"] for chunk in long_record} == {2}
+
+
+def test_empty_json_array_is_valid_source_document() -> None:
+    parsed = default_registry().parse("application/json", b"[]", "empty.json")
+
+    assert parsed.text == ""
+    assert parsed.segments == ()
+    assert parsed.metadata == {"root_type": "array", "records": 0}
+
+
+def test_plain_text_json_filename_uses_json_parser() -> None:
+    parsed = default_registry().parse("text/plain", b'{"name":"alpha"}', "record.json")
+
+    assert parsed.text == '{\n  "name": "alpha"\n}'
+
+
+@pytest.mark.parametrize("content", [b'{"name":}', b'{"value": NaN}'])
+def test_json_parser_rejects_invalid_json(content: bytes) -> None:
+    with pytest.raises(ValueError, match="invalid JSON"):
+        default_registry().parse("application/json", content, "broken.json")
+
+
 def test_csv_parser_accepts_large_field() -> None:
     large_value = "x" * (140 * 1024)
     content = f"name,description\nproject,{large_value}\n".encode()
