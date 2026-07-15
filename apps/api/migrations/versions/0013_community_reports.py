@@ -13,8 +13,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    status = sa.Enum("queued", "running", "succeeded", "failed", name="community_report_status")
-    status.create(op.get_bind(), checkfirst=True)
+    status_type = postgresql.ENUM(
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        name="community_report_status",
+    )
+    status_type.create(op.get_bind(), checkfirst=True)
+    status = postgresql.ENUM(name="community_report_status", create_type=False)
     op.create_table(
         "community_report_jobs",
         sa.Column("id", sa.String(64), primary_key=True),
