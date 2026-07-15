@@ -1,7 +1,15 @@
 #!/bin/sh
 set -eu
 compose='docker compose --env-file .env -f deployments/docker-compose.yml'
-cleanup() { $compose down -v --remove-orphans; }
+cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    $compose ps -a || true
+    $compose logs --no-color migrate || true
+  fi
+  $compose down -v --remove-orphans
+  exit "$status"
+}
 trap cleanup EXIT INT TERM
 cp .env.example .env
 export WEB_PORT="${RUNTIME_GATE_PORT:-39091}"
