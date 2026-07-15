@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.auth import ProjectContext, require_project
 from app.datasets import owned
 from app.dependencies import get_session
+from app.graph_analytics import refresh_dataset_analytics
 from app.graph_models import (
     CanonicalEntity,
     GraphEvidence,
@@ -142,6 +143,15 @@ class JobView(BaseModel):
 
 class ReviewInput(BaseModel):
     review_state: ReviewState
+
+
+class AnalyticsRunView(BaseModel):
+    id: str
+    dataset_id: str
+    snapshot_hash: str
+    entity_count: int
+    relation_count: int
+    community_count: int
 
 
 def entity_view(item: CanonicalEntity) -> EntityView:
@@ -300,6 +310,18 @@ async def neighbors(
                 NeighborView(relation=await relation_view(db, relation), entity=entity_view(other))
             )
     return result
+
+
+@router.post("/datasets/{dataset_id}/analytics/refresh", response_model=AnalyticsRunView)
+async def refresh_analytics(dataset_id: str, project: Project, db: Db) -> AnalyticsRunView:
+    await owned(db, project, dataset_id)
+    try:
+        run = await refresh_dataset_analytics(db, project.project_id, dataset_id)
+        await db.commit()
+    except ValueError as error:
+        await db.rollback()
+        raise HTTPException(422, str(error)) from error
+    return AnalyticsRunView.model_validate(run, from_attributes=True)
 
 
 @router.get("/datasets/{dataset_id}/graph", response_model=GraphSummary)

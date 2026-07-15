@@ -320,3 +320,54 @@ class MemoryFact(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class GraphAnalyticsRun(Base):
+    __tablename__ = "graph_analytics_runs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "dataset_id", "snapshot_hash", name="uq_analytics_snapshot"),
+        Index("ix_analytics_runs_latest", "project_id", "dataset_id", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
+    snapshot_hash: Mapped[str] = mapped_column(String(64))
+    entity_count: Mapped[int]
+    relation_count: Mapped[int]
+    community_count: Mapped[int]
+    resolution: Mapped[float]
+    seed: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GraphAnalyticsMembership(Base):
+    __tablename__ = "graph_analytics_memberships"
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    entity_id: Mapped[str] = mapped_column(
+        ForeignKey("canonical_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    community_id: Mapped[str] = mapped_column(String(32))
+
+
+class GraphAnalyticsEntityMetric(Base):
+    __tablename__ = "graph_analytics_entity_metrics"
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    entity_id: Mapped[str] = mapped_column(
+        ForeignKey("canonical_entities.id", ondelete="CASCADE"), primary_key=True
+    )
+    degree: Mapped[int]
+    weighted_degree: Mapped[float]
+    importance: Mapped[float]
+
+
+class GraphAnalyticsCommunity(Base):
+    __tablename__ = "graph_analytics_communities"
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    community_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    entity_count: Mapped[int]
