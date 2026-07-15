@@ -186,6 +186,17 @@ For complete service inventory, local/cloud replacement matrix, per-service envi
 variables, and full-local/hybrid/managed deployment profiles, see
 [Service and Provider Configuration](docs/service-configuration.md).
 
+## Community graph explorer
+
+Dashboard knowledge graph uses deterministic Louvain communities computed from PostgreSQL-authoritative entities and non-rejected relations. Neo4j remains a rebuildable projection.
+
+```text
+POST /v1/datasets/{dataset_id}/analytics/refresh
+GET  /v1/datasets/{dataset_id}/graph/explorer
+```
+
+Explorer provides bounded nodes, weighted relations, stable community colors, degree/importance metrics, graph density, search/filter controls, force-layout tuning, neighborhood highlighting, and entity details. Current synchronous analytics refresh is limited to 5,000 entities and 20,000 relations per dataset; larger datasets require a later asynchronous analytics worker.
+
 OpenAI-compatible providers:
 
 ```dotenv
