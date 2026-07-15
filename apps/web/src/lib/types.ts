@@ -174,6 +174,53 @@ export interface GraphSummary {
   relations: RelationView[];
 }
 
+// --- Community graph explorer (GET /v1/datasets/{id}/graph/explorer) ---
+
+export interface ExplorerAnalytics {
+  id: string;
+  dataset_id: string;
+  snapshot_hash: string;
+  entity_count: number;
+  relation_count: number;
+  community_count: number;
+  created_at: string | null;
+  stale: boolean;
+}
+
+export interface ExplorerNode {
+  id: string;
+  canonical_name: string;
+  entity_type: string;
+  community_id: string | null;
+  degree: number;
+  weighted_degree: number;
+  importance: number;
+}
+
+export interface ExplorerRelation {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  weight: number;
+  confidence: number;
+}
+
+export interface ExplorerCommunity {
+  id: string;
+  entity_count: number;
+}
+
+export interface GraphExplorerView {
+  dataset_id: string;
+  analytics: ExplorerAnalytics | null;
+  refresh_required: boolean;
+  stats: { entity_count: number; relation_count: number; density: number };
+  nodes: ExplorerNode[];
+  relations: ExplorerRelation[];
+  communities: ExplorerCommunity[];
+}
+
 // --- Health (GET /ready) ---
 
 export interface ReadinessCheck {

@@ -1168,6 +1168,49 @@ a:hover {
   inset: 0;
 }
 
+.knowledge-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(15 18 25 / 72%);
+}
+
+.knowledge-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font: 10px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.knowledge-toolbar select {
+  max-width: 200px;
+  padding: 4px 24px 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 11px var(--font-mono);
+}
+
+.analytics-state {
+  color: var(--success);
+  font: 10px var(--font-mono);
+}
+
+.analytics-state.is-stale {
+  color: var(--warning);
+}
+
+.analytics-refresh {
+  margin-left: auto;
+  font-size: 11px;
+}
+
 .knowledge-legend {
   min-height: 38px;
   display: flex;
@@ -1239,9 +1282,75 @@ a:hover {
   opacity: 0.55;
 }
 
-.knowledge-node:hover {
+.knowledge-node:hover,
+.knowledge-node.is-selected {
   transform: scale(1.06);
   filter: brightness(1.16);
+}
+
+.knowledge-node.is-selected {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.graph-node-detail {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 14px;
+  width: min(230px, calc(100% - 28px));
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: rgb(18 21 29 / 95%);
+  box-shadow: var(--shadow-lg);
+}
+
+.graph-node-detail > button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.graph-node-detail > span {
+  display: block;
+  color: var(--accent);
+  font: 10px var(--font-mono);
+  text-transform: uppercase;
+}
+
+.graph-node-detail > strong {
+  display: block;
+  padding: 3px 18px 10px 0;
+  font-size: 14px;
+}
+
+.graph-node-detail dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.graph-node-detail dl div {
+  min-width: 0;
+}
+
+.graph-node-detail dt {
+  color: var(--text-dim);
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+}
+
+.graph-node-detail dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font: 12px var(--font-mono);
 }
 
 .knowledge-node strong {

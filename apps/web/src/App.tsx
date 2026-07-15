@@ -7,6 +7,7 @@ import { useCredentials } from "./lib/useCredentials";
 import type {
   Dataset,
   DocumentItem,
+  GraphExplorerView,
   GraphSummary,
   QueryResponse,
   RetrievalMode,
@@ -38,6 +39,33 @@ function graphStillBuilding(docs: DocumentItem[]) {
   return docs.some((doc) => doc.graph_stage && doc.graph_stage !== "complete");
 }
 
+function explorerFromGraph(graph: GraphSummary): GraphExplorerView {
+  const degree = new Map(graph.nodes.map((node) => [node.id, 0]));
+  for (const relation of graph.relations) {
+    degree.set(relation.source_entity_id, (degree.get(relation.source_entity_id) ?? 0) + 1);
+    degree.set(relation.target_entity_id, (degree.get(relation.target_entity_id) ?? 0) + 1);
+  }
+  return {
+    dataset_id: graph.dataset_id,
+    analytics: null,
+    refresh_required: true,
+    stats: { entity_count: graph.entity_count, relation_count: graph.relation_count, density: 0 },
+    nodes: graph.nodes.map((node) => ({
+      id: node.id, canonical_name: node.canonical_name, entity_type: node.entity_type,
+      community_id: null, degree: degree.get(node.id) ?? 0, weighted_degree: 0, importance: 0,
+    })),
+    relations: graph.relations.map((relation) => ({
+      id: relation.id, source: relation.source_entity_id, target: relation.target_entity_id,
+      type: relation.relation_type, weight: relation.confidence, confidence: relation.confidence,
+    })),
+    communities: [],
+  };
+}
+
+function isExplorer(value: unknown): value is GraphExplorerView {
+  return Boolean(value && typeof value === "object" && "stats" in value && "communities" in value);
+}
+
 export function App() {
   const { credentials, save, clear } = useCredentials();
   const connected = Boolean(credentials.projectId && credentials.apiKey);
@@ -56,6 +84,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [graph, setGraph] = useState<GraphSummary | null>(null);
+  const [explorer, setExplorer] = useState<GraphExplorerView | null>(null);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [mode, setMode] = useState<RetrievalMode>("hybrid");
   const [streamingStatus, setStreamingStatus] = useState("");
@@ -65,6 +94,7 @@ export function App() {
   const [querying, setQuerying] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingDataset, setDeletingDataset] = useState(false);
+  const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
   const [error, setError] = useState("");
 
   const selectedDataset = useMemo(
@@ -97,9 +127,13 @@ export function App() {
       setLoadingWorkspace(true);
       setError("");
       try {
-        const [docs, graphResult] = await Promise.all([
+        const [docs, graphResult, explorerResult] = await Promise.all([
           api.listDocuments(datasetId),
           api.graph(datasetId, 100, 1).then(
+            (value) => ({ ok: true as const, value }),
+            (reason: unknown) => ({ ok: false as const, reason }),
+          ),
+          api.explorer(datasetId).then(
             (value) => ({ ok: true as const, value }),
             (reason: unknown) => ({ ok: false as const, reason }),
           ),
@@ -121,6 +155,17 @@ export function App() {
           setGraph((current) => (current?.dataset_id === datasetId ? current : null));
           setError(`Knowledge graph: ${errorMessage(graphResult.reason)}`);
         }
+        if (explorerResult.ok && isExplorer(explorerResult.value)) {
+          setExplorer((current) =>
+            current?.dataset_id === datasetId && current.nodes.length > 0 && explorerResult.value.nodes.length === 0 &&
+            docs.length > 0 && graphStillBuilding(docs) ? current : explorerResult.value,
+          );
+        } else if (graphResult.ok) {
+          setExplorer((current) =>
+            current?.dataset_id === datasetId && current.nodes.length > 0 && isEmptyGraph(graphResult.value) &&
+            docs.length > 0 && graphStillBuilding(docs) ? current : explorerFromGraph(graphResult.value),
+          );
+        } else setExplorer((current) => (current?.dataset_id === datasetId ? current : null));
       } catch (reason) {
         setError(errorMessage(reason));
       } finally {
@@ -138,6 +183,7 @@ export function App() {
       setSelectedId("");
       setDocuments([]);
       setGraph(null);
+      setExplorer(null);
       setResult(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,6 +195,7 @@ export function App() {
     else {
       setDocuments([]);
       setGraph(null);
+      setExplorer(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, connected]);
@@ -340,6 +387,21 @@ export function App() {
     [selectedId, loadWorkspace],
   );
 
+  const handleRefreshAnalytics = useCallback(async () => {
+    const api = apiRef.current;
+    if (!api || !selectedId) return;
+    setRefreshingAnalytics(true);
+    setError("");
+    try {
+      await api.refreshGraphAnalytics(selectedId);
+      await loadWorkspace(selectedId);
+    } catch (reason) {
+      setError(`Graph analytics: ${errorMessage(reason)}`);
+    } finally {
+      setRefreshingAnalytics(false);
+    }
+  }, [loadWorkspace, selectedId]);
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -426,9 +488,11 @@ export function App() {
                 onRefresh={() => void loadWorkspace(selectedId)}
               />
               <GraphExplorer
-                graph={graph}
+                graph={explorer}
                 loading={loadingWorkspace}
+                refreshingAnalytics={refreshingAnalytics}
                 onRefresh={() => void loadWorkspace(selectedId)}
+                onRefreshAnalytics={() => void handleRefreshAnalytics()}
               />
             </div>
           </>

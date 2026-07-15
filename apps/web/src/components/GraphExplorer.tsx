@@ -10,24 +10,27 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Network, RefreshCw } from "lucide-react";
-import { useMemo } from "react";
+import { Network, RefreshCw, RotateCw, X } from "lucide-react";
+import { useMemo, useState } from "react";
 
-import type { EntityView, GraphSummary } from "../lib/types";
+import type { ExplorerNode, GraphExplorerView } from "../lib/types";
 import { knowledgeNodeSize, layoutKnowledgeBubbles } from "./graphLayout";
 
 interface GraphExplorerProps {
-  graph: GraphSummary | null;
+  graph: GraphExplorerView | null;
   loading: boolean;
+  refreshingAnalytics: boolean;
   onRefresh: () => void;
+  onRefreshAnalytics: () => void;
 }
 
 interface KnowledgeNodeData extends Record<string, unknown> {
   label: string;
   entityType: string;
-  confidence: number;
   degree: number;
+  importance: number;
   color: string;
+  communityId: string | null;
 }
 
 type KnowledgeNode = Node<KnowledgeNodeData, "knowledge">;
@@ -50,18 +53,18 @@ function colorForType(type: string): string {
   return TYPE_COLORS[hash % TYPE_COLORS.length];
 }
 
-function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
+function KnowledgeNodeView({ data, selected }: NodeProps<KnowledgeNode>) {
   const size = knowledgeNodeSize(data.degree);
   return (
     <div
-      className="knowledge-node"
+      className={`knowledge-node ${selected ? "is-selected" : ""}`}
       style={{
         width: size,
         height: size,
         borderColor: data.color,
         boxShadow: `0 0 0 5px ${data.color}18, 0 0 28px ${data.color}22`,
       }}
-      title={`${data.label} · ${data.entityType} · ${Math.round(data.confidence * 100)}% confidence`}
+      title={`${data.label} · ${data.entityType} · ${data.degree} connections`}
     >
       <Handle type="target" position={Position.Top} className="knowledge-handle" />
       <strong>{data.label}</strong>
@@ -72,43 +75,49 @@ function KnowledgeNodeView({ data }: NodeProps<KnowledgeNode>) {
 
 const nodeTypes = { knowledge: KnowledgeNodeView };
 
-export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps) {
+function selectedNode(graph: GraphExplorerView | null, id: string | null): ExplorerNode | null {
+  return id ? graph?.nodes.find((node) => node.id === id) ?? null : null;
+}
+
+export function GraphExplorer({
+  graph,
+  loading,
+  refreshingAnalytics,
+  onRefresh,
+  onRefreshAnalytics,
+}: GraphExplorerProps) {
+  const [communityFilter, setCommunityFilter] = useState("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { nodes, edges, legend } = useMemo(() => {
-    const rawNodes = graph?.nodes ?? [];
+    const allNodes = graph?.nodes ?? [];
+    const rawNodes = communityFilter === "all"
+      ? allNodes
+      : allNodes.filter((node) => node.community_id === communityFilter);
     const nodeIds = new Set(rawNodes.map((node) => node.id));
-    const degree = new Map(rawNodes.map((node) => [node.id, 0]));
-    for (const relation of graph?.relations ?? []) {
-      if (!nodeIds.has(relation.source_entity_id) || !nodeIds.has(relation.target_entity_id)) continue;
-      degree.set(relation.source_entity_id, (degree.get(relation.source_entity_id) ?? 0) + 1);
-      degree.set(relation.target_entity_id, (degree.get(relation.target_entity_id) ?? 0) + 1);
-    }
-
-    const ordered = [...rawNodes].sort(
-      (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.canonical_name.localeCompare(b.canonical_name),
-    );
     const layout = layoutKnowledgeBubbles(
-      ordered.map((entity) => ({
-        id: entity.id,
-        type: "knowledge" as const,
-        data: {
-          label: entity.canonical_name,
-          entityType: entity.entity_type,
-          confidence: entity.confidence,
-          degree: degree.get(entity.id) ?? 0,
-          color: colorForType(entity.entity_type),
-        },
-        draggable: true,
-      })),
+      [...rawNodes]
+        .sort((a, b) => b.importance - a.importance || a.canonical_name.localeCompare(b.canonical_name))
+        .map((entity) => ({
+          id: entity.id,
+          type: "knowledge" as const,
+          data: {
+            label: entity.canonical_name,
+            entityType: entity.entity_type,
+            degree: entity.degree,
+            importance: entity.importance,
+            color: colorForType(entity.entity_type),
+            communityId: entity.community_id,
+          },
+          draggable: true,
+        })),
     );
-    const flowNodes: KnowledgeNode[] = layout.nodes;
-
     const flowEdges: Edge[] = (graph?.relations ?? [])
-      .filter((relation) => nodeIds.has(relation.source_entity_id) && nodeIds.has(relation.target_entity_id))
+      .filter((relation) => nodeIds.has(relation.source) && nodeIds.has(relation.target))
       .map((relation, index) => ({
         id: relation.id,
-        source: relation.source_entity_id,
-        target: relation.target_entity_id,
-        label: relation.relation_type.replaceAll("_", " "),
+        source: relation.source,
+        target: relation.target,
+        label: relation.type.replaceAll("_", " "),
         type: "bezier",
         pathOptions: { curvature: 0.28 + (index % 3) * 0.08 },
         markerEnd: { type: MarkerType.ArrowClosed, width: 19, height: 19 },
@@ -116,14 +125,17 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
         labelBgBorderRadius: 5,
         className: "knowledge-edge",
       }));
-
-    const typeLegend = [...new Set(rawNodes.map((node: EntityView) => node.entity_type))]
+    const typeLegend = [...new Set(rawNodes.map((node) => node.entity_type))]
       .sort()
       .map((type) => ({ type, color: colorForType(type) }));
-    return { nodes: flowNodes, edges: flowEdges, legend: typeLegend };
-  }, [graph]);
+    return { nodes: layout.nodes as KnowledgeNode[], edges: flowEdges, legend: typeLegend };
+  }, [communityFilter, graph]);
 
+  const selected = selectedNode(graph, selectedId);
   const hasGraph = nodes.length > 0;
+  const analyticsState = graph?.analytics
+    ? graph.analytics.stale ? "Stale analytics" : `${graph.analytics.community_count} communities`
+    : "Analytics not run";
 
   return (
     <section className="panel knowledge-panel" id="graph" aria-labelledby="graph-heading">
@@ -133,19 +145,31 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
           <h2 id="graph-heading" className="panel-title">Entity Network</h2>
         </div>
         <div className="panel-actions">
-          <span className="badge">
-            {graph ? `${graph.entity_count} entities · ${graph.relation_count} relations` : "—"}
-          </span>
+          <span className="badge">{graph ? `${graph.stats.entity_count} entities · ${graph.stats.relation_count} relations` : "—"}</span>
           <button className="btn btn-ghost" onClick={onRefresh} disabled={loading} title="Refresh graph">
             <RefreshCw size={14} strokeWidth={2} className={loading ? "spin" : ""} />
           </button>
         </div>
       </div>
 
+      <div className="knowledge-toolbar">
+        <label>
+          Community
+          <select value={communityFilter} onChange={(event) => { setCommunityFilter(event.target.value); setSelectedId(null); }}>
+            <option value="all">All communities</option>
+            {graph?.communities.map((community, index) => (
+              <option key={community.id} value={community.id}>Community {index + 1} · {community.entity_count}</option>
+            ))}
+          </select>
+        </label>
+        <span className={graph?.refresh_required ? "analytics-state is-stale" : "analytics-state"}>{analyticsState}</span>
+        <button className="btn btn-ghost analytics-refresh" onClick={onRefreshAnalytics} disabled={refreshingAnalytics || !graph} title="Refresh community analytics">
+          <RotateCw size={14} className={refreshingAnalytics ? "spin" : ""} /> Refresh analytics
+        </button>
+      </div>
+
       <div className="knowledge-legend" aria-label="Entity type legend">
-        {legend.map((item) => (
-          <span key={item.type}><i style={{ background: item.color }} />{item.type}</span>
-        ))}
+        {legend.map((item) => <span key={item.type}><i style={{ background: item.color }} />{item.type}</span>)}
       </div>
 
       <div className="graph-canvas knowledge-canvas">
@@ -161,19 +185,22 @@ export function GraphExplorer({ graph, loading, onRefresh }: GraphExplorerProps)
             proOptions={{ hideAttribution: true }}
             nodesDraggable
             zoomOnScroll
+            onNodeClick={(_, node) => setSelectedId(node.id)}
+            onPaneClick={() => setSelectedId(null)}
           >
             <Background color="#273140" gap={24} size={1} />
             <Controls showInteractive={false} />
           </ReactFlow>
         ) : (
-          <div className="empty-state">
-            <Network size={28} strokeWidth={1.5} />
-            <p>
-              {graph && graph.entity_count > 0
-                ? "Entities exist but none match the current view limit."
-                : "Graph projection will appear after entity extraction completes."}
-            </p>
-          </div>
+          <div className="empty-state"><Network size={28} strokeWidth={1.5} /><p>Graph projection will appear after entity extraction completes.</p></div>
+        )}
+        {selected && (
+          <aside className="graph-node-detail" aria-label="Selected entity">
+            <button onClick={() => setSelectedId(null)} aria-label="Close entity details"><X size={15} /></button>
+            <span>{selected.entity_type}</span>
+            <strong>{selected.canonical_name}</strong>
+            <dl><div><dt>Connections</dt><dd>{selected.degree}</dd></div><div><dt>Importance</dt><dd>{(selected.importance * 100).toFixed(1)}%</dd></div><div><dt>Weight</dt><dd>{selected.weighted_degree.toFixed(2)}</dd></div></dl>
+          </aside>
         )}
       </div>
     </section>
