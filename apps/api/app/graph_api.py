@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth import ProjectContext, require_project
+from app.community_reports import enqueue_community_report_jobs
+from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
 from app.graph_analytics import refresh_dataset_analytics, snapshot_hash
@@ -24,6 +26,9 @@ from app.graph_models import (
 )
 from app.models import (
     Chunk,
+    CommunityReport,
+    CommunityReportEvidence,
+    CommunityReportJob,
     GraphAnalyticsCommunity,
     GraphAnalyticsEntityMetric,
     GraphAnalyticsMembership,
@@ -149,6 +154,126 @@ class JobView(BaseModel):
 
 class ReviewInput(BaseModel):
     review_state: ReviewState
+
+
+class CommunityReportView(BaseModel):
+    id: str
+    job_id: str
+    dataset_id: str
+    analytics_run_id: str
+    community_id: str
+    title: str
+    summary: str
+    key_points: list[object]
+    evidence_chunk_ids: list[str]
+
+
+class CommunityReportJobView(BaseModel):
+    id: str
+    dataset_id: str
+    analytics_run_id: str
+    community_id: str
+    status: str
+    attempts: int
+    max_attempts: int
+    error_message: str | None
+
+
+async def report_view(db: AsyncSession, report: CommunityReport) -> CommunityReportView:
+    evidence = list(
+        await db.scalars(
+            select(CommunityReportEvidence.chunk_id)
+            .where(CommunityReportEvidence.report_id == report.id)
+            .order_by(CommunityReportEvidence.rank)
+        )
+    )
+    return CommunityReportView(
+        id=report.id,
+        job_id=report.job_id,
+        dataset_id=report.dataset_id,
+        analytics_run_id=report.analytics_run_id,
+        community_id=report.community_id,
+        title=report.title,
+        summary=report.summary,
+        key_points=report.key_points,
+        evidence_chunk_ids=evidence,
+    )
+
+
+@router.get("/datasets/{dataset_id}/community-reports", response_model=list[CommunityReportView])
+async def list_community_reports(
+    dataset_id: str, project: Project, db: Db
+) -> list[CommunityReportView]:
+    await owned(db, project, dataset_id)
+    reports = list(
+        await db.scalars(
+            select(CommunityReport)
+            .where(
+                CommunityReport.project_id == project.project_id,
+                CommunityReport.dataset_id == dataset_id,
+            )
+            .order_by(CommunityReport.created_at.desc())
+        )
+    )
+    return [await report_view(db, report) for report in reports]
+
+
+@router.get(
+    "/datasets/{dataset_id}/community-reports/{report_id}", response_model=CommunityReportView
+)
+async def get_community_report(
+    dataset_id: str, report_id: str, project: Project, db: Db
+) -> CommunityReportView:
+    await owned(db, project, dataset_id)
+    report = await db.scalar(
+        select(CommunityReport).where(
+            CommunityReport.id == report_id,
+            CommunityReport.project_id == project.project_id,
+            CommunityReport.dataset_id == dataset_id,
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "community report not found")
+    return await report_view(db, report)
+
+
+@router.get(
+    "/datasets/{dataset_id}/community-report-jobs", response_model=list[CommunityReportJobView]
+)
+async def list_community_report_jobs(
+    dataset_id: str, project: Project, db: Db
+) -> list[CommunityReportJobView]:
+    await owned(db, project, dataset_id)
+    jobs = list(
+        await db.scalars(
+            select(CommunityReportJob)
+            .where(
+                CommunityReportJob.project_id == project.project_id,
+                CommunityReportJob.dataset_id == dataset_id,
+            )
+            .order_by(CommunityReportJob.created_at.desc())
+        )
+    )
+    return [CommunityReportJobView.model_validate(job, from_attributes=True) for job in jobs]
+
+
+@router.get(
+    "/datasets/{dataset_id}/community-report-jobs/{job_id}", response_model=CommunityReportJobView
+)
+async def get_community_report_job(
+    dataset_id: str, job_id: str, project: Project, db: Db
+) -> CommunityReportJobView:
+    await owned(db, project, dataset_id)
+    job = await db.scalar(
+        select(CommunityReportJob).where(
+            CommunityReportJob.id == job_id,
+            CommunityReportJob.project_id == project.project_id,
+            CommunityReportJob.dataset_id == dataset_id,
+        )
+    )
+    if job is None:
+        raise HTTPException(404, "community report job not found")
+    return CommunityReportJobView.model_validate(job, from_attributes=True)
 
 
 class AnalyticsRunView(BaseModel):
@@ -370,6 +495,7 @@ async def refresh_analytics(dataset_id: str, project: Project, db: Db) -> Analyt
     await owned(db, project, dataset_id)
     try:
         run = await refresh_dataset_analytics(db, project.project_id, dataset_id)
+        await enqueue_community_report_jobs(db, project.project_id, dataset_id, run, get_settings())
         await db.commit()
     except ValueError as error:
         await db.rollback()

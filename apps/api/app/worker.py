@@ -20,6 +20,7 @@ celery_app.conf.update(
     task_routes={
         "graph.extract_job": {"queue": "graph"},
         "graph.cleanup_projection": {"queue": "graph"},
+        "community.generate_report": {"queue": "community"},
     },
     beat_schedule={
         "dispatch-indexing-outbox": {
@@ -40,6 +41,14 @@ celery_app.conf.update(
         },
         "reconcile-graph-cleanup-outbox": {
             "task": "graph.reconcile_cleanup_outbox",
+            "schedule": settings.outbox_poll_seconds,
+        },
+        "dispatch-community-report-outbox": {
+            "task": "community.dispatch_outbox",
+            "schedule": settings.outbox_poll_seconds,
+        },
+        "reconcile-community-report-jobs": {
+            "task": "community.reconcile_jobs",
             "schedule": settings.outbox_poll_seconds,
         },
     },
@@ -104,6 +113,27 @@ def dispatch_graph_cleanup_outbox() -> int:
 @celery_app.task(name="graph.reconcile_cleanup_outbox")  # type: ignore[untyped-decorator]
 def reconcile_graph_cleanup_outbox() -> int:
     from app.graph_cleanup import reconcile_graph_cleanup_outbox as reconcile
+
+    return runner.run(reconcile())
+
+
+@celery_app.task(name="community.generate_report")  # type: ignore[untyped-decorator]
+def generate_community_report(job_id: str) -> str:
+    from app.community_reports import execute_community_report_job
+
+    return runner.run(execute_community_report_job(job_id))
+
+
+@celery_app.task(name="community.dispatch_outbox")  # type: ignore[untyped-decorator]
+def dispatch_community_report_outbox() -> int:
+    from app.community_reports import dispatch_pending_community_report_jobs
+
+    return runner.run(dispatch_pending_community_report_jobs())
+
+
+@celery_app.task(name="community.reconcile_jobs")  # type: ignore[untyped-decorator]
+def reconcile_community_report_jobs() -> int:
+    from app.community_reports import reconcile_community_report_jobs as reconcile
 
     return runner.run(reconcile())
 

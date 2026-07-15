@@ -187,6 +187,27 @@ class DeterministicProvider:
     async def chat(self, messages: list[dict[str, str]], model: str = "mock-v1") -> ChatResult:
         context = messages[0]["content"]
         question = messages[-1]["content"]
+        if "evidence_chunk_ids" in question and '"evidence"' in question:
+            try:
+                evidence = json.loads(question.split("\n", 1)[1]).get("evidence", [])
+                ids = [
+                    row["chunk_id"]
+                    for row in evidence
+                    if isinstance(row, dict) and "chunk_id" in row
+                ]
+                return ChatResult(
+                    json.dumps(
+                        {
+                            "title": "Community report",
+                            "summary": "Grounded community report.",
+                            "key_points": ["Evidence-backed relationships."],
+                            "evidence_chunk_ids": ids[:1],
+                        }
+                    ),
+                    Usage(),
+                )
+            except (IndexError, json.JSONDecodeError):
+                pass
         ignored = {
             "what",
             "which",
