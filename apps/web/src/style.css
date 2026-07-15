@@ -1177,6 +1177,20 @@ a:hover {
   background: rgb(15 18 25 / 72%);
 }
 
+.graph-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  font: 10px var(--font-mono);
+}
+
+.graph-controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--text-muted); }
+.graph-controls input[type="range"] { width: 80px; }
+.graph-controls button { padding: 4px 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); cursor: pointer; }
+
 .knowledge-toolbar label {
   display: inline-flex;
   align-items: center;
@@ -1336,6 +1350,7 @@ a:hover {
 }
 
 .d3-node.is-selected circle,
+.d3-node.is-neighbor circle,
 .d3-node:hover circle {
   stroke: #fff;
   stroke-width: 3px;
