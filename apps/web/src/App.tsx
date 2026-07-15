@@ -74,6 +74,9 @@ export function App() {
   const connected = Boolean(credentials.projectId && credentials.apiKey);
 
   const apiRef = useRef<ApiClient | null>(null);
+  const graphRef = useRef<GraphSummary | null>(null);
+  const communityLevelRef = useRef<CommunityLevel>(0);
+
   if (connected) {
     apiRef.current = createApiClient({
       projectId: credentials.projectId,
@@ -102,6 +105,14 @@ export function App() {
   const [refreshingAnalytics, setRefreshingAnalytics] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    graphRef.current = graph;
+  }, [graph]);
+
+  useEffect(() => {
+    communityLevelRef.current = communityLevel;
+  }, [communityLevel]);
+
   const selectedDataset = useMemo(
     () => datasets.find((d) => d.id === selectedId) ?? null,
     [datasets, selectedId],
@@ -126,7 +137,7 @@ export function App() {
   }, []);
 
   const loadWorkspace = useCallback(
-    async (datasetId: string, level = communityLevel) => {
+    async (datasetId: string, level = communityLevelRef.current) => {
       const api = apiRef.current;
       if (!api || !datasetId) return;
       setLoadingWorkspace(true);
@@ -146,13 +157,13 @@ export function App() {
         setDocuments(docs);
         if (graphResult.ok) {
           const preserveCurrentGraph = Boolean(
-            graph?.dataset_id === datasetId &&
-              !isEmptyGraph(graph) &&
+            graphRef.current?.dataset_id === datasetId &&
+              !isEmptyGraph(graphRef.current) &&
               isEmptyGraph(graphResult.value) &&
               docs.length > 0 &&
               graphStillBuilding(docs),
           );
-          setGraph(preserveCurrentGraph ? graph : graphResult.value);
+          setGraph(preserveCurrentGraph ? graphRef.current : graphResult.value);
           if (preserveCurrentGraph) {
             setError("Knowledge graph: extraction still running or failed; showing last available graph.");
           }
@@ -177,7 +188,7 @@ export function App() {
         setLoadingWorkspace(false);
       }
     },
-    [graph, communityLevel],
+    [],
   );
 
   // Load datasets on connect.
@@ -191,36 +202,32 @@ export function App() {
       setExplorer(null);
       setResult(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+  }, [connected, loadDatasets]);
 
   // Load workspace when dataset changes.
   useEffect(() => {
-    if (connected && selectedId) void loadWorkspace(selectedId);
+    if (connected && selectedId) {
+      void loadWorkspace(selectedId, communityLevel);
+    }
     else {
       setDocuments([]);
       setGraph(null);
       setExplorer(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, connected]);
+  }, [communityLevel, connected, loadWorkspace, selectedId]);
 
   const handleCommunityLevel = useCallback((level: CommunityLevel, manual = true) => {
     if (manual) setCommunityLevelLocked(true);
     setCommunityLevel((current) => current === level ? current : level);
   }, []);
 
-  useEffect(() => {
-    if (connected && selectedId) void loadWorkspace(selectedId, communityLevel);
-  }, [communityLevel]); // fetch selected membership level
 
   // Poll for document status updates while processing.
   useEffect(() => {
     if (!connected || !selectedId || !hasProcessingDocs) return;
     const timer = setInterval(() => void loadWorkspace(selectedId), 4000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, selectedId, hasProcessingDocs]);
+  }, [connected, hasProcessingDocs, loadWorkspace, selectedId]);
 
   const handleDisconnect = useCallback(() => {
     clear();
