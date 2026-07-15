@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from typing import cast
 from uuid import UUID, uuid4
 
 import networkx as nx
@@ -102,8 +103,17 @@ def analyze_graph(entity_ids: list[str], relations: list[tuple[str, str, float]]
             left, right = entity_child[source], entity_child[target]
             if left != right:
                 quotient.add_edge(left, right, weight=quotient.get_edge_data(left, right, {}).get("weight", 0.0) + float(data["weight"]))
-        parent_indexes = _groups(nx.relabel_nodes(quotient, {index: str(index) for index in quotient.nodes}), resolution)
-        level_groups.append([tuple(sorted(entity for index in group for entity in children[int(index)])) for group in parent_indexes])
+        quotient_labels = cast(
+            nx.Graph[str],
+            nx.relabel_nodes(quotient, {index: str(index) for index in quotient.nodes}),
+        )
+        parent_indexes = _groups(quotient_labels, resolution)
+        level_groups.append(
+            [
+                tuple(sorted(entity for index in group for entity in children[int(index)]))
+                for group in parent_indexes
+            ]
+        )
     memberships: dict[int, dict[str, str]] = {}
     stats: dict[int, dict[str, CommunityStats]] = {}
     ids_by_members = [{group: _id(digest, level, group) for group in groups} for level, groups in enumerate(level_groups)]

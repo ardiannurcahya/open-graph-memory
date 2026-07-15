@@ -24,6 +24,7 @@ def upgrade() -> None:
     op.add_column("graph_analytics_memberships", sa.Column("level", sa.Integer(), nullable=True))
     op.execute("UPDATE graph_analytics_memberships SET level = 0 WHERE level IS NULL")
     op.alter_column("graph_analytics_memberships", "level", nullable=False)
+    op.create_check_constraint("ck_analytics_membership_level", "graph_analytics_memberships", "level BETWEEN 0 AND 2")
     op.drop_constraint("graph_analytics_memberships_pkey", "graph_analytics_memberships", type_="primary")
     op.create_primary_key("graph_analytics_memberships_pkey", "graph_analytics_memberships", ["run_id", "entity_id", "level"])
     op.add_column("graph_analytics_communities", sa.Column("level", sa.Integer(), nullable=True))
@@ -40,7 +41,47 @@ def upgrade() -> None:
         op.add_column(table, sa.Column("level", sa.Integer(), nullable=True))
         op.execute(f"UPDATE {table} SET level = 0 WHERE level IS NULL")
         op.alter_column(table, "level", nullable=False)
+        op.create_check_constraint(f"ck_{table}_level", table, "level BETWEEN 0 AND 2")
+    op.drop_constraint("uq_community_report_job_input", "community_report_jobs", type_="unique")
+    op.create_unique_constraint(
+        "uq_community_report_job_input",
+        "community_report_jobs",
+        ["analytics_run_id", "community_id", "level", "input_hash"],
+    )
 
 
 def downgrade() -> None:
-    raise NotImplementedError("hierarchical analytics downgrade is destructive")
+    op.drop_constraint("uq_community_report_job_input", "community_report_jobs", type_="unique")
+    op.create_unique_constraint(
+        "uq_community_report_job_input",
+        "community_report_jobs",
+        ["analytics_run_id", "community_id", "input_hash"],
+    )
+    for table in ("community_reports", "community_report_jobs"):
+        op.drop_constraint(f"ck_{table}_level", table, type_="check")
+        op.drop_column(table, "level")
+    op.drop_constraint("graph_analytics_communities_pkey", "graph_analytics_communities", type_="primary")
+    op.create_primary_key(
+        "graph_analytics_communities_pkey",
+        "graph_analytics_communities",
+        ["run_id", "community_id"],
+    )
+    for column in (
+        "importance",
+        "density",
+        "external_edges",
+        "internal_edges",
+        "parent_community_id",
+        "level",
+    ):
+        op.drop_column("graph_analytics_communities", column)
+    op.drop_constraint("graph_analytics_memberships_pkey", "graph_analytics_memberships", type_="primary")
+    op.create_primary_key(
+        "graph_analytics_memberships_pkey",
+        "graph_analytics_memberships",
+        ["run_id", "entity_id"],
+    )
+    op.drop_constraint("ck_analytics_membership_level", "graph_analytics_memberships", type_="check")
+    op.drop_column("graph_analytics_memberships", "level")
+    for column in ("config", "algorithm_version", "levels"):
+        op.drop_column("graph_analytics_runs", column)

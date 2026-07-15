@@ -43,6 +43,7 @@ class QueryRequest(BaseModel):
         "vector_only"
     )
     include_communities: bool | None = None
+    community_level: int | None = Field(default=None, ge=0, le=2)
     top_k: int = Field(default=5, ge=1, le=50)
     graph_depth: int | None = Field(default=None, ge=1, le=2)
     graph_fanout: int | None = Field(default=None, ge=1, le=100)
@@ -286,7 +287,12 @@ def rank_community_reports(
 
 
 async def community_hits(
-    db: AsyncSession, project_id: object, dataset_id: str, query: str, limit: int
+    db: AsyncSession,
+    project_id: object,
+    dataset_id: str,
+    query: str,
+    limit: int,
+    level: int = 2,
 ) -> tuple[list[VectorHit], dict[str, object]]:
     """Rank report metadata only; report prose never enters generation context."""
     started = time.perf_counter()
@@ -311,6 +317,7 @@ async def community_hits(
                 CommunityReport.project_id == project_id,
                 CommunityReport.dataset_id == dataset_id,
                 CommunityReport.analytics_run_id == run.id,
+                CommunityReport.level == level,
                 CommunityReportJob.status == CommunityReportStatus.SUCCEEDED,
             )
         )
@@ -343,6 +350,7 @@ async def community_hits(
     trace.update(
         {
             "status": "ok" if report_ids else "unavailable",
+            "level": level,
             "report_ids": report_ids,
             "candidates": [{"report_id": report.id, "score": score} for score, report in ranked],
             "backing_chunk_ids": chunk_ids,
@@ -463,7 +471,14 @@ async def execute_query(
         hydrate_ms = round((time.perf_counter() - hydrate_started) * 1000, 3)
     if use_communities:
         community, community_state = await community_hits(
-            db, context.project_id, body.dataset_id, body.query, min(body.top_k, 10)
+            db,
+            context.project_id,
+            body.dataset_id,
+            body.query,
+            min(body.top_k, 10),
+            body.community_level
+            if body.community_level is not None
+            else (2 if resolved_mode == "graph_global" else 0),
         )
     fusion: list[dict[str, object]]
     if requested_mode == "vector_only":

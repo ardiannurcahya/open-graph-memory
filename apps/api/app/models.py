@@ -394,7 +394,11 @@ class CommunityReportJob(Base):
     __tablename__ = "community_report_jobs"
     __table_args__ = (
         UniqueConstraint(
-            "analytics_run_id", "community_id", "input_hash", name="uq_community_report_job_input"
+            "analytics_run_id",
+            "community_id",
+            "level",
+            "input_hash",
+            name="uq_community_report_job_input",
         ),
         Index("ix_community_report_jobs_scope", "project_id", "dataset_id", "analytics_run_id"),
         Index("ix_community_report_jobs_dispatch", "status", "next_attempt_at"),

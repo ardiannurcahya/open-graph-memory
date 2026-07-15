@@ -162,6 +162,7 @@ class CommunityReportView(BaseModel):
     dataset_id: str
     analytics_run_id: str
     community_id: str
+    level: int
     title: str
     summary: str
     key_points: list[object]
@@ -173,6 +174,7 @@ class CommunityReportJobView(BaseModel):
     dataset_id: str
     analytics_run_id: str
     community_id: str
+    level: int
     status: str
     attempts: int
     max_attempts: int
@@ -193,6 +195,7 @@ async def report_view(db: AsyncSession, report: CommunityReport) -> CommunityRep
         dataset_id=report.dataset_id,
         analytics_run_id=report.analytics_run_id,
         community_id=report.community_id,
+        level=report.level,
         title=report.title,
         summary=report.summary,
         key_points=report.key_points,
@@ -202,7 +205,10 @@ async def report_view(db: AsyncSession, report: CommunityReport) -> CommunityRep
 
 @router.get("/datasets/{dataset_id}/community-reports", response_model=list[CommunityReportView])
 async def list_community_reports(
-    dataset_id: str, project: Project, db: Db
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    community_level: Annotated[int, Query(ge=0, le=2)] = 0,
 ) -> list[CommunityReportView]:
     await owned(db, project, dataset_id)
     reports = list(
@@ -211,6 +217,7 @@ async def list_community_reports(
             .where(
                 CommunityReport.project_id == project.project_id,
                 CommunityReport.dataset_id == dataset_id,
+                CommunityReport.level == community_level,
             )
             .order_by(CommunityReport.created_at.desc())
         )
@@ -283,6 +290,8 @@ class AnalyticsRunView(BaseModel):
     entity_count: int
     relation_count: int
     community_count: int
+    levels: int
+    algorithm_version: str
 
 
 class ExplorerAnalyticsView(AnalyticsRunView):
@@ -318,10 +327,18 @@ class ExplorerRelation(BaseModel):
 class ExplorerCommunity(BaseModel):
     id: str
     entity_count: int
+    parent_id: str | None = None
+    child_ids: list[str] = Field(default_factory=list)
+    internal_edges: int = 0
+    external_edges: int = 0
+    density: float = 0.0
+    importance: float = 0.0
 
 
 class ExplorerView(BaseModel):
     dataset_id: str
+    community_level: int = 0
+    available_levels: list[int] = Field(default_factory=list)
     analytics: ExplorerAnalyticsView | None
     refresh_required: bool
     stats: ExplorerStats
@@ -605,6 +622,7 @@ async def explorer(
     db: Db,
     node_limit: int = Query(100, ge=1, le=MAX_NODES),
     relation_limit: int = Query(200, ge=1, le=MAX_NODES),
+    community_level: int = Query(0, ge=0, le=2),
 ) -> ExplorerView:
     """Bounded Postgres graph view. Analytics enriches but never gates nodes."""
     await owned(db, project, dataset_id)
@@ -688,7 +706,8 @@ async def explorer(
             .join(
                 GraphAnalyticsMembership,
                 (GraphAnalyticsMembership.entity_id == CanonicalEntity.id)
-                & (GraphAnalyticsMembership.run_id == latest.id),
+                & (GraphAnalyticsMembership.run_id == latest.id)
+                & (GraphAnalyticsMembership.level == community_level),
             )
             .join(
                 GraphAnalyticsEntityMetric,
@@ -711,13 +730,47 @@ async def explorer(
             )
             for item, community_id, metric in node_metric_rows
         ]
-        communities = [
-            ExplorerCommunity(id=item.community_id, entity_count=item.entity_count)
-            for item in await db.scalars(
+        community_rows = list(
+            await db.scalars(
                 select(GraphAnalyticsCommunity)
-                .where(GraphAnalyticsCommunity.run_id == latest.id)
+                .where(
+                    GraphAnalyticsCommunity.run_id == latest.id,
+                    GraphAnalyticsCommunity.level == community_level,
+                )
                 .order_by(GraphAnalyticsCommunity.community_id)
             )
+        )
+        child_rows = (
+            []
+            if community_level == 0
+            else list(
+                await db.execute(
+                    select(
+                        GraphAnalyticsCommunity.parent_community_id,
+                        GraphAnalyticsCommunity.community_id,
+                    ).where(
+                        GraphAnalyticsCommunity.run_id == latest.id,
+                        GraphAnalyticsCommunity.level == community_level - 1,
+                    )
+                )
+            )
+        )
+        children: dict[str, list[str]] = {}
+        for parent_id, child_id in child_rows:
+            if parent_id is not None:
+                children.setdefault(parent_id, []).append(child_id)
+        communities = [
+            ExplorerCommunity(
+                id=item.community_id,
+                entity_count=item.entity_count,
+                parent_id=item.parent_community_id,
+                child_ids=children.get(item.community_id, []),
+                internal_edges=item.internal_edges,
+                external_edges=item.external_edges,
+                density=item.density,
+                importance=item.importance,
+            )
+            for item in community_rows
         ]
     node_ids = [item.id for item in nodes]
     relation_rows = (
@@ -738,6 +791,8 @@ async def explorer(
     )
     return ExplorerView(
         dataset_id=dataset_id,
+        community_level=community_level,
+        available_levels=[] if latest is None else list(range(latest.levels)),
         analytics=None
         if latest is None
         else ExplorerAnalyticsView(
