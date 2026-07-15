@@ -6,7 +6,7 @@ import {
   forceSimulation,
   type SimulationNodeDatum,
 } from "d3-force";
-import { Network, RefreshCw, RotateCw, X } from "lucide-react";
+import { Network, RefreshCw, RotateCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import type { ExplorerNode, GraphExplorerView } from "../lib/types";
@@ -59,6 +59,7 @@ export function GraphExplorer({ graph, loading, refreshingAnalytics, onRefresh, 
   const dragRef = useRef<ForceNode | null>(null);
   const [communityFilter, setCommunityFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [size, setSize] = useState({ width: 900, height: 520 });
   const [positions, setPositions] = useState<ForceNode[]>([]);
   const { nodes, links, legend } = useMemo(() => {
@@ -98,6 +99,14 @@ export function GraphExplorer({ graph, loading, refreshingAnalytics, onRefresh, 
   }, [links, nodes, size]);
 
   const selected = selectedNode(graph, selectedId);
+  const selectedRelations = useMemo(
+    () => selectedId ? links.filter((link) => {
+      const source = link.source as string | ForceNode;
+      const target = link.target as string | ForceNode;
+      return (typeof source === "string" ? source : source.id) === selectedId || (typeof target === "string" ? target : target.id) === selectedId;
+    }) : [],
+    [links, selectedId],
+  );
   const analyticsState = graph?.analytics ? graph.analytics.stale ? "Stale analytics" : `${graph.analytics.community_count} communities` : "Analytics not run";
   const point = (event: PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -126,11 +135,11 @@ export function GraphExplorer({ graph, loading, refreshingAnalytics, onRefresh, 
 
   return <section className="panel knowledge-panel" id="graph" aria-labelledby="graph-heading">
     <div className="panel-header"><div><span className="panel-eyebrow">Knowledge Graph</span><h2 id="graph-heading" className="panel-title">Entity Network</h2></div><div className="panel-actions"><span className="badge">{graph ? `${graph.stats.entity_count} entities · ${graph.stats.relation_count} relations` : "—"}</span><button className="btn btn-ghost" onClick={onRefresh} disabled={loading} title="Refresh graph"><RefreshCw size={14} strokeWidth={2} className={loading ? "spin" : ""} /></button></div></div>
-    <div className="knowledge-toolbar"><label>Community<select value={communityFilter} onChange={(event) => { setCommunityFilter(event.target.value); setSelectedId(null); }}><option value="all">All communities</option>{graph?.communities.map((community, index) => <option key={community.id} value={community.id}>Community {index + 1} · {community.entity_count}</option>)}</select></label><span className={graph?.refresh_required ? "analytics-state is-stale" : "analytics-state"}>{analyticsState}</span><button className="btn btn-ghost analytics-refresh" onClick={onRefreshAnalytics} disabled={refreshingAnalytics || !graph} title="Refresh community analytics"><RotateCw size={14} className={refreshingAnalytics ? "spin" : ""} /> Refresh analytics</button></div>
+    <div className="knowledge-toolbar"><label>Community<select value={communityFilter} onChange={(event) => { setCommunityFilter(event.target.value); setSelectedId(null); }}><option value="all">All communities</option>{graph?.communities.map((community, index) => <option key={community.id} value={community.id}>Community {index + 1} · {community.entity_count}</option>)}</select></label><label className="graph-search"><Search size={14} /><span className="sr-only">Find entity</span><input value={query} onChange={(event) => { const value = event.target.value; setQuery(value); const match = nodes.find((node) => node.canonical_name.toLowerCase().includes(value.trim().toLowerCase())); if (value.trim() && match) setSelectedId(match.id); }} placeholder="Find entity" aria-label="Find entity" /></label><span className={graph?.refresh_required ? "analytics-state is-stale" : "analytics-state"}>{analyticsState}</span><button className="btn btn-ghost analytics-refresh" onClick={onRefreshAnalytics} disabled={refreshingAnalytics || !graph} title="Refresh community analytics"><RotateCw size={14} className={refreshingAnalytics ? "spin" : ""} /> Refresh analytics</button></div>
     <div className="knowledge-legend" aria-label="Entity type legend">{legend.map((item) => <span key={item.type}><i style={{ background: item.color }} />{item.type}</span>)}</div>
     <div className="graph-canvas knowledge-canvas">{nodes.length ? <svg ref={canvasRef} data-testid="d3-graph" className="d3-graph" viewBox={`0 0 ${size.width} ${size.height}`} role="img" aria-label="Force-directed entity network" onPointerMove={drag} onPointerUp={endDrag} onPointerCancel={endDrag} onClick={() => setSelectedId(null)}>
       <g className="d3-links">{links.map((link) => { const source = typeof link.source === "string" ? positions.find((node) => node.id === link.source) : link.source; const target = typeof link.target === "string" ? positions.find((node) => node.id === link.target) : link.target; return source?.x != null && source.y != null && target?.x != null && target.y != null ? <line key={link.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y}><title>{link.type.replaceAll("_", " ")}</title></line> : null; })}</g>
-      <g className="d3-nodes">{positions.map((node) => node.x != null && node.y != null ? <g key={node.id} className={`d3-node ${selectedId === node.id ? "is-selected" : ""}`} transform={`translate(${node.x},${node.y})`} onPointerDown={(event) => startDrag(event, node)} onClick={(event) => { event.stopPropagation(); setSelectedId(node.id); }}><circle r={node.radius} fill={node.color} /><text dy="-0.1em">{node.canonical_name}</text><text className="d3-node-type" dy="1.25em">{node.entity_type}</text><title>{node.canonical_name} · {node.entity_type} · {node.degree} connections</title></g> : null)}</g>
-    </svg> : <div className="empty-state"><Network size={28} strokeWidth={1.5} /><p>Graph projection will appear after entity extraction completes.</p></div>}{selected && <aside className="graph-node-detail" aria-label="Selected entity"><button onClick={() => setSelectedId(null)} aria-label="Close entity details"><X size={15} /></button><span>{selected.entity_type}</span><strong>{selected.canonical_name}</strong><dl><div><dt>Connections</dt><dd>{selected.degree}</dd></div><div><dt>Importance</dt><dd>{(selected.importance * 100).toFixed(1)}%</dd></div><div><dt>Weight</dt><dd>{selected.weighted_degree.toFixed(2)}</dd></div></dl></aside>}</div>
+      <g className="d3-nodes">{positions.map((node) => node.x != null && node.y != null ? <g key={node.id} tabIndex={0} role="button" aria-label={`View ${node.canonical_name}`} className={`d3-node ${selectedId === node.id ? "is-selected" : ""} ${query.trim() && node.canonical_name.toLowerCase().includes(query.trim().toLowerCase()) ? "is-match" : ""}`} transform={`translate(${node.x},${node.y})`} onPointerDown={(event) => startDrag(event, node)} onClick={(event) => { event.stopPropagation(); setSelectedId(node.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); } }}><circle r={node.radius} fill={node.color} /><text dy="-0.1em">{node.canonical_name}</text><text className="d3-node-type" dy="1.25em">{node.entity_type}</text><title>{node.canonical_name} · {node.entity_type} · {node.degree} connections</title></g> : null)}</g>
+    </svg> : <div className="empty-state"><Network size={28} strokeWidth={1.5} /><p>Graph projection will appear after entity extraction completes.</p></div>}{selected && <aside className="graph-node-detail" aria-label="Selected entity"><button onClick={() => setSelectedId(null)} aria-label="Close entity details"><X size={15} /></button><span>{selected.entity_type}</span><strong>{selected.canonical_name}</strong><dl><div><dt>Connections</dt><dd>{selected.degree}</dd></div><div><dt>Importance</dt><dd>{(selected.importance * 100).toFixed(1)}%</dd></div><div><dt>Weight</dt><dd>{selected.weighted_degree.toFixed(2)}</dd></div></dl>{selectedRelations.length > 0 && <ul className="graph-node-relations" aria-label="Entity relations">{selectedRelations.map((relation) => <li key={relation.id}>{relation.type.replaceAll("_", " ")} · {relation.confidence.toFixed(2)}</li>)}</ul>}</aside>}</div>
   </section>;
 }
