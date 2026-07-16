@@ -5,7 +5,7 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     $compose ps -a || true
-    $compose logs --no-color migrate api worker dispatcher graph-worker community-worker || true
+    $compose logs --no-color migrate api worker dispatcher graph-worker || true
   fi
   $compose down -v --remove-orphans
   exit "$status"

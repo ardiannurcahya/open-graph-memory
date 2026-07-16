@@ -46,6 +46,6 @@ if [[ -d "${SOURCE}/objects" ]]; then
   docker compose -f "${COMPOSE_FILE}" start rustfs
 fi
 
-printf 'Starting services. Qdrant and Neo4j remain rebuildable projections.\n'
+printf 'Starting services. Neo4j remains a rebuildable projection.\n'
 docker compose -f "${COMPOSE_FILE}" up -d migrate api worker graph-worker dispatcher web
 printf 'Validate /api/ready, smoke queries, object reads, and projection reconciliation.\n'
