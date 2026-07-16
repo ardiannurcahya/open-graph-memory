@@ -13,3 +13,14 @@ def test_migration_0016_removes_embedding_states_with_linear_lineage() -> None:
     assert migration.down_revision == "0015"
     assert "EMBEDDING" not in migration.DOCUMENT_STATES
     assert "EMBEDDING" not in migration.INDEXING_STAGES
+
+
+def test_migration_0016_does_not_use_freshly_added_enum_values() -> None:
+    source = Path("apps/api/migrations/versions/0016_remove_embedding_states.py").read_text()
+
+    assert "WHERE status = 'EMBEDDING'" not in source
+    assert "WHERE stage = 'EMBEDDING'" not in source
+    assert "SET status = 'PERSISTING'" not in source
+    assert "SET stage = 'PERSISTING'" not in source
+    assert "::text" in source
+    assert "CASE WHEN" in source
