@@ -28,7 +28,6 @@ export function statusColor(status: string): string {
     case "queued":
     case "parsing":
     case "chunking":
-    case "embedding":
     case "persisting":
     case "uploaded":
     case "pending_upload":

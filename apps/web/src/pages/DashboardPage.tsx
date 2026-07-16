@@ -9,11 +9,9 @@ export default function DashboardPage() {
       <p className="mt-2 text-sm text-stone-600">
         Connected to project <code className="rounded bg-stone-100 px-1">{projectId}</code>.
       </p>
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card title="Datasets" to="/datasets" desc="Manage datasets and documents" />
-        <Card title="Query" to="/query" desc="Run grounded queries with citations" />
-        <Card title="Graph" to="/graph" desc="Explore knowledge graph" />
-        <Card title="Memory" to="/memory" desc="Agent memory and facts" />
+        <Card title="Graph Playground" to="/graph" desc="Search entities and inspect graph structure" />
       </div>
     </div>
   );

@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import GraphPage from "./GraphPage";
 import { useAuthStore } from "../store/auth";
 
-// Mock canvas getContext — jsdom doesn't implement Canvas 2D
 const mockCtx = {
   canvas: { width: 800, height: 600 },
   clearRect: vi.fn(),
@@ -25,21 +24,21 @@ const mockCtx = {
   createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
   setLineDash: vi.fn(),
   fillText: vi.fn(),
-  set fillStyle(_v: unknown) { /* noop */ },
+  set fillStyle(_value: unknown) {},
   get fillStyle() { return ""; },
-  set strokeStyle(_v: unknown) { /* noop */ },
+  set strokeStyle(_value: unknown) {},
   get strokeStyle() { return ""; },
-  set lineWidth(_v: unknown) { /* noop */ },
+  set lineWidth(_value: unknown) {},
   get lineWidth() { return 1; },
-  set shadowColor(_v: unknown) { /* noop */ },
+  set shadowColor(_value: unknown) {},
   get shadowColor() { return ""; },
-  set shadowBlur(_v: unknown) { /* noop */ },
+  set shadowBlur(_value: unknown) {},
   get shadowBlur() { return 0; },
-  set font(_v: unknown) { /* noop */ },
+  set font(_value: unknown) {},
   get font() { return ""; },
-  set textAlign(_v: unknown) { /* noop */ },
+  set textAlign(_value: unknown) {},
   get textAlign() { return "start"; },
-  set textBaseline(_v: unknown) { /* noop */ },
+  set textBaseline(_value: unknown) {},
   get textBaseline() { return "alphabetic"; },
 };
 
@@ -57,40 +56,53 @@ const dataset = {
   metadata: {},
 };
 
+const alice = {
+  id: "ent_a",
+  dataset_id: "ds_1",
+  canonical_name: "Alice",
+  entity_type: "person",
+  confidence: 0.9,
+  version: 1,
+  review_state: "approved",
+};
+
+const bob = { ...alice, id: "ent_b", canonical_name: "Bob" };
+
+const relation = {
+  id: "rel_1",
+  dataset_id: "ds_1",
+  source_entity_id: "ent_a",
+  target_entity_id: "ent_b",
+  relation_type: "knows",
+  confidence: 0.9,
+  extractor_version: "v1",
+  review_state: "approved",
+  citations: [],
+};
+
 const explorerView = {
   dataset_id: "ds_1",
   community_level: 0,
-  available_levels: [0, 1, 2],
-  analytics: {
-    id: "run_1",
-    dataset_id: "ds_1",
-    snapshot_hash: "h",
-    entity_count: 2,
-    relation_count: 1,
-    community_count: 1,
-    levels: 3,
-    algorithm_version: "louvain-v1",
-    created_at: "t",
-    stale: false,
-  },
+  available_levels: [0, 1],
+  analytics: null,
   refresh_required: false,
-  stats: { entity_count: 2, relation_count: 1, density: 1.0 },
+  stats: { entity_count: 2, relation_count: 1, density: 1 },
   nodes: [
-    { id: "ent_a", canonical_name: "Alice", entity_type: "person", community_id: "c0", degree: 1, weighted_degree: 1.0, importance: 0.5 },
-    { id: "ent_b", canonical_name: "Bob", entity_type: "person", community_id: "c0", degree: 1, weighted_degree: 1.0, importance: 0.5 },
+    { id: "ent_a", canonical_name: "Alice", entity_type: "person", community_id: "c0", degree: 1, weighted_degree: 1, importance: 0.5 },
+    { id: "ent_b", canonical_name: "Bob", entity_type: "person", community_id: "c0", degree: 1, weighted_degree: 1, importance: 0.5 },
   ],
-  relations: [
-    { id: "rel_1", source: "ent_a", target: "ent_b", type: "knows", weight: 0.9, confidence: 0.9 },
-  ],
-  communities: [{ id: "c0", entity_count: 2, parent_id: null, child_ids: [], internal_edges: 1, external_edges: 0, density: 1.0, importance: 0.5 }],
+  relations: [{ id: "rel_1", source: "ent_a", target: "ent_b", type: "knows", weight: 0.9, confidence: 0.9 }],
+  communities: [{ id: "c0", entity_count: 2, parent_id: null, child_ids: [], internal_edges: 1, external_edges: 0, density: 1, importance: 0.5 }],
 };
 
 function renderPage() {
-  return render(
-    <MemoryRouter>
-      <GraphPage />
-    </MemoryRouter>,
-  );
+  return render(<MemoryRouter><GraphPage /></MemoryRouter>);
+}
+
+async function selectDataset() {
+  await waitFor(() => expect(screen.getByText("Research")).toBeInTheDocument());
+  await userEvent.selectOptions(screen.getByLabelText("Dataset"), "ds_1");
+  await waitFor(() => expect(screen.getByText("2 nodes")).toBeInTheDocument());
 }
 
 describe("GraphPage", () => {
@@ -100,12 +112,9 @@ describe("GraphPage", () => {
       projectId: "11111111-2222-3333-4444-555555555555",
       adminKey: "",
     });
-    // Mock canvas context
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 0));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(mockCtx as unknown as CanvasRenderingContext2D);
-    void origGetContext;
   });
 
   afterEach(() => {
@@ -113,70 +122,123 @@ describe("GraphPage", () => {
     useAuthStore.setState({ apiKey: "", projectId: "", adminKey: "" });
   });
 
-  it("renders dataset selector", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (url === "/api/v1/datasets") return ok([dataset]);
-        if (url.includes("/graph/explorer")) return ok(explorerView);
-        return ok([]);
-      }),
-    );
-    renderPage();
-    await waitFor(() => expect(screen.getByText("Research")).toBeInTheDocument());
-  });
-
-  it("loads explorer and shows stats", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (url === "/api/v1/datasets") return ok([dataset]);
-        if (url.includes("/graph/explorer")) return ok(explorerView);
-        return ok([]);
-      }),
-    );
-    renderPage();
-    await waitFor(() => expect(screen.getByText("Research")).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByDisplayValue("Select dataset…"), "ds_1");
-    await waitFor(() => expect(screen.getByText(/nodes/)).toBeInTheDocument());
-    expect(screen.getByText(/edges/)).toBeInTheDocument();
-    expect(screen.getByText(/communities/)).toBeInTheDocument();
-  });
-
-  it("shows density stat", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (url === "/api/v1/datasets") return ok([dataset]);
-        if (url.includes("/graph/explorer")) return ok(explorerView);
-        return ok([]);
-      }),
-    );
-    renderPage();
-    await waitFor(() => expect(screen.getByText("Research")).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByDisplayValue("Select dataset…"), "ds_1");
-    await waitFor(() => expect(screen.getByText(/density 1\.000/)).toBeInTheDocument());
-  });
-
-  it("refreshes analytics", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  it("loads explorer in graph playground", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url === "/api/v1/datasets") return ok([dataset]);
       if (url.includes("/graph/explorer")) return ok(explorerView);
-      if (url.includes("/analytics/refresh") && init?.method === "POST")
-        return ok({ id: "run_2", dataset_id: "ds_1", snapshot_hash: "h2", entity_count: 2, relation_count: 1, community_count: 1, levels: 3, algorithm_version: "louvain-v1" });
+      return ok([]);
+    }));
+    renderPage();
+    expect(screen.getByText("Graph Playground")).toBeInTheDocument();
+    await selectDataset();
+    expect(screen.getByText("1 edges")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entity search" })).toBeInTheDocument();
+  });
+
+  it("searches entities and sends structured parameters", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer")) return ok(explorerView);
+      if (url === "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25") return ok([alice]);
       return ok([]);
     });
     vi.stubGlobal("fetch", fetchMock);
     renderPage();
-    await waitFor(() => expect(screen.getByText("Research")).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByDisplayValue("Select dataset…"), "ds_1");
-    await waitFor(() => expect(screen.getByText(/nodes/)).toBeInTheDocument());
-    await userEvent.click(screen.getByText("↻"));
-    await waitFor(() => {
-      const refreshCalls = fetchMock.mock.calls.filter(
-        ([u, i]) => String(u).includes("/analytics/refresh") && (i as RequestInit)?.method === "POST",
-      );
-      expect(refreshCalls.length).toBeGreaterThan(0);
+    await selectDataset();
+    await userEvent.type(screen.getByLabelText("Entity name"), "Alice");
+    await userEvent.click(screen.getByRole("button", { name: "Run Entity search" }));
+    await waitFor(() => expect(screen.getByText("person · ent_a")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("loads neighbors into existing visualizer", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer")) return ok(explorerView);
+      if (url === "/api/v1/entities/ent_a") return ok(alice);
+      if (url === "/api/v1/entities/ent_a/neighbors?limit=25") return ok([{ entity: bob, relation }]);
+      return ok([]);
     });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset();
+    await userEvent.click(screen.getByRole("button", { name: "Neighbors" }));
+    await userEvent.type(screen.getByLabelText("Entity ID"), "ent_a");
+    await userEvent.click(screen.getByRole("button", { name: "Run Neighbors" }));
+    await waitFor(() => expect(screen.getByText("2 nodes")).toBeInTheDocument());
+    expect(screen.getByText("1 edges")).toBeInTheDocument();
+  });
+
+  it("loads a structured subgraph into existing visualizer", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer")) return ok(explorerView);
+      if (url === "/api/v1/datasets/ds_1/graph/subgraph?entity_id=ent_a&depth=2&node_limit=100&relation_limit=200") {
+        return ok({
+          dataset_id: "ds_1",
+          root_entity_id: "ent_a",
+          depth: 2,
+          nodes: [alice, bob],
+          relations: [relation],
+        });
+      }
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset();
+    await userEvent.click(screen.getByRole("button", { name: "Subgraph" }));
+    await userEvent.type(screen.getByLabelText("Entity ID"), "ent_a");
+    await userEvent.clear(screen.getByLabelText("Max depth"));
+    await userEvent.type(screen.getByLabelText("Max depth"), "2");
+    await userEvent.click(screen.getByRole("button", { name: "Run Subgraph" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasets/ds_1/graph/subgraph?entity_id=ent_a&depth=2&node_limit=100&relation_limit=200",
+      expect.objectContaining({ method: "GET" }),
+    ));
+    expect(screen.getByText("2 nodes")).toBeInTheDocument();
+    expect(screen.getByText("1 edges")).toBeInTheDocument();
+  });
+
+  it("requests path and relation evidence and exposes raw JSON", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer")) return ok(explorerView);
+      if (url === "/api/v1/datasets/ds_1/graph/path?source_entity_id=ent_a&target_entity_id=ent_b&max_depth=1&relation_limit=100") return ok({
+        dataset_id: "ds_1",
+        source_entity_id: "ent_a",
+        target_entity_id: "ent_b",
+        found: true,
+        hops: 1,
+        nodes: [alice, bob],
+        relations: [relation],
+      });
+      if (url === "/api/v1/datasets/ds_1/relations/rel_1/evidence?limit=25") return ok([{ id: "ev_1", quote: "Alice knows Bob." }]);
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset();
+    await userEvent.click(screen.getByRole("button", { name: "Path" }));
+    await userEvent.type(screen.getByLabelText("Source entity ID"), "ent_a");
+    await userEvent.type(screen.getByLabelText("Target entity ID"), "ent_b");
+    await userEvent.click(screen.getByRole("button", { name: "Run Path" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasets/ds_1/graph/path?source_entity_id=ent_a&target_entity_id=ent_b&max_depth=1&relation_limit=100",
+      expect.objectContaining({ method: "GET" }),
+    ));
+    await userEvent.click(screen.getByRole("button", { name: "Relation evidence" }));
+    await userEvent.type(screen.getByLabelText("Relation ID"), "rel_1");
+    await userEvent.click(screen.getByRole("button", { name: "Run Relation evidence" }));
+    await waitFor(() => expect(screen.getByLabelText("Raw JSON result")).toHaveTextContent("Alice knows Bob."));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasets/ds_1/relations/rel_1/evidence?limit=25",
+      expect.objectContaining({ method: "GET" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Raw JSON" }));
+    expect(screen.getByLabelText("Raw JSON result")).toHaveTextContent("ev_1");
   });
 });

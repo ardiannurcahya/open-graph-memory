@@ -76,7 +76,7 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
               setSelection(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search entities, topics, or type a query..."
+            placeholder="Search visible entities and topics..."
             autoComplete="off"
             className="flex-1 border-none bg-transparent text-sm text-stone-800 outline-none"
           />

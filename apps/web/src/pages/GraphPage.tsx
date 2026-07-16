@@ -1,25 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { datasetsApi, graphApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
-import type { Dataset, ExplorerView } from "../api/types";
-import type { GraphState, GraphNode } from "../lib/graphTypes";
-import { explorerToGraphState } from "../lib/graphMapping";
-
+import type { Dataset, EntityView, ExplorerView, GraphSummary } from "../api/types";
+import type { GraphNode, GraphState } from "../lib/graphTypes";
+import { explorerToGraphState, graphSummaryToGraphState } from "../lib/graphMapping";
 import { GraphCanvas } from "../components/GraphCanvas";
 import { Inspector } from "../components/Inspector";
 import { CommandPalette } from "../components/CommandPalette";
+
+type Tool = "search" | "neighbors" | "path" | "subgraph" | "evidence" | "json";
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: "search", label: "Entity search" },
+  { id: "neighbors", label: "Neighbors" },
+  { id: "path", label: "Path" },
+  { id: "subgraph", label: "Subgraph" },
+  { id: "evidence", label: "Relation evidence" },
+  { id: "json", label: "Raw JSON" },
+];
 
 export default function GraphPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [datasetId, setDatasetId] = useState("");
   const [view, setView] = useState<ExplorerView | null>(null);
+  const [summary, setSummary] = useState<GraphSummary | null>(null);
+  const [payload, setPayload] = useState<unknown>(null);
   const [level, setLevel] = useState(0);
+  const [tool, setTool] = useState<Tool>("search");
+  const [query, setQuery] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [sourceId, setSourceId] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [subgraphEntityId, setSubgraphEntityId] = useState("");
+  const [relationId, setRelationId] = useState("");
+  const [depth, setDepth] = useState(1);
+  const [searchResults, setSearchResults] = useState<EntityView[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
@@ -32,19 +53,24 @@ export default function GraphPage() {
   }, []);
 
   const graphState: GraphState | null = useMemo(() => {
-    if (!view) return null;
-    return explorerToGraphState(view);
-  }, [view]);
+    if (summary) return graphSummaryToGraphState(summary);
+    if (view) return explorerToGraphState(view);
+    return null;
+  }, [summary, view]);
 
   const loadExplorer = useCallback(async (id: string, communityLevel: number) => {
     setLoading(true);
     setError(null);
     setSelectedNode(null);
     try {
-      setView(await graphApi.getExplorer(id, { community_level: communityLevel }));
+      const response = await graphApi.getExplorer(id, { community_level: communityLevel });
+      setView(response);
+      setSummary(null);
+      setPayload(response);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "failed to load graph");
+      setError(errorMessage(err, "failed to load graph"));
       setView(null);
+      setSummary(null);
     } finally {
       setLoading(false);
     }
@@ -52,8 +78,70 @@ export default function GraphPage() {
 
   useEffect(() => {
     if (datasetId) void loadExplorer(datasetId, level);
-    else setView(null);
+    else {
+      setView(null);
+      setSummary(null);
+      setPayload(null);
+    }
   }, [datasetId, level, loadExplorer]);
+
+  const runTool = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!datasetId || tool === "json") return;
+    setLoading(true);
+    setError(null);
+    setSelectedNode(null);
+    try {
+      if (tool === "search") {
+        const response = await graphApi.searchEntities(datasetId, query.trim());
+        setSearchResults(response);
+        setSummary({
+          dataset_id: datasetId,
+          entity_count: response.length,
+          relation_count: 0,
+          nodes: response,
+          relations: [],
+        });
+        setPayload(response);
+      } else if (tool === "neighbors") {
+        const [entity, neighbors] = await Promise.all([
+          graphApi.getEntity(entityId.trim()),
+          graphApi.getNeighbors(entityId.trim()),
+        ]);
+        const nodes = uniqueEntities([entity, ...neighbors.map((neighbor) => neighbor.entity)]);
+        const relations = neighbors.map((neighbor) => neighbor.relation);
+        const response: GraphSummary = {
+          dataset_id: datasetId,
+          entity_count: nodes.length,
+          relation_count: relations.length,
+          nodes,
+          relations,
+        };
+        setSummary(response);
+        setPayload({ entity, neighbors });
+      } else if (tool === "path") {
+        const response = await graphApi.findPath(
+          datasetId,
+          sourceId.trim(),
+          targetId.trim(),
+          depth,
+        );
+        setSummary(toGraphSummary(response));
+        setPayload(response);
+      } else if (tool === "subgraph") {
+        const response = await graphApi.getSubgraph(datasetId, subgraphEntityId.trim(), depth);
+        setSummary(toGraphSummary(response));
+        setPayload(response);
+      } else {
+        const response = await graphApi.getRelationEvidence(datasetId, relationId.trim());
+        setPayload(response);
+      }
+    } catch (err) {
+      setError(errorMessage(err, `${tool} request failed`));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (!datasetId) return;
@@ -63,32 +151,27 @@ export default function GraphPage() {
       await graphApi.refreshAnalytics(datasetId);
       await loadExplorer(datasetId, level);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "analytics refresh failed");
+      setError(errorMessage(err, "analytics refresh failed"));
     } finally {
       setRefreshing(false);
     }
   };
 
-  const handleNodeSelect = useCallback((node: GraphNode | null) => {
-    setSelectedNode(node);
-  }, []);
-
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const handler = (event: KeyboardEvent) => {
       if (cmdOpen) return;
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === "k") {
-          e.preventDefault();
-          setCmdOpen(true);
-        }
-      } else {
-        if (e.key === "Escape") setSelectedNode(null);
-        if (e.key === "l" || e.key === "L") setShowLegend((v) => !v);
-        if (e.key === "f" || e.key === "F") setShowFilters((v) => !v);
-        if (e.key === " ") {
-          e.preventDefault();
-          setPhysicsEnabled((v) => !v);
-        }
+      if ((event.ctrlKey || event.metaKey) && event.key === "k") {
+        event.preventDefault();
+        setCmdOpen(true);
+      } else if (event.key === "Escape") {
+        setSelectedNode(null);
+      } else if (event.key.toLowerCase() === "l") {
+        setShowLegend((value) => !value);
+      } else if (event.key.toLowerCase() === "f") {
+        setShowFilters((value) => !value);
+      } else if (event.key === " ") {
+        event.preventDefault();
+        setPhysicsEnabled((value) => !value);
       }
     };
     document.addEventListener("keydown", handler);
@@ -96,8 +179,8 @@ export default function GraphPage() {
   }, [cmdOpen]);
 
   const toggleFilter = (communityId: string) => {
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
+    setActiveFilters((previous) => {
+      const next = new Set(previous);
       if (next.has(communityId)) next.delete(communityId);
       else next.add(communityId);
       return next;
@@ -105,225 +188,289 @@ export default function GraphPage() {
   };
 
   const triggerCanvasEvent = (type: string) => {
-    const canvas = document.getElementById("graph-canvas");
-    canvas?.dispatchEvent(new Event(type));
+    document.getElementById("graph-canvas")?.dispatchEvent(new Event(type));
   };
 
-  if (!graphState) {
-    return (
-      <div className="px-8 py-6">
-        <h2 className="text-xl font-semibold text-stone-900">Knowledge</h2>
-        <div className="mt-4 flex flex-wrap items-center gap-4">
-          <select
-            value={datasetId}
-            onChange={(e) => setDatasetId(e.target.value)}
-            className="rounded-md border border-stone-300 px-3 py-1.5 text-sm"
-          >
-            <option value="">Select dataset…</option>
-            {datasets.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {error && (
-          <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-        )}
-        <div className="mt-4 flex flex-1 items-center justify-center rounded-lg border border-dashed border-stone-300 p-12 text-sm text-stone-400">
-          {loading ? "Loading…" : "Select a dataset to explore its knowledge graph."}
-        </div>
-      </div>
-    );
-  }
-
-  const stats = view?.stats;
-
   return (
-    <div className="relative h-screen bg-stone-50">
-      <GraphCanvas
-        state={graphState}
-        physicsEnabled={physicsEnabled}
-        showLabels={showLabels}
-        activeFilters={activeFilters}
-        onNodeSelect={handleNodeSelect}
-        onCameraChange={setZoom}
-      />
+    <div className="relative h-screen min-h-[640px] overflow-hidden bg-stone-50">
+      {graphState ? (
+        <GraphCanvas
+          state={graphState}
+          physicsEnabled={physicsEnabled}
+          showLabels={showLabels}
+          activeFilters={activeFilters}
+          onNodeSelect={setSelectedNode}
+          onCameraChange={setZoom}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center p-8 text-sm text-stone-400">
+          {loading ? "Loading..." : "Select dataset to open graph playground."}
+        </div>
+      )}
 
-      {/* Top toolbar */}
-      <div className="absolute left-3 right-3 top-3 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
-        <span className="text-sm font-semibold text-stone-900">Knowledge</span>
+      <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+        <span className="text-sm font-semibold text-stone-900">Graph Playground</span>
         <select
+          aria-label="Dataset"
           value={datasetId}
-          onChange={(e) => setDatasetId(e.target.value)}
-          className="rounded-md border border-stone-300 px-2 py-1 text-sm"
+          onChange={(event) => setDatasetId(event.target.value)}
+          className="min-w-36 rounded-md border border-stone-300 px-2 py-1 text-sm"
         >
-          <option value="">Dataset…</option>
-          {datasets.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
+          <option value="">Select dataset...</option>
+          {datasets.map((dataset) => (
+            <option key={dataset.id} value={dataset.id}>{dataset.name}</option>
           ))}
         </select>
-        {view && view.available_levels.length > 0 && (
+        {view && view.available_levels.length > 0 && !summary && (
           <select
+            aria-label="Community level"
             value={level}
-            onChange={(e) => setLevel(Number(e.target.value))}
+            onChange={(event) => setLevel(Number(event.target.value))}
             className="rounded-md border border-stone-300 px-2 py-1 text-sm"
           >
-            {view.available_levels.map((l) => (
-              <option key={l} value={l}>
-                L{l}
-              </option>
-            ))}
+            {view.available_levels.map((item) => <option key={item} value={item}>L{item}</option>)}
           </select>
         )}
         <button
+          type="button"
+          onClick={() => setPanelOpen((value) => !value)}
+          className="rounded-md border border-stone-900 bg-stone-900 px-3 py-1 text-xs text-white"
+        >
+          {panelOpen ? "Hide tools" : "Show tools"}
+        </button>
+        <button
+          type="button"
           onClick={() => setCmdOpen(true)}
-          className="ml-auto flex items-center gap-2 rounded-md border border-stone-200 px-3 py-1 text-xs text-stone-500 hover:bg-stone-50"
+          disabled={!graphState}
+          className="ml-auto rounded-md border border-stone-200 px-3 py-1 text-xs text-stone-600 disabled:opacity-40"
         >
-          Search…
-          <kbd className="rounded border border-stone-200 bg-stone-100 px-1 text-[10px]">Ctrl+K</kbd>
+          Visible search <kbd className="ml-1 rounded bg-stone-100 px-1">Ctrl+K</kbd>
         </button>
+        <ToolbarButton active={showFilters} onClick={() => setShowFilters((value) => !value)}>Filters</ToolbarButton>
+        <ToolbarButton active={showLegend} onClick={() => setShowLegend((value) => !value)}>Legend</ToolbarButton>
         <button
-          onClick={() => setShowFilters((v) => !v)}
-          className={`rounded-md border px-2 py-1 text-xs ${
-            showFilters
-              ? "border-stone-900 bg-stone-900 text-white"
-              : "border-stone-200 text-stone-600 hover:bg-stone-50"
-          }`}
-        >
-          Filters
-        </button>
-        <button
-          onClick={() => setShowLegend((v) => !v)}
-          className={`rounded-md border px-2 py-1 text-xs ${
-            showLegend
-              ? "border-stone-900 bg-stone-900 text-white"
-              : "border-stone-200 text-stone-600 hover:bg-stone-50"
-          }`}
-        >
-          Legend
-        </button>
-        <button
-          onClick={handleRefresh}
+          type="button"
+          aria-label="Refresh graph analytics"
+          onClick={() => void handleRefresh()}
           disabled={!datasetId || refreshing}
-          className="rounded-md border border-stone-200 px-2 py-1 text-xs text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+          className="rounded-md border border-stone-200 px-2 py-1 text-xs text-stone-600 disabled:opacity-40"
         >
-          {refreshing ? "…" : "↻"}
+          {refreshing ? "..." : "Refresh"}
         </button>
       </div>
 
-      {/* Left toolbar */}
-      <div className="absolute left-3 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1 rounded-lg border border-stone-200 bg-white/95 p-1.5 shadow-sm backdrop-blur">
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded text-stone-600 hover:bg-stone-100"
-          onClick={() => triggerCanvasEvent("graph:fit")}
-          title="Fit All"
-        >
-          ⛶
-        </button>
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded text-stone-600 hover:bg-stone-100"
-          onClick={() => triggerCanvasEvent("graph:reset")}
-          title="Reset"
-        >
-          ⟲
-        </button>
-        <div className="my-1 h-px bg-stone-200" />
-        <button
-          className={`flex h-8 w-8 items-center justify-center rounded ${
-            physicsEnabled ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100"
-          }`}
-          onClick={() => setPhysicsEnabled((v) => !v)}
-          title="Physics"
-        >
-          ◉
-        </button>
-        <button
-          className={`flex h-8 w-8 items-center justify-center rounded ${
-            showLabels ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100"
-          }`}
-          onClick={() => setShowLabels((v) => !v)}
-          title="Labels"
-        >
-          A
-        </button>
-      </div>
-
-      {/* Stats bar */}
-      <div className="absolute bottom-3 left-3 z-10 flex gap-1 rounded-lg border border-stone-200 bg-white/95 p-1.5 shadow-sm backdrop-blur">
-        <span className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] text-stone-500">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#d4a056" }} />
-          {graphState.nodes.length} nodes
-        </span>
-        <span className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] text-stone-500">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#c4944a" }} />
-          {graphState.edges.length} edges
-        </span>
-        <span className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] text-stone-500">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#6fa89a" }} />
-          {graphState.communities.size} communities
-        </span>
-        <span className="px-2.5 py-1 font-mono text-[10px] text-stone-500">{zoom.toFixed(1)}x</span>
-        {stats && (
-          <span className="px-2.5 py-1 font-mono text-[10px] text-stone-500">
-            density {stats.density.toFixed(3)}
-          </span>
-        )}
-      </div>
-
-      {/* Legend */}
-      {showLegend && (
-        <div className="absolute bottom-3 right-3 z-10 min-w-[180px] rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-stone-400">
-            Communities
+      {panelOpen && (
+        <section className="absolute left-3 top-16 z-10 flex max-h-[calc(100vh-5rem)] w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-stone-200 bg-white/95 shadow-lg backdrop-blur">
+          <div className="flex gap-1 overflow-x-auto border-b border-stone-200 p-2">
+            {TOOLS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTool(item.id)}
+                className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium ${
+                  tool === item.id ? "bg-amber-600 text-white" : "text-stone-600 hover:bg-stone-100"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-          {[...graphState.communities.values()].map((c) => (
-            <div key={c.id} className="flex items-center gap-2 py-0.5 font-mono text-[10px] text-stone-600">
-              <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
-              {c.name}
+          <form onSubmit={(event) => void runTool(event)} className="space-y-3 overflow-y-auto p-4">
+            <ToolFields
+              tool={tool}
+              query={query}
+              setQuery={setQuery}
+              entityId={entityId}
+              setEntityId={setEntityId}
+              sourceId={sourceId}
+              setSourceId={setSourceId}
+              targetId={targetId}
+              setTargetId={setTargetId}
+              subgraphEntityId={subgraphEntityId}
+              setSubgraphEntityId={setSubgraphEntityId}
+              relationId={relationId}
+              setRelationId={setRelationId}
+              depth={depth}
+              setDepth={setDepth}
+            />
+            {tool !== "json" && (
+              <button
+                type="submit"
+                disabled={!datasetId || loading || !toolReady(tool, { query, entityId, sourceId, targetId, subgraphEntityId, relationId })}
+                className="w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {loading ? "Running..." : `Run ${TOOLS.find((item) => item.id === tool)?.label}`}
+              </button>
+            )}
+            {error && <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+            {tool === "search" && searchResults.length > 0 && (
+              <div className="space-y-1 border-t border-stone-200 pt-3">
+                {searchResults.map((entity) => (
+                  <button
+                    key={entity.id}
+                    type="button"
+                    onClick={() => setEntityId(entity.id)}
+                    className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-stone-100"
+                  >
+                    <span className="text-sm font-medium text-stone-800">{entity.canonical_name}</span>
+                    <span className="font-mono text-[10px] text-stone-400">{entity.entity_type} · {entity.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {(tool === "json" || tool === "evidence") && (
+              <pre aria-label="Raw JSON result" className="max-h-80 overflow-auto rounded-md bg-stone-950 p-3 text-xs text-stone-100">
+                {payload === null ? "No response yet." : JSON.stringify(payload, null, 2)}
+              </pre>
+            )}
+          </form>
+        </section>
+      )}
+
+      {graphState && (
+        <div className="absolute bottom-3 left-3 z-10 flex flex-wrap gap-1 rounded-lg border border-stone-200 bg-white/95 p-1.5 shadow-sm">
+          <Stat value={`${graphState.nodes.length} nodes`} />
+          <Stat value={`${graphState.edges.length} edges`} />
+          <Stat value={`${graphState.communities.size} groups`} />
+          <Stat value={`${zoom.toFixed(1)}x`} />
+          <button type="button" onClick={() => triggerCanvasEvent("graph:fit")} className="px-2 py-1 text-xs text-stone-600">Fit</button>
+          <button type="button" onClick={() => triggerCanvasEvent("graph:reset")} className="px-2 py-1 text-xs text-stone-600">Reset</button>
+          <button type="button" onClick={() => setPhysicsEnabled((value) => !value)} className="px-2 py-1 text-xs text-stone-600">Physics {physicsEnabled ? "on" : "off"}</button>
+          <button type="button" onClick={() => setShowLabels((value) => !value)} className="px-2 py-1 text-xs text-stone-600">Labels {showLabels ? "on" : "off"}</button>
+        </div>
+      )}
+
+      {showLegend && graphState && (
+        <div className="absolute bottom-3 right-3 z-10 min-w-44 rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-stone-400">Groups</div>
+          {[...graphState.communities.values()].map((community) => (
+            <div key={community.id} className="flex items-center gap-2 py-0.5 text-xs text-stone-600">
+              <span className="h-2 w-2 rounded-full" style={{ background: community.color }} />
+              {community.name}
             </div>
           ))}
         </div>
       )}
 
-      {/* Filters */}
-      {showFilters && (
+      {showFilters && graphState && (
         <div className="absolute right-3 top-16 z-10 flex flex-col gap-1">
-          {[...graphState.communities.values()].map((c) => (
+          {[...graphState.communities.values()].map((community) => (
             <button
-              key={c.id}
-              onClick={() => toggleFilter(c.id)}
-              className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[10px] ${
-                activeFilters.has(c.id)
-                  ? "border-stone-900 bg-stone-900 text-white"
-                  : "border-stone-200 bg-white text-stone-500 hover:border-stone-400"
-              }`}
+              key={community.id}
+              type="button"
+              onClick={() => toggleFilter(community.id)}
+              className={`rounded-full border px-3 py-1 text-xs ${activeFilters.has(community.id) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-600"}`}
             >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.color }} />
-              {c.name}
+              {community.name}
             </button>
           ))}
         </div>
       )}
 
-      {/* Inspector */}
-      <Inspector
-        node={selectedNode}
-        state={graphState}
-        onSelectNode={(n) => void handleNodeSelect(n)}
-        onClose={() => setSelectedNode(null)}
-      />
-
-      {/* Command palette */}
-      {cmdOpen && (
-        <CommandPalette
-          state={graphState}
-          onSelectNode={(n) => void handleNodeSelect(n)}
-          onClose={() => setCmdOpen(false)}
-        />
+      {graphState && (
+        <Inspector node={selectedNode} state={graphState} onSelectNode={setSelectedNode} onClose={() => setSelectedNode(null)} />
+      )}
+      {cmdOpen && graphState && (
+        <CommandPalette state={graphState} onSelectNode={setSelectedNode} onClose={() => setCmdOpen(false)} />
       )}
     </div>
+  );
+}
+
+interface ToolValues {
+  query: string;
+  entityId: string;
+  sourceId: string;
+  targetId: string;
+  subgraphEntityId: string;
+  relationId: string;
+}
+
+function toolReady(tool: Tool, values: ToolValues): boolean {
+  if (tool === "search") return Boolean(values.query.trim());
+  if (tool === "neighbors") return Boolean(values.entityId.trim());
+  if (tool === "path") return Boolean(values.sourceId.trim() && values.targetId.trim());
+  if (tool === "subgraph") return Boolean(values.subgraphEntityId.trim());
+  if (tool === "evidence") return Boolean(values.relationId.trim());
+  return true;
+}
+
+function uniqueEntities(entities: EntityView[]): EntityView[] {
+  return [...new Map(entities.map((entity) => [entity.id, entity])).values()];
+}
+
+function toGraphSummary(response: { dataset_id: string; nodes: EntityView[]; relations: GraphSummary["relations"] }): GraphSummary {
+  return {
+    dataset_id: response.dataset_id,
+    entity_count: response.nodes.length,
+    relation_count: response.relations.length,
+    nodes: response.nodes,
+    relations: response.relations,
+  };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.detail : fallback;
+}
+
+function ToolbarButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className={`rounded-md border px-2 py-1 text-xs ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 text-stone-600"}`}>
+      {children}
+    </button>
+  );
+}
+
+function Stat({ value }: { value: string }) {
+  return <span className="px-2 py-1 font-mono text-[10px] text-stone-500">{value}</span>;
+}
+
+interface ToolFieldsProps extends ToolValues {
+  tool: Tool;
+  setQuery: (value: string) => void;
+  setEntityId: (value: string) => void;
+  setSourceId: (value: string) => void;
+  setTargetId: (value: string) => void;
+  setSubgraphEntityId: (value: string) => void;
+  setRelationId: (value: string) => void;
+  depth: number;
+  setDepth: (value: number) => void;
+}
+
+function ToolFields(props: ToolFieldsProps) {
+  if (props.tool === "search") return <TextField label="Entity name" value={props.query} onChange={props.setQuery} placeholder="Alice or neural network" />;
+  if (props.tool === "neighbors") return <TextField label="Entity ID" value={props.entityId} onChange={props.setEntityId} placeholder="ent_..." />;
+  if (props.tool === "path") return (
+    <div className="grid grid-cols-2 gap-2">
+      <TextField label="Source entity ID" value={props.sourceId} onChange={props.setSourceId} placeholder="ent_source" />
+      <TextField label="Target entity ID" value={props.targetId} onChange={props.setTargetId} placeholder="ent_target" />
+      <DepthField value={props.depth} onChange={props.setDepth} />
+    </div>
+  );
+  if (props.tool === "subgraph") return (
+    <div className="grid grid-cols-[1fr_6rem] gap-2">
+      <TextField label="Entity ID" value={props.subgraphEntityId} onChange={props.setSubgraphEntityId} placeholder="ent_root" />
+      <DepthField value={props.depth} onChange={props.setDepth} max={2} />
+    </div>
+  );
+  if (props.tool === "evidence") return <TextField label="Relation ID" value={props.relationId} onChange={props.setRelationId} placeholder="rel_..." />;
+  return <p className="text-sm text-stone-500">Latest graph response and evidence payload.</p>;
+}
+
+function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <label className="block text-xs font-medium text-stone-600">
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900" />
+    </label>
+  );
+}
+
+function DepthField({ value, onChange, max = 4 }: { value: number; onChange: (value: number) => void; max?: number }) {
+  return (
+    <label className="block text-xs font-medium text-stone-600">
+      Max depth
+      <input type="number" min={1} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+    </label>
   );
 }

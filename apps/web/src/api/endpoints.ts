@@ -1,8 +1,6 @@
 import { api } from "./client";
 import type {
   AnalyticsRunView,
-  CommunityReportJobView,
-  CommunityReportView,
   Dataset,
   DatasetInput,
   DatasetPatch,
@@ -11,21 +9,13 @@ import type {
   EvidenceView,
   ExplorerView,
   GraphJobView,
+  GraphPathView,
   GraphRunView,
   GraphSummary,
+  GraphSubgraphView,
   HealthStatus,
-  MemoryAgent,
-  MemoryFact,
-  MemorySearchHit,
-  MemorySearchInput,
-  MemorySession,
-  MemoryUser,
-  MessageBatchInput,
-  MessageBatchView,
   NeighborView,
   ProjectCreated,
-  QueryRequest,
-  QueryResponse,
   RelationView,
 } from "./types";
 
@@ -54,11 +44,11 @@ export const documentsApi = {
   delete: (documentId: string) => api.del<void>(`/v1/documents/${documentId}`),
 };
 
-export const queryApi = {
-  query: (body: QueryRequest) => api.post<QueryResponse>("/v1/query", { json: body }),
-};
-
 export const graphApi = {
+  searchEntities: (datasetId: string, q: string, entityType?: string, limit = 25) =>
+    api.get<EntityView[]>(`/v1/datasets/${datasetId}/entities/search`, {
+      params: { q, entity_type: entityType, limit },
+    }),
   getEntity: (id: string) => api.get<EntityView>(`/v1/entities/${id}`),
   getNeighbors: (id: string, limit = 25) =>
     api.get<NeighborView[]>(`/v1/entities/${id}/neighbors`, { params: { limit } }),
@@ -66,52 +56,32 @@ export const graphApi = {
     api.post<AnalyticsRunView>(`/v1/datasets/${datasetId}/analytics/refresh`),
   getGraph: (datasetId: string, limit = 100, depth = 1) =>
     api.get<GraphSummary>(`/v1/datasets/${datasetId}/graph`, { params: { limit, depth } }),
+  findPath: (datasetId: string, sourceEntityId: string, targetEntityId: string, maxDepth = 3, relationLimit = 100) =>
+    api.get<GraphPathView>(`/v1/datasets/${datasetId}/graph/path`, {
+      params: {
+        source_entity_id: sourceEntityId,
+        target_entity_id: targetEntityId,
+        max_depth: maxDepth,
+        relation_limit: relationLimit,
+      },
+    }),
+  getSubgraph: (datasetId: string, entityId: string, depth = 1, nodeLimit = 100, relationLimit = 200) =>
+    api.get<GraphSubgraphView>(`/v1/datasets/${datasetId}/graph/subgraph`, {
+      params: { entity_id: entityId, depth, node_limit: nodeLimit, relation_limit: relationLimit },
+    }),
   getExplorer: (
     datasetId: string,
     params: { node_limit?: number; relation_limit?: number; community_level?: number } = {},
   ) => api.get<ExplorerView>(`/v1/datasets/${datasetId}/graph/explorer`, { params }),
   getEvidence: (id: string) => api.get<EvidenceView>(`/v1/evidence/${id}`),
+  getRelationEvidence: (datasetId: string, relationId: string, limit = 25) =>
+    api.get<EvidenceView[]>(`/v1/datasets/${datasetId}/relations/${relationId}/evidence`, {
+      params: { limit },
+    }),
   getRun: (id: string) => api.get<GraphRunView>(`/v1/graph-runs/${id}`),
   getJob: (id: string) => api.get<GraphJobView>(`/v1/graph-jobs/${id}`),
   reviewRelation: (id: string, reviewState: "approved" | "rejected") =>
     api.patch<RelationView>(`/v1/relations/${id}/review`, { json: { review_state: reviewState } }),
-  listCommunityReports: (datasetId: string, communityLevel = 0) =>
-    api.get<CommunityReportView[]>(`/v1/datasets/${datasetId}/community-reports`, {
-      params: { community_level: communityLevel },
-    }),
-  getCommunityReport: (datasetId: string, reportId: string) =>
-    api.get<CommunityReportView>(`/v1/datasets/${datasetId}/community-reports/${reportId}`),
-  listCommunityReportJobs: (datasetId: string) =>
-    api.get<CommunityReportJobView[]>(`/v1/datasets/${datasetId}/community-report-jobs`),
-};
-
-export const memoryApi = {
-  createUser: (externalId: string, displayName?: string, metadata?: Record<string, unknown>) =>
-    api.post<MemoryUser>("/v1/memory/users", {
-      json: { external_id: externalId, display_name: displayName, metadata: metadata ?? {} },
-    }),
-  createAgent: (name: string, description?: string, metadata?: Record<string, unknown>) =>
-    api.post<MemoryAgent>("/v1/memory/agents", {
-      json: { name, description, metadata: metadata ?? {} },
-    }),
-  createSession: (
-    userId: string,
-    agentId: string,
-    title?: string,
-    metadata?: Record<string, unknown>,
-  ) =>
-    api.post<MemorySession>("/v1/memory/sessions", {
-      json: { user_id: userId, agent_id: agentId, title, metadata: metadata ?? {} },
-    }),
-  addMessages: (sessionId: string, body: MessageBatchInput) =>
-    api.post<MessageBatchView>(`/v1/memory/sessions/${sessionId}/messages`, { json: body }),
-  getSessionMemory: (sessionId: string) =>
-    api.get<MemoryFact[]>(`/v1/memory/sessions/${sessionId}/memory`),
-  getUserContext: (userId: string, limit = 20) =>
-    api.get<MemoryFact[]>(`/v1/memory/users/${userId}/context`, { params: { limit } }),
-  search: (body: MemorySearchInput) =>
-    api.post<MemorySearchHit[]>("/v1/memory/search", { json: body }),
-  delete: (id: string) => api.del<void>(`/v1/memory/${id}`),
 };
 
 export const healthApi = {

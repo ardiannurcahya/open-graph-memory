@@ -1,44 +1,39 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth";
-import { useMemoryStore } from "../store/memory";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/datasets", label: "Datasets" },
-  { to: "/query", label: "Query Playground" },
-  { to: "/knowledge", label: "Knowledge" },
-  { to: "/memory", label: "Memory" },
+  { to: "/graph", label: "Graph Playground" },
 ];
 
 export default function Layout() {
   const navigate = useNavigate();
   const clear = useAuthStore((s) => s.clear);
-  const clearMemory = useMemoryStore((s) => s.clear);
   const projectId = useAuthStore((s) => s.projectId);
 
   const handleLogout = () => {
     clear();
-    clearMemory();
     navigate("/login");
   };
 
   return (
-    <div className="flex min-h-screen bg-stone-50">
-      <aside className="flex w-56 flex-col border-r border-stone-200 bg-white">
+    <div className="flex min-h-screen flex-col bg-stone-50 sm:flex-row">
+      <aside className="flex w-full flex-col border-b border-stone-200 bg-white sm:w-56 sm:border-b-0 sm:border-r">
         <div className="border-b border-stone-200 px-4 py-4">
           <h1 className="text-lg font-semibold text-stone-900">OpenGraphMemory</h1>
           <p className="mt-1 truncate text-xs text-stone-500" title={projectId}>
             {projectId.slice(0, 13)}…
           </p>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 px-2 py-3">
+        <nav className="flex flex-1 gap-1 overflow-x-auto px-2 py-3 sm:flex-col">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-md px-3 py-2 text-sm font-medium ${
+                `whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium ${
                   isActive
                     ? "bg-stone-900 text-white"
                     : "text-stone-700 hover:bg-stone-100"
@@ -49,7 +44,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-stone-200 p-2">
+        <div className="hidden border-t border-stone-200 p-2 sm:block">
           <button
             type="button"
             onClick={handleLogout}
@@ -59,7 +54,7 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
+      <main className="min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>

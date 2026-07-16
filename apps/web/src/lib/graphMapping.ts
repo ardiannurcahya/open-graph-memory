@@ -1,4 +1,4 @@
-import type { ExplorerView } from "../api/types";
+import type { EntityView, ExplorerView, GraphSummary, RelationView } from "../api/types";
 import type { GraphState, GraphNode } from "./graphTypes";
 import { classifyEntityType } from "./graphTypes";
 import { buildCommunityPalette } from "./colorPalette";
@@ -43,6 +43,38 @@ export function explorerToGraphState(view: ExplorerView): GraphState {
   }
 
   return state;
+}
+
+export function graphSummaryToGraphState(view: GraphSummary): GraphState {
+  const communityNames = new Map<string, string>();
+  const communityIds = [...new Set(view.nodes.map((node) => node.entity_type || "unknown"))];
+  for (const id of communityIds) communityNames.set(id, id);
+  const palette = buildCommunityPalette(communityIds, communityNames);
+  return buildGraphState(
+    view.nodes.map((node) => ({
+      id: node.id,
+      label: node.canonical_name,
+      type: classifyEntityType(node.entity_type),
+      community: node.entity_type || "unknown",
+      description: `${node.entity_type} · confidence ${node.confidence.toFixed(2)} · ${node.review_state}`,
+      degree: relationDegree(node, view.relations),
+    })),
+    view.relations.map((relation) => ({
+      id: relation.id,
+      source: relation.source_entity_id,
+      target: relation.target_entity_id,
+      label: relation.relation_type,
+      weight: relation.confidence,
+    })),
+    palette,
+  );
+}
+
+function relationDegree(entity: EntityView, relations: RelationView[]): number {
+  return relations.filter(
+    (relation) =>
+      relation.source_entity_id === entity.id || relation.target_entity_id === entity.id,
+  ).length;
 }
 
 export function getNodeById(state: GraphState, id: string): GraphNode | null {
