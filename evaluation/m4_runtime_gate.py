@@ -1,4 +1,4 @@
-"""Exercise M4 retrieval modes through the public API on indexed graph fixtures."""
+"""Exercise structured graph APIs against indexed fixtures on a fresh Compose stack."""
 
 from __future__ import annotations
 
@@ -6,13 +6,12 @@ import argparse
 import json
 import os
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
 from m3_runtime_gate import upload, wait_graph
-from runtime_gate import auth, compose, request, sql, wait_ready
-
-MODES = ("vector_only", "graph_only", "hybrid")
+from runtime_gate import auth, request, wait_ready
 
 
 def wait_indexed(base: str, headers: dict[str, str], document_ids: list[str]) -> None:
@@ -31,78 +30,50 @@ def wait_indexed(base: str, headers: dict[str, str], document_ids: list[str]) ->
     raise RuntimeError(f"documents did not index: {states}")
 
 
-def evidence_mapping(compose_file: Path, document_ids: list[str]) -> dict[str, str]:
-    quoted = ",".join("'" + item + "'" for item in document_ids)
-    rows = sql(
-        compose_file,
-        "select c.id || '|' || regexp_replace(d.filename, '\\.txt$', '') "
-        "from chunks c join documents d on d.id = c.document_id "
-        f"where c.document_id in ({quoted})",
-    )
-    return dict(row.split("|", 1) for row in rows.splitlines())
+def get(
+    base: str, path: str, headers: dict[str, str], params: dict[str, Any] | None = None
+) -> tuple[int, Any]:
+    query = "" if params is None else "?" + urllib.parse.urlencode(params)
+    return request(base, "GET", path + query, headers=headers)
 
 
-def query_row(
+def unique_entity(
     base: str,
     headers: dict[str, str],
     dataset_id: str,
-    case: dict[str, Any],
-    mode: str,
-    evidence: dict[str, str],
-    graph_timeout_ms: int = 2800,
+    query: str,
+    *,
+    canonical_name: str | None = None,
+    entity_type: str | None = None,
 ) -> dict[str, Any]:
-    started = time.monotonic()
-    status, result = request(
-        base,
-        "POST",
-        "/v1/query",
-        {
-            "dataset_id": dataset_id,
-            "query": case["question"],
-            "mode": mode,
-            "top_k": 5,
-            "graph_depth": 2,
-            "graph_fanout": 3,
-            "graph_timeout_ms": graph_timeout_ms,
-        },
-        headers,
+    status, entities = get(
+        base, f"/v1/datasets/{dataset_id}/entities/search", headers, {"q": query}
     )
-    assert status == 200, (case["id"], mode, result)
-    trace = result["retrieval_trace"]
-    trace_id = trace["trace_id"]
-    refused = "cannot answer from the supplied evidence" in result["answer"].lower()
-    return {
-        "id": case["id"],
-        "mode": mode,
-        "answer": result["answer"],
-        "retrieved": [evidence[item] for item in trace["chunk_ids"]],
-        "citations": [evidence[item["chunk_id"]] for item in result["citations"]],
-        "unanswerable": refused,
-        "latency_ms": (time.monotonic() - started) * 1000,
-        "trace": trace,
-        "usage": result["usage"],
-        "trace_id": trace_id,
-    }
+    assert status == 200, entities
+    expected_name = (canonical_name or query).casefold()
+    matches = [
+        item
+        for item in entities
+        if item["canonical_name"].casefold() == expected_name
+        and (entity_type is None or item["entity_type"].casefold() == entity_type.casefold())
+    ]
+    assert len(matches) == 1, (query, canonical_name, entity_type, entities)
+    return matches[0]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--compose-file", type=Path, required=True)
-    parser.add_argument("--fixtures", type=Path)
-    parser.add_argument("--golden", type=Path, default=Path("evaluation/m4_golden/v1.0.json"))
-    parser.add_argument("--predictions", type=Path, required=True)
+    parser.add_argument(
+        "--fixtures", type=Path, default=Path("evaluation/m4_golden/fixture-v1.1.json")
+    )
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
     wait_ready(base)
     admin = {"X-API-Key": os.environ["ADMIN_API_KEY"]}
-    golden = json.loads(args.golden.read_text(encoding="utf-8"))
-    fixture_path = args.fixtures or Path(golden["fixture"])
-    fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
-    primary_count = sum(
-        item.get("tenant", "primary") == "primary" for item in fixtures["documents"]
-    )
-    assert primary_count > 5, "M4 fixture corpus must be larger than top_k"
+    fixtures = json.loads(args.fixtures.read_text(encoding="utf-8"))
+
     status, project = request(base, "POST", "/v1/projects", {"name": "m4-primary"}, admin)
     assert status == 201, project
     status, outsider = request(base, "POST", "/v1/projects", {"name": "m4-outsider"}, admin)
@@ -114,81 +85,142 @@ def main() -> int:
         base, "POST", "/v1/datasets", {"name": "m4-outsider"}, outsider_headers
     )
     assert status == 201, outsider_dataset
-    primary = [item for item in fixtures["documents"] if item.get("tenant", "primary") == "primary"]
-    documents = [upload(base, headers, dataset["id"], item) for item in primary]
+
+    primary_fixtures = [
+        item for item in fixtures["documents"] if item.get("tenant", "primary") == "primary"
+    ]
+    outsider_fixture = next(item for item in fixtures["documents"] if item.get("tenant") == "other")
+    documents = [upload(base, headers, dataset["id"], item) for item in primary_fixtures]
+    documents.append(
+        upload(
+            base,
+            headers,
+            dataset["id"],
+            {
+                "id": "structured-path-extension",
+                "text": "Atlas [Product]\nBeacon [Service]\nAtlas -> DEPENDS_ON -> Beacon",
+            },
+        )
+    )
     outsider_document = upload(
+        base, outsider_headers, outsider_dataset["id"], outsider_fixture
+    )
+    document_ids = [item["id"] for item in documents]
+    wait_indexed(base, headers, document_ids)
+    wait_indexed(base, outsider_headers, [outsider_document["id"]])
+    wait_graph(args.compose_file, document_ids)
+    wait_graph(args.compose_file, [outsider_document["id"]])
+
+    alice = unique_entity(
+        base, headers, dataset["id"], "Alice Nguyen", entity_type="Person"
+    )
+    atlas = unique_entity(base, headers, dataset["id"], "Atlas", entity_type="Product")
+    acme = unique_entity(
+        base, headers, dataset["id"], "Acme Labs", entity_type="Organization"
+    )
+    beacon = unique_entity(base, headers, dataset["id"], "Beacon", entity_type="Service")
+    assert alice["canonical_name"] == "Alice Nguyen" and alice["entity_type"] == "Person", alice
+    assert atlas["entity_type"] == "Product", atlas
+    assert acme["entity_type"] == "Organization", acme
+
+    status, path = get(
+        base,
+        f"/v1/datasets/{dataset['id']}/graph/path",
+        headers,
+        {
+            "source_entity_id": alice["id"],
+            "target_entity_id": beacon["id"],
+            "max_depth": 2,
+            "relation_limit": 6,
+        },
+    )
+    assert status == 200 and path["found"] and path["hops"] == 2, path
+    assert [item["id"] for item in path["nodes"]] == [
+        alice["id"],
+        atlas["id"],
+        beacon["id"],
+    ], path
+    assert {item["relation_type"] for item in path["relations"]} == {
+        "LEADS",
+        "DEPENDS_ON",
+    }, path
+
+    evidence_ids: set[str] = set()
+    for relation in path["relations"]:
+        assert relation["citations"], relation
+        status, evidence = get(
+            base,
+            f"/v1/datasets/{dataset['id']}/relations/{relation['id']}/evidence",
+            headers,
+        )
+        assert status == 200 and evidence, (relation, evidence)
+        assert all(
+            item["dataset_id"] == dataset["id"]
+            and item["relation_id"] == relation["id"]
+            and item["quote"]
+            for item in evidence
+        ), evidence
+        evidence_ids.update(item["id"] for item in evidence)
+
+    evidence_id = next(iter(evidence_ids))
+    status, evidence = get(base, f"/v1/evidence/{evidence_id}", headers)
+    assert status == 200 and evidence["id"] == evidence_id and evidence["quote"], evidence
+
+    status, subgraph = get(
+        base,
+        f"/v1/datasets/{dataset['id']}/graph/subgraph",
+        headers,
+        {"entity_id": alice["id"], "depth": 2, "node_limit": 10, "relation_limit": 6},
+    )
+    assert status == 200 and subgraph["root_entity_id"] == alice["id"], subgraph
+    assert {alice["id"], atlas["id"], acme["id"]} <= {
+        item["id"] for item in subgraph["nodes"]
+    }, subgraph
+    assert {"EMPLOYS", "LEADS", "BUILT_BY"} <= {
+        item["relation_type"] for item in subgraph["relations"]
+    }, subgraph
+    assert len(subgraph["nodes"]) <= 10 and len(subgraph["relations"]) <= 6
+
+    outsider_acme = unique_entity(
         base,
         outsider_headers,
         outsider_dataset["id"],
-        next(item for item in fixtures["documents"] if item.get("tenant") == "other"),
+        "Acme Labs",
+        entity_type="Organization",
     )
-    ids = [item["id"] for item in documents]
-    wait_indexed(base, headers, ids)
-    wait_indexed(base, outsider_headers, [outsider_document["id"]])
-    wait_graph(args.compose_file, ids)
-    wait_graph(args.compose_file, [outsider_document["id"]])
-    evidence = evidence_mapping(args.compose_file, ids)
-    # Verify the authorization boundary before scoring any evidence.
-    assert (
-        request(
-            base,
-            "POST",
-            "/v1/query",
-            {"dataset_id": dataset["id"], "query": "Atlas", "mode": "hybrid"},
-            outsider_headers,
-        )[0]
-        == 404
+    eve = unique_entity(
+        base, outsider_headers, outsider_dataset["id"], "Eve", entity_type="Person"
     )
-    # Compile the depth-two Cypher shape before collecting latency and provenance assertions.
-    warmup_case = next(case for case in golden["cases"] if case["class"] == "multi_hop")
-    warmup = query_row(
-        base, headers, dataset["id"], warmup_case, "graph_only", evidence, graph_timeout_ms=10000
+    assert outsider_acme["id"] != acme["id"]
+    status, primary_eve = get(
+        base, f"/v1/datasets/{dataset['id']}/entities/search", headers, {"q": "Eve"}
     )
-    assert warmup["trace"]["graph"]["status"] == "ok", warmup
-    rows = []
-    for mode in MODES:
-        for case in golden["cases"]:
-            row = query_row(base, headers, dataset["id"], case, mode, evidence)
-            assert (
-                sql(
-                    args.compose_file,
-                    f"select status from query_logs where trace_id='{row['trace_id']}'",
-                )
-                == "succeeded"
-            )
-            assert len(row["trace"].get("graph", {}).get("paths", [])) <= 6
-            if case["class"] == "multi_hop" and mode in {"graph_only", "hybrid"}:
-                paths = row["trace"]["graph"]["paths"]
-                two_hop = [path for path in paths if len(path.get("relation_ids", [])) == 2]
-                assert two_hop, ("missing real two-hop graph expansion", case["id"], mode, row)
-                graph_chunks = {
-                    item["chunk_id"] for item in row["trace"]["channel_candidates"]["graph"]
-                }
-                assert any(
-                    set(evidence[chunk] for chunk in path["evidence_chunk_ids"])
-                    >= set(case["evidence_ids"])
-                    and path["chunk_id"] in graph_chunks
-                    for path in two_hop
-                ), (
-                    "required multi-hop evidence was not produced by graph expansion",
-                    case["id"],
-                    mode,
-                    row,
-                )
-            row.pop("trace_id")
-            rows.append(row)
-    # A real Neo4j outage must preserve scoped vector evidence for graph_only and hybrid requests.
-    compose(args.compose_file, "stop", "neo4j")
-    outage_case = golden["cases"][0]
-    for mode in ("graph_only", "hybrid"):
-        row = query_row(base, headers, dataset["id"], outage_case, mode, evidence)
-        assert row["trace"]["graph"]["status"] == "fallback", row["trace"]
-        assert row["retrieved"], row
-    args.predictions.parent.mkdir(parents=True, exist_ok=True)
-    args.predictions.write_text(
-        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8"
+    assert status == 200 and primary_eve == [], primary_eve
+
+    primary_paths = [
+        f"/v1/datasets/{dataset['id']}/entities/search?q=Atlas",
+        f"/v1/datasets/{dataset['id']}/graph/path?source_entity_id={alice['id']}&target_entity_id={acme['id']}",
+        f"/v1/datasets/{dataset['id']}/graph/subgraph?entity_id={alice['id']}",
+        f"/v1/datasets/{dataset['id']}/relations/{path['relations'][0]['id']}/evidence",
+        f"/v1/entities/{alice['id']}",
+        f"/v1/evidence/{evidence_id}",
+    ]
+    assert all(
+        request(base, "GET", item, headers=outsider_headers)[0] == 404
+        for item in primary_paths
     )
-    print(f"wrote {len(rows)} M4 API predictions to {args.predictions}")
+    assert get(base, f"/v1/entities/{eve['id']}", headers)[0] == 404
+    assert get(
+        base,
+        f"/v1/datasets/{dataset['id']}/graph/subgraph",
+        headers,
+        {"entity_id": alice["id"], "depth": 3},
+    )[0] == 422
+
+    print(
+        "structured graph gate passed: entity search, 2-hop path, bounded subgraph, "
+        "relation evidence, evidence lookup, and project/dataset isolation"
+    )
     return 0
 
 

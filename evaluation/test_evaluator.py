@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from evaluator import evaluate, percentile
-from runtime_gate import expected_document_count
 
 
 def golden(count: int = 20) -> dict[str, object]:
@@ -59,17 +58,18 @@ def test_nearest_rank_percentile() -> None:
     assert percentile([], 0.5) == 0
 
 
-def test_runtime_gate_matches_public_document_state_values() -> None:
+def test_runtime_helpers_do_not_embed_retired_retrieval_contracts() -> None:
     source = Path(__file__).with_name("runtime_gate.py").read_text()
-    assert 'state == "indexed"' in source
-    assert 'state == "failed"' in source
+    assert "/v1/query" not in source
+    assert "qdrant" not in source.lower()
 
 
-def test_runtime_gate_derives_document_count_from_fixtures() -> None:
-    fixtures = {"documents": [{"evidence_id": f"doc-{i}"} for i in range(19)]}
-
-    assert expected_document_count(fixtures) == 19
-    assert len(golden(20)["cases"]) == 20
+def test_m4_gate_uses_structured_graph_contracts() -> None:
+    source = Path(__file__).with_name("m4_runtime_gate.py").read_text()
+    for route in ("entities/search", "graph/path", "graph/subgraph", "/evidence/"):
+        assert route in source
+    assert "/v1/query" not in source
+    assert "vector_only" not in source
 
 
 def test_cli_writes_report(tmp_path: Path) -> None:

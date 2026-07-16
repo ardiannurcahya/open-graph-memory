@@ -10,7 +10,7 @@ Run `uv run python evaluation/m3_evaluator.py --output artifacts/m3-report.json`
 
 The versioned golden set (`golden/v1.0.json`) has 24 representative questions: 20 answerable questions spanning product, deployment, storage, isolation, ingestion and retrieval, plus four unanswerable questions. Stable fixture evidence IDs intentionally decouple evaluation from database-generated IDs.
 
-The evaluator never calls a model or store. A runner invokes the current query path and writes one JSON object per line, making scoring repeatable and allowing the exact result artifact to be retained.
+The evaluator never calls a model or store. It scores retained JSONL artifacts from the retired retrieval API, keeping published baselines reproducible without presenting those metrics as a current runtime check.
 
 ```json
 {"id":"q01","answer":"...","retrieved":["quickstart-health"],"citations":["quickstart-health"],"unanswerable":false,"latency_ms":42.1,"usage":{"prompt_tokens":120,"completion_tokens":18,"estimated_cost_usd":0.0002}}
@@ -23,18 +23,21 @@ python evaluation/evaluator.py --golden evaluation/golden/v1.0.json --prediction
 pytest -q evaluation/test_evaluator.py
 ```
 
-## Milestone 4 hybrid retrieval
+`scripts/m2-runtime-gate.sh` and its `/v1/query` runner were removed. `evaluation/runtime_gate.py` now contains shared HTTP and Compose helpers only.
 
-`m4_golden/v1.0.json` is a versioned 20-case question suite over the real M3 uploaded/indexed/extracted fixture. It covers multi-hop graph answers, vector-only and graph-only answers, hybrid evidence, aliases, ambiguous entities, unsupported and unanswerable questions, cross-tenant isolation, cycle behavior, and fanout bounds.
+## Milestone 4 structured graph runtime
+
+`m4_golden/v1.0.json` remains an immutable published baseline for the retired hybrid retrieval API. Its evaluator and executable gate were removed when `/v1/query` was removed; structured graph endpoints cannot honestly reproduce answer, citation, retrieval-mode, or fallback metrics.
+
+The current M4 runtime gate uploads `m4_golden/fixture-v1.1.json` and checks canonical and alias entity search, an exact two-hop path, bounded depth-two subgraph expansion, relation evidence, direct evidence lookup, validation bounds, and project/dataset isolation through public graph routes.
 
 Run the complete vertical slice with:
 
 ```sh
 scripts/m4-runtime-gate.sh
-pytest -q evaluation/test_m4_evaluator.py
 ```
 
-The gate invokes `POST /api/v1/query` for `vector_only`, `graph_only`, and `hybrid`, maps returned chunk IDs to stable fixture evidence IDs, confirms persisted `query_logs` traces, and scores Recall@5, evidence hits, citation correctness, answerability, fallback correctness, p50/p95 latency, and graph path budget. It also stops Neo4j and requires graph modes to return scoped vector fallback evidence. Generated JSONL and reports remain under ignored `artifacts/`. See [hybrid retrieval](../docs/hybrid-retrieval.md) for configuration and operations.
+The gate invokes `GET /api/v1/datasets/{dataset_id}/entities/search`, `/graph/path`, `/graph/subgraph`, `/relations/{relation_id}/evidence`, and `GET /api/v1/evidence/{evidence_id}`. PostgreSQL-authoritative graph reads must continue to work independently of projection-specific assumptions.
 
 ## Metric contract
 
