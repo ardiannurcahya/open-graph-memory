@@ -1,6 +1,6 @@
 # ADR 0003: Document and indexing state machine
 
-- Status: Accepted
+- Status: Superseded by the graph-only architecture
 - Date: 2025-02-24
 
 ## Context
@@ -9,7 +9,7 @@ Milestone 0 requires a durable boundary before feature implementation.
 
 ## Decision
 
-Documents progress through uploaded, queued, parsing, chunking, embedding, persisting, and indexed. Failed, cancelled, and stale are explicit terminal or recovery states. Transitions, attempts, pipeline version, and sanitized errors live in PostgreSQL.
+At the time of this decision, documents progressed through uploaded, queued, parsing, chunking, embedding, persisting, and indexed. Failed, cancelled, and stale were explicit terminal or recovery states. Transitions, attempts, pipeline version, and sanitized errors lived in PostgreSQL. The current graph-only architecture removes the embedding state and transitions from chunking to persisting.
 
 ## Consequences
 

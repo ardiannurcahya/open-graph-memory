@@ -5,7 +5,7 @@
 - Python project uses `uv`; root `pyproject.toml` sets pytest `pythonpath` for `apps/api`, `packages/core/src`, `packages/contracts/src`, and `packages/sdk/src`.
 - API entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). Worker entrypoint: `apps/worker/worker/main.py` re-exports `app.worker.celery_app`.
 - Web app lives in `apps/web` and is independent npm workspace-less Vite/React project; run npm commands from `apps/web`.
-- Authoritative stores are PostgreSQL plus S3-compatible object storage; Qdrant vectors and Neo4j graph are rebuildable projections.
+- Authoritative stores are PostgreSQL plus S3-compatible object storage; the Neo4j graph is a rebuildable projection.
 
 ## Commands
 
@@ -28,9 +28,9 @@
 
 ## Providers and plugins
 
-- Deterministic providers are default and need no external model credentials; OpenAI-compatible providers can split `OPENAI_EMBEDDING_BASE_URL`, `OPENAI_CHAT_BASE_URL`, and `OPENAI_GRAPH_EXTRACTOR_BASE_URL`, each falling back to `OPENAI_BASE_URL` when unset.
+- The deterministic graph extractor is the default and needs no external model credentials; the OpenAI-compatible graph extractor can use `OPENAI_GRAPH_EXTRACTOR_BASE_URL`, which falls back to `OPENAI_BASE_URL` when unset.
 - Production validation requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS provider base URLs, and non-placeholder secrets.
-- Plugin registry is explicit only. Do not add dynamic entry-point discovery unless changing design; built-ins register through `app.plugin_registry.register_builtin_plugins()` and construct via `create_embedding`, `create_chat`, `create_vector_store`, `create_graph_store`.
+- Plugin registry is explicit only. Do not add dynamic entry-point discovery unless changing design; built-ins register through `app.plugin_registry.register_builtin_plugins()` and construct extraction, object-storage, and graph-store plugins.
 - Plugin factories receive `PluginConfig` only, not `Settings`, `Runtime`, DB sessions, or service clients; secrets must use `SecretValue`.
 
 ## Tests and evaluation quirks

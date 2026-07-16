@@ -1,19 +1,20 @@
-# Dashboard and Trace Explorer
+# Dashboard and Graph Playground
 
-Dashboard runs at `http://localhost:3000` by default. Credentials remain project-scoped: enter `X-Project-Id` and project API key; UI never bypasses API authorization or tenant isolation.
+Dashboard runs at `http://localhost:3000`. Enter project ID and project API key; UI uses same project-scoped API authorization as direct clients.
 
 ## Workflow
 
-1. Create/select dataset and inspect document lifecycle.
-2. Upload supported document through streaming API.
-3. Wait for indexing and graph projection state.
-4. Open Query Playground; choose `vector_only`, `graph_only`, or `hybrid`.
-5. Inspect answer citations and source evidence.
-6. Inspect graph paths, relation evidence, fusion candidates, fallback state, and latency in Trace Explorer.
+1. Create or select dataset.
+2. Upload supported document and monitor ingestion/graph state.
+3. Open Graph Playground and select dataset.
+4. Inspect force-directed nodes, relations, labels, and community colors.
+5. Switch detail, thematic, or overview community level.
+6. Search entities or run neighbors, path, subgraph, and relation-evidence tools.
+7. Inspect node details or raw JSON and refresh analytics after graph changes.
 
-Dashboard is responsive demo/operations UI, not replacement for authorization, monitoring, or backup tools. Query traces may contain user queries and evidence excerpts; restrict access and apply retention/privacy policy.
+Playground bounds requests through Structured Graph API. It is demo and operations UI, not replacement for authorization, monitoring, backups, or independent source-data review.
 
-Validate M5 with:
+Validate web app:
 
 ```sh
 cd apps/web

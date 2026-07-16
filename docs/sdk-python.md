@@ -18,16 +18,15 @@ async with AsyncOGMClient(
     document = await client.upload_document(
         dataset.id,
         filename="note.txt",
-        content=b"OpenGraphMemory connects vector and graph evidence.",
+        content=b"OpenGraphMemory extracts entities and evidence-backed relations.",
         content_type="text/plain",
     )
-    result = await client.query(
-        dataset_id=dataset.id,
-        query="What does the document describe?",
-        mode="hybrid",
-    )
-    print(document.status, result.answer)
+    graph = await client.get_graph(dataset.id)
+    matches = await client.search_graph(dataset.id, "OpenGraphMemory", limit=10)
+    print(document.status, graph.entity_count, matches)
 ```
+
+Structured graph methods are `get_entity`, `get_neighbors`, `get_graph`, `search_graph`, `find_graph_path`, `get_subgraph`, and `get_evidence`.
 
 ## Environment
 

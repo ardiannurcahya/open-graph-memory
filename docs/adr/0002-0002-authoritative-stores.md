@@ -1,6 +1,6 @@
 # ADR 0002: Authoritative stores and projections
 
-- Status: Accepted
+- Status: Superseded by the graph-only architecture
 - Date: 2025-02-24
 
 ## Context
@@ -9,7 +9,7 @@ Milestone 0 requires a durable boundary before feature implementation.
 
 ## Decision
 
-PostgreSQL owns metadata, lifecycle, authorization, and traces; S3-compatible storage owns source artifacts. Qdrant and Neo4j are derived projections and must be fully rebuildable.
+PostgreSQL owns metadata, lifecycle, authorization, and traces; S3-compatible storage owns source artifacts. At the time of this decision, Qdrant and Neo4j were derived projections and had to be fully rebuildable. The current graph-only architecture removes Qdrant; Neo4j remains a rebuildable projection.
 
 ## Consequences
 

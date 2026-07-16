@@ -27,7 +27,7 @@ curl -fsS http://localhost:3000/api/ready
 
 For local image pull, set `GHCR_NAMESPACE=ardiannurcahya`, `IMAGE_TAG=latest`, then run `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull` followed by `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml up -d --no-build`. Do not build source on host. Pin immutable tag or digest for production rollout.
 
-Production override sets one API process, Celery concurrency 1 by default, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. `graph-worker`, `community-worker`, and `dispatcher` use worker image and do not build on host.
+Production override sets one API process, Celery concurrency 1 by default, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. `graph-worker` consumes graph work; `dispatcher` publishes durable outbox work.
 
 For external S3-compatible storage, set S3 variables and include `deployments/docker-compose.external-s3.yml`; local RustFS services become profile-disabled. Use provider-native bucket versioning/export.
 
@@ -38,20 +38,20 @@ from integrations that require a registered plugin or code change.
 
 ## Authority and Recovery
 
-Back up PostgreSQL and object storage. Redis is transient. Qdrant and Neo4j are rebuildable projections. Run `scripts/backup.sh`, encrypt result, copy off-host, alert on backup age, and drill `scripts/restore.sh` in isolation. See `docs/runbooks/backup-restore.md`.
+Back up PostgreSQL and object storage. Redis is transient. Neo4j is a rebuildable projection. Run `scripts/backup.sh`, encrypt result, copy off-host, alert on backup age, and drill `scripts/restore.sh` in isolation. See `docs/runbooks/backup-restore.md`.
 
 ## Observability
 
 - `/api/health`: liveness only.
-- `/api/ready`: PostgreSQL, Redis, Qdrant, Neo4j, and object-storage checks.
+- `/api/ready`: PostgreSQL, Redis, Neo4j, and object-storage checks.
 - `/api/metrics`: Prometheus text metrics; restrict network access.
 - Caddy emits JSON access logs; Docker rotates service logs.
 
-Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, and projection drift. For Community GraphRAG, also check analytics refresh, `community-worker`/dispatcher health, report-job failures or expired leases, and source-chunk citations for global queries. See `docs/runbooks/operations.md` and [Community GraphRAG](community-graphrag.md).
+Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, graph-job failures, expired leases, and projection drift. See `docs/runbooks/operations.md` and [hierarchical community analytics](community-graphrag.md).
 
 ## Upgrade and Rollback
 
-Use explicit migration stage after verified backup. Prefer backward-compatible expand/contract migrations. Record old/new image digests. Roll back images by prior digest; never assume database downgrade is safe. Prefer forward fix or verified backup restore. Run upload, query, graph, memory, and readiness smoke tests before reopening traffic.
+Use explicit migration stage after verified backup. Prefer backward-compatible expand/contract migrations. Record old/new image digests. Roll back images by prior digest; never assume database downgrade is safe. Prefer forward fix or verified backup restore. Run upload, graph, evidence, and readiness smoke tests before reopening traffic.
 
 ## Security
 

@@ -21,7 +21,7 @@ Unsupported grammar is ignored deliberately. `OpenAICompatibleExtractor` remains
 
 ## Operations and API
 
-Successful vector indexing atomically creates a graph job and outbox record. Beat publishes committed outbox records; workers lease, retry, reconcile expired leases, and safely ignore duplicate delivery of an active or succeeded job. `documents.status` remains `indexed`; `documents.graph_stage` reports graph progress.
+Successful ingestion atomically creates graph job and outbox record. Dispatcher publishes committed outbox records; workers lease, retry, reconcile expired leases, and safely ignore duplicate delivery of active or succeeded job. `documents.status` and `documents.graph_stage` report ingestion and graph progress.
 
 Use `GET /v1/datasets/{dataset_id}/graph?limit=100&depth=1` for bounded inspection, `GET /v1/entities/{id}/neighbors` for bounded neighbors, and `GET /v1/evidence/{id}` or `GET /v1/graph-runs/{id}` for provenance. Relations transition once from `unreviewed`/`needs_review` to `approved` or `rejected` through `PATCH /v1/relations/{id}/review`.
 

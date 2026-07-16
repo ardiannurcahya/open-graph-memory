@@ -1,6 +1,6 @@
 # ADR 0008: Provider adapter capabilities
 
-- Status: Accepted
+- Status: Superseded by the graph-only architecture
 - Date: 2025-02-24
 
 ## Context
@@ -9,7 +9,7 @@ Milestone 0 requires a durable boundary before feature implementation.
 
 ## Decision
 
-Chat and embedding registries and credentials remain separate. Adapters declare supported parameters and capabilities, normalize outputs and errors, and omit unsupported options. OpenAI-compatible chat/embedding and Anthropic-compatible chat are initial boundaries, not Milestone 0 integrations.
+At the time of this decision, chat and embedding registries and credentials were separate. Adapters declared supported parameters and capabilities, normalized outputs and errors, and omitted unsupported options. OpenAI-compatible chat/embedding and Anthropic-compatible chat were initial boundaries, not Milestone 0 integrations. The current graph-only architecture removes chat and embedding providers; graph extraction remains the only model-provider boundary.
 
 ## Consequences
 
