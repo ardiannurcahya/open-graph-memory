@@ -32,13 +32,10 @@ from open_graph_contracts.metadata import (
 # Required contract versions for each capability.
 # Bumped only on breaking protocol changes; minor bumps add optional members.
 _REQUIRED_VERSIONS: dict[Capability, PluginVersion] = {
-    Capability.EMBEDDING: PluginVersion(1, 0),
-    Capability.CHAT: PluginVersion(1, 0),
     Capability.EXTRACTION: PluginVersion(1, 0),
     Capability.PARSER: PluginVersion(1, 0),
     Capability.CHUNKER: PluginVersion(1, 0),
     Capability.OBJECT_STORE: PluginVersion(1, 0),
-    Capability.VECTOR_STORE: PluginVersion(1, 0),
     Capability.GRAPH_STORE: PluginVersion(1, 0),
     Capability.GRAPH_RETRIEVER: PluginVersion(1, 0),
 }

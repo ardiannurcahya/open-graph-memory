@@ -79,12 +79,11 @@ async def checks() -> dict[str, bool]:
     values = await asyncio.gather(
         asyncio.wait_for(postgres(), timeout=timeout),
         asyncio.wait_for(redis(), timeout=timeout),
-        http(cfg.qdrant_url + "/readyz"),
         http(cfg.neo4j_url, neo4j_auth),
         s3(),
         return_exceptions=True,
     )
-    names = ("postgres", "redis", "qdrant", "neo4j", "s3")
+    names = ("postgres", "redis", "neo4j", "s3")
     return {name: value is True for name, value in zip(names, values, strict=True)}
 
 

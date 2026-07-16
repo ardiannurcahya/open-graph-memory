@@ -17,8 +17,6 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.community_reports import enqueue_community_report_jobs
-from app.config import get_settings
 from app.graph_models import CanonicalEntity, GraphEvidence, RelationAssertion, ReviewState
 from app.models import (
     GraphAnalyticsCommunity,
@@ -146,7 +144,7 @@ async def refresh_dataset_analytics(db: AsyncSession, project_id: UUID, dataset_
     result = analyze_graph(entities, [(source, target, float(confidence)) for source, target, confidence in rows])
     existing = await db.scalar(select(GraphAnalyticsRun).where(GraphAnalyticsRun.project_id == project_id, GraphAnalyticsRun.dataset_id == dataset_id, GraphAnalyticsRun.snapshot_hash == result.snapshot_hash))
     if existing:
-        await enqueue_community_report_jobs(db, project_id, dataset_id, existing, get_settings()); return existing
+        return existing
     run = GraphAnalyticsRun(id=str(uuid4()), project_id=project_id, dataset_id=dataset_id, snapshot_hash=result.snapshot_hash, entity_count=len(entities), relation_count=result.relation_count, community_count=len(result.community_stats[0]), resolution=LOUVAIN_RESOLUTION, seed=LOUVAIN_SEED, levels=3, algorithm_version=HIERARCHY_ALGORITHM_VERSION, config={"resolutions": list(HIERARCHY_RESOLUTIONS)})
     db.add(run)
     for entity in entities:
@@ -154,4 +152,4 @@ async def refresh_dataset_analytics(db: AsyncSession, project_id: UUID, dataset_
         for level in range(3): db.add(GraphAnalyticsMembership(run_id=run.id, entity_id=entity, level=level, community_id=result.memberships[level][entity]))
     for level, communities in result.community_stats.items():
         for community_id, value in communities.items(): db.add(GraphAnalyticsCommunity(run_id=run.id, community_id=community_id, level=level, parent_community_id=value.parent_id, entity_count=len(value.members), internal_edges=value.internal_edges, external_edges=value.external_edges, density=value.density, importance=value.importance))
-    await db.flush(); await enqueue_community_report_jobs(db, project_id, dataset_id, run, get_settings()); return run
+    await db.flush(); return run

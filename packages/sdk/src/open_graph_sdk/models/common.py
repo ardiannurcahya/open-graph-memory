@@ -16,7 +16,6 @@ class DocumentStatus(StrEnum):
     QUEUED = "queued"
     PARSING = "parsing"
     CHUNKING = "chunking"
-    EMBEDDING = "embedding"
     PERSISTING = "persisting"
     INDEXED = "indexed"
     FAILED = "failed"
@@ -24,19 +23,6 @@ class DocumentStatus(StrEnum):
     STALE = "stale"
     DELETING = "deleting"
     DELETE_FAILED = "delete_failed"
-
-
-class QueryMode(StrEnum):
-    VECTOR_ONLY = "vector_only"
-    GRAPH_ONLY = "graph_only"
-    GRAPH_LOCAL = "graph_local"
-    GRAPH_GLOBAL = "graph_global"
-    HYBRID = "hybrid"
-
-
-class FusionMethod(StrEnum):
-    RRF = "rrf"
-    WEIGHTED = "weighted"
 
 
 class ReviewState(StrEnum):

@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 from app.chunking import RecursiveTextChunker
-from app.ingestion import PIPELINE_VERSION, deterministic_id, embed_in_batches, sanitized_error
+from app.ingestion import PIPELINE_VERSION, deterministic_id, sanitized_error
 from app.parsers import default_registry
 from pypdf import PdfWriter
 
@@ -205,25 +205,8 @@ def test_plain_text_csv_filename_uses_csv_parser() -> None:
     assert parsed.text == "name: alpha; value: 1"
 
 
-class RecordingEmbeddings:
-    name = "recording"
-    dimensions = 1
-
-    def __init__(self) -> None:
-        self.calls: list[list[str]] = []
-
-    async def embed(self, texts: list[str], model: str) -> list[list[float]]:
-        self.calls.append(texts)
-        return [[float(len(text))] for text in texts]
-
-
-async def test_embed_in_batches_preserves_order() -> None:
-    embeddings = RecordingEmbeddings()
-
-    vectors = await embed_in_batches(embeddings, ["a", "bb", "ccc", "dddd", "eeeee"], "model", 2)
-
-    assert embeddings.calls == [["a", "bb"], ["ccc", "dddd"], ["eeeee"]]
-    assert vectors == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+def test_pipeline_version_has_no_embedding_projection() -> None:
+    assert "embedding" not in PIPELINE_VERSION
 
 
 def test_pdf_parser_accepts_a_real_large_pdf() -> None:

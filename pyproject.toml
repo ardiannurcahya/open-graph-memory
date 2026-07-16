@@ -19,7 +19,6 @@ dependencies = [
     "markdown-it-py>=3,<4",
     "beautifulsoup4>=4.12,<5",
     "lxml>=6.1,<7",
-    "qdrant-client>=1.13,<2",
     "networkx>=3.4,<4",
 ]
 [dependency-groups]

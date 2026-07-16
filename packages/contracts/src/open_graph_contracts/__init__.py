@@ -24,15 +24,12 @@ from open_graph_contracts.metadata import (
     PluginVersion,
 )
 from open_graph_contracts.protocols import (
-    ChatProvider,
     Chunker,
-    EmbeddingProvider,
     Extractor,
     GraphRetriever,
     GraphStore,
     ObjectStore,
     Parser,
-    VectorStore,
 )
 from open_graph_contracts.registry import (
     PluginEntry,
@@ -63,15 +60,12 @@ __all__ = [
     "PluginValidationError",
     "SecretAccessError",
     # Protocols
-    "ChatProvider",
     "Chunker",
-    "EmbeddingProvider",
     "Extractor",
     "GraphRetriever",
     "GraphStore",
     "ObjectStore",
     "Parser",
-    "VectorStore",
     # Registry
     "PluginEntry",
     "PluginFactory",

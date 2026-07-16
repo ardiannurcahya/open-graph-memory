@@ -1,35 +1,7 @@
 import asyncio
 
 import pytest
-from app.retrieval import GraphEvidence, bounded_graph_search, fuse_hits
-from app.vector_store import VectorHit
-
-
-def hit(chunk_id: str, score: float) -> VectorHit:
-    return VectorHit(chunk_id, score, {"document_id": "doc", "text": chunk_id})
-
-
-def test_rrf_dedupes_and_orders_ties_stably() -> None:
-    results, trace = fuse_hits(
-        [hit("b", 0.9), hit("a", 0.8)], [hit("a", 0.7), hit("c", 0.6)], "rrf", 60, 0.5, 0.5
-    )
-    assert [item.id for item in results] == ["a", "b", "c"]
-    assert trace[0]["channels"] == ["vector", "graph"]
-
-
-def test_weighted_normalizes_channel_scores() -> None:
-    results, _ = fuse_hits(
-        [hit("a", 10), hit("b", 0)], [hit("b", 1), hit("c", 0)], "weighted", 60, 0.5, 0.5
-    )
-    assert [item.id for item in results] == ["a", "b", "c"]
-
-
-def test_three_way_fusion_dedupes_community_evidence() -> None:
-    results, trace = fuse_hits(
-        [hit("a", 1)], [hit("b", 1)], "rrf", 60, 0.5, 0.5, [hit("a", 1), hit("c", 1)]
-    )
-    assert [item.id for item in results] == ["a", "b", "c"]
-    assert trace[0]["channels"] == ["vector", "community"]
+from app.retrieval import GraphEvidence, bounded_graph_search
 
 
 class Outage:

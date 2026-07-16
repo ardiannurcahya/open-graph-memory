@@ -161,24 +161,24 @@ def test_plugin_version_incompatible_lower_minor() -> None:
 
 
 def test_plugin_capabilities_supports() -> None:
-    caps = PluginCapabilities(frozenset({Capability.EMBEDDING}))
-    assert caps.supports(Capability.EMBEDDING)
-    assert not caps.supports(Capability.CHAT)
+    caps = PluginCapabilities(frozenset({Capability.GRAPH_STORE}))
+    assert caps.supports(Capability.GRAPH_STORE)
+    assert not caps.supports(Capability.EXTRACTION)
 
 
 def test_plugin_spec_key() -> None:
-    spec = PluginSpec(capability=Capability.CHAT, contract_version=PluginVersion(1, 0))
-    assert spec.key == "chat:1.0.0"
+    spec = PluginSpec(capability=Capability.EXTRACTION, contract_version=PluginVersion(1, 0))
+    assert spec.key == "extraction:1.0.0"
 
 
 def test_plugin_metadata_properties() -> None:
     meta = PluginMetadata(
         name="test",
         version="0.1.0",
-        spec=PluginSpec(capability=Capability.EMBEDDING, contract_version=PluginVersion(1, 0)),
-        capabilities=PluginCapabilities(frozenset({Capability.EMBEDDING})),
+        spec=PluginSpec(capability=Capability.GRAPH_STORE, contract_version=PluginVersion(1, 0)),
+        capabilities=PluginCapabilities(frozenset({Capability.GRAPH_STORE})),
     )
-    assert meta.capability is Capability.EMBEDDING
+    assert meta.capability is Capability.GRAPH_STORE
     assert meta.contract_version == PluginVersion(1, 0)
 
 
@@ -201,23 +201,23 @@ def _factory(**kwargs: object) -> object:
 
 def test_registry_register_and_create() -> None:
     reg = PluginRegistry()
-    meta = _meta("p1", Capability.EMBEDDING)
+    meta = _meta("p1", Capability.GRAPH_STORE)
     reg.register(meta, _factory)
-    instance = reg.create(Capability.EMBEDDING, "p1")
+    instance = reg.create(Capability.GRAPH_STORE, "p1")
     assert instance is not None
 
 
 def test_registry_identical_registration_is_idempotent() -> None:
     reg = PluginRegistry()
-    meta = _meta("p1", Capability.EMBEDDING)
+    meta = _meta("p1", Capability.GRAPH_STORE)
     reg.register(meta, _factory)
     reg.register(meta, _factory)
-    assert reg.list_names(Capability.EMBEDDING) == ["p1"]
+    assert reg.list_names(Capability.GRAPH_STORE) == ["p1"]
 
 
 def test_registry_conflicting_registration_raises() -> None:
     reg = PluginRegistry()
-    meta = _meta("p1", Capability.EMBEDDING)
+    meta = _meta("p1", Capability.GRAPH_STORE)
     reg.register(meta, _factory)
 
     def other_factory(**kwargs: object) -> object:
@@ -230,29 +230,29 @@ def test_registry_conflicting_registration_raises() -> None:
 def test_registry_not_registered_raises() -> None:
     reg = PluginRegistry()
     with pytest.raises(PluginNotRegisteredError):
-        reg.create(Capability.EMBEDDING, "nope")
+        reg.create(Capability.GRAPH_STORE, "nope")
 
 
 def test_registry_incompatible_version_raises() -> None:
     reg = PluginRegistry()
-    meta = _meta("p2", Capability.EMBEDDING, PluginVersion(2, 0))
+    meta = _meta("p2", Capability.GRAPH_STORE, PluginVersion(2, 0))
     with pytest.raises(IncompatiblePluginError, match="incompatible"):
         reg.register(meta, _factory)
 
 
 def test_registry_caching_without_kwargs() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("cached", Capability.EMBEDDING), _factory)
-    first = reg.create(Capability.EMBEDDING, "cached")
-    second = reg.create(Capability.EMBEDDING, "cached")
+    reg.register(_meta("cached", Capability.GRAPH_STORE), _factory)
+    first = reg.create(Capability.GRAPH_STORE, "cached")
+    second = reg.create(Capability.GRAPH_STORE, "cached")
     assert first is second
 
 
 def test_registry_no_cache_with_kwargs() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("fresh", Capability.EMBEDDING), _factory)
-    first = reg.create(Capability.EMBEDDING, "fresh", key="a")
-    second = reg.create(Capability.EMBEDDING, "fresh", key="b")
+    reg.register(_meta("fresh", Capability.GRAPH_STORE), _factory)
+    first = reg.create(Capability.GRAPH_STORE, "fresh", key="a")
+    second = reg.create(Capability.GRAPH_STORE, "fresh", key="b")
     assert first is not second
 
 
@@ -261,54 +261,54 @@ def test_registry_factory_exception_wrapped() -> None:
         raise ValueError("boom")
 
     reg = PluginRegistry()
-    reg.register(_meta("bad", Capability.EMBEDDING), bad_factory)
+    reg.register(_meta("bad", Capability.GRAPH_STORE), bad_factory)
     with pytest.raises(PluginConstructionError, match="failed to construct") as exc_info:
-        reg.create(Capability.EMBEDDING, "bad")
+        reg.create(Capability.GRAPH_STORE, "bad")
     assert exc_info.value.cause is not None
 
 
 def test_registry_list_names() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("zeta", Capability.EMBEDDING), _factory)
-    reg.register(_meta("alpha", Capability.EMBEDDING), _factory)
-    reg.register(_meta("beta", Capability.CHAT), _factory)
-    assert reg.list_names(Capability.EMBEDDING) == ["alpha", "zeta"]
-    assert reg.list_names(Capability.CHAT) == ["beta"]
+    reg.register(_meta("zeta", Capability.GRAPH_STORE), _factory)
+    reg.register(_meta("alpha", Capability.GRAPH_STORE), _factory)
+    reg.register(_meta("beta", Capability.EXTRACTION), _factory)
+    assert reg.list_names(Capability.GRAPH_STORE) == ["alpha", "zeta"]
+    assert reg.list_names(Capability.EXTRACTION) == ["beta"]
 
 
 def test_registry_list_capabilities() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("a", Capability.EMBEDDING), _factory)
-    reg.register(_meta("b", Capability.CHAT), _factory)
+    reg.register(_meta("a", Capability.GRAPH_STORE), _factory)
+    reg.register(_meta("b", Capability.EXTRACTION), _factory)
     caps = reg.list_capabilities()
-    assert Capability.EMBEDDING in caps
-    assert Capability.CHAT in caps
+    assert Capability.GRAPH_STORE in caps
+    assert Capability.EXTRACTION in caps
 
 
 def test_registry_is_registered() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("x", Capability.EMBEDDING), _factory)
-    assert reg.is_registered(Capability.EMBEDDING, "x")
-    assert not reg.is_registered(Capability.EMBEDDING, "y")
+    reg.register(_meta("x", Capability.GRAPH_STORE), _factory)
+    assert reg.is_registered(Capability.GRAPH_STORE, "x")
+    assert not reg.is_registered(Capability.GRAPH_STORE, "y")
 
 
 def test_registry_clear() -> None:
     reg = PluginRegistry()
-    reg.register(_meta("x", Capability.EMBEDDING), _factory)
+    reg.register(_meta("x", Capability.GRAPH_STORE), _factory)
     reg.clear()
-    assert not reg.is_registered(Capability.EMBEDDING, "x")
+    assert not reg.is_registered(Capability.GRAPH_STORE, "x")
     with pytest.raises(PluginNotRegisteredError):
-        reg.create(Capability.EMBEDDING, "x")
+        reg.create(Capability.GRAPH_STORE, "x")
 
 
 def test_registry_get_entry() -> None:
     reg = PluginRegistry()
-    meta = _meta("entry", Capability.EMBEDDING)
+    meta = _meta("entry", Capability.GRAPH_STORE)
     reg.register(meta, _factory)
-    entry = reg.get_entry(Capability.EMBEDDING, "entry")
+    entry = reg.get_entry(Capability.GRAPH_STORE, "entry")
     assert isinstance(entry, PluginEntry)
     assert entry.name == "entry"
-    assert entry.spec.capability is Capability.EMBEDDING
+    assert entry.spec.capability is Capability.GRAPH_STORE
 
 
 def test_registry_singleton() -> None:
@@ -320,10 +320,10 @@ def test_registry_singleton() -> None:
 
 def test_registry_reset() -> None:
     r = get_registry()
-    r.register(_meta("temp", Capability.EMBEDDING), _factory)
+    r.register(_meta("temp", Capability.GRAPH_STORE), _factory)
     _reset_registry()
     fresh = get_registry()
-    assert not fresh.is_registered(Capability.EMBEDDING, "temp")
+    assert not fresh.is_registered(Capability.GRAPH_STORE, "temp")
 
 
 # ---------------------------------------------------------------------------
@@ -332,70 +332,40 @@ def test_registry_reset() -> None:
 
 def test_protocols_are_runtime_checkable() -> None:
     from open_graph_contracts.protocols import (
-        ChatProvider,
-        EmbeddingProvider,
+        Chunker,
         Extractor,
+        GraphRetriever,
         GraphStore,
         ObjectStore,
         Parser,
-        VectorStore,
     )
 
-    for proto in (EmbeddingProvider, ChatProvider, Extractor, Parser,
-                  ObjectStore, VectorStore, GraphStore):
+    for proto in (Extractor, Parser, Chunker, ObjectStore, GraphStore, GraphRetriever):
         assert hasattr(proto, "__protocol_attrs__"), f"{proto.__name__} not a Protocol"
 
 
-def test_embedding_provider_protocol_isinstance() -> None:
-    from open_graph_contracts.protocols import EmbeddingProvider as ContractEmbeddingProvider
+def test_extractor_protocol_isinstance() -> None:
+    from open_graph_contracts.protocols import Extractor as ContractExtractor
 
-    class FakeEmbedding:
-        name = "fake"
-        dimensions = 64
+    class FakeExtractor:
+        def extract(self, text: str) -> object:
+            return object()
 
-        async def embed(self, texts: list[str], model: str) -> list[list[float]]:
-            return []
-
-    assert isinstance(FakeEmbedding(), ContractEmbeddingProvider)
+    assert isinstance(FakeExtractor(), ContractExtractor)
 
 
 def test_protocol_isinstance_rejects_non_compliant() -> None:
-    from open_graph_contracts.protocols import EmbeddingProvider as ContractEmbeddingProvider
+    from open_graph_contracts.protocols import Extractor as ContractExtractor
 
     class MissingMethods:
         name = "fake"
 
-    assert not isinstance(MissingMethods(), ContractEmbeddingProvider)
+    assert not isinstance(MissingMethods(), ContractExtractor)
 
 
 # ---------------------------------------------------------------------------
 # Import compatibility — old paths still work
 # ---------------------------------------------------------------------------
-
-def test_old_provider_imports_valid() -> None:
-    from app.providers import (
-        ChatResult,
-        DeterministicProvider,
-        EmbeddingProvider,
-        OpenAIChatProvider,
-        OpenAIEmbeddingProvider,
-        Usage,
-    )
-    assert DeterministicProvider is not None
-    assert OpenAIEmbeddingProvider is not None
-    assert OpenAIChatProvider is not None
-    assert EmbeddingProvider is not None
-    assert ChatResult is not None
-    assert Usage is not None
-
-
-def test_old_vector_store_imports_valid() -> None:
-    from app.vector_store import QdrantVectorStore, VectorHit, VectorPoint, VectorStore
-    assert QdrantVectorStore is not None
-    assert VectorHit is not None
-    assert VectorPoint is not None
-    assert VectorStore is not None
-
 
 def test_old_graph_store_imports_valid() -> None:
     from app.graph_store import GraphStore, Neo4jGraphStore

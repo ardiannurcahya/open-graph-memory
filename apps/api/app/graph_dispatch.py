@@ -26,7 +26,7 @@ def lease_seconds() -> int:
 
 
 async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> GraphExtractionJob:
-    """Persist work atomically with successful vector indexing; publishing is separate."""
+    """Persist work atomically with authoritative chunks; publishing is separate."""
     metadata = extractor_metadata()
     job_id = stable_id("graph-job", document.id, metadata.extractor_version)
     job = await db.get(GraphExtractionJob, job_id)

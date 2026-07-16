@@ -74,36 +74,47 @@ async def test_sdk_dataset_crud_headers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sdk_upload_query_and_graph() -> None:
+async def test_sdk_upload_and_structured_graph() -> None:
+    seen: list[httpx.Request] = []
+
+    def entity(entity_id: str) -> dict[str, object]:
+        return {
+            "id": entity_id,
+            "dataset_id": "ds1",
+            "canonical_name": entity_id,
+            "entity_type": "concept",
+            "confidence": 1.0,
+            "version": 1,
+            "review_state": "unreviewed",
+        }
+
     async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
         if request.url.path.endswith("/documents") and request.method == "POST":
             return httpx.Response(201, json=_document())
-        if request.url.path == "/v1/query":
-            return httpx.Response(
-                200,
-                json={
-                    "answer": "Answer",
-                    "citations": [
-                        {
-                            "index": 1,
-                            "chunk_id": "c1",
-                            "document_id": "doc1",
-                            "score": 1.0,
-                            "text": "quote",
-                        }
-                    ],
-                    "retrieval_trace": {"trace_id": "tr1", "mode": "hybrid", "latency_ms": 12.0},
-                    "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-                },
-            )
-        if request.url.path == "/v1/datasets/ds1/graph":
+        if request.url.path.endswith("/entities/search"):
+            return httpx.Response(200, json=[entity("alpha")])
+        if request.url.path.endswith("/path"):
             return httpx.Response(
                 200,
                 json={
                     "dataset_id": "ds1",
-                    "entity_count": 0,
-                    "relation_count": 0,
-                    "nodes": [],
+                    "source_entity_id": "alpha",
+                    "target_entity_id": "beta",
+                    "found": True,
+                    "hops": 1,
+                    "nodes": [entity("alpha"), entity("beta")],
+                    "relations": [],
+                },
+            )
+        if request.url.path.endswith("/subgraph"):
+            return httpx.Response(
+                200,
+                json={
+                    "dataset_id": "ds1",
+                    "root_entity_id": "alpha",
+                    "depth": 2,
+                    "nodes": [entity("alpha")],
                     "relations": [],
                 },
             )
@@ -120,11 +131,33 @@ async def test_sdk_upload_query_and_graph() -> None:
         content_type="text/plain",
     )
     assert document.id == "doc1"
-    result = await client.query(dataset_id="ds1", query="What?", mode="hybrid", top_k=3)
-    assert result.answer == "Answer"
-    assert result.citations[0].chunk_id == "c1"
-    assert (await client.get_graph("ds1")).dataset_id == "ds1"
+    search = await client.search_graph("ds1", "alpha", entity_type="concept", limit=3)
+    path = await client.find_graph_path("ds1", "alpha", "beta", max_depth=2, relation_limit=20)
+    subgraph = await client.get_subgraph(
+        "ds1", "alpha", depth=2, node_limit=20, relation_limit=30
+    )
     await client.aclose()
+
+    assert search[0].id == "alpha"
+    assert path.found
+    assert path.hops == 1
+    assert subgraph.root_entity_id == "alpha"
+    assert [request.url.path for request in seen] == [
+        "/v1/datasets/ds1/documents",
+        "/v1/datasets/ds1/entities/search",
+        "/v1/datasets/ds1/graph/path",
+        "/v1/datasets/ds1/graph/subgraph",
+    ]
+    assert [dict(request.url.params) for request in seen[1:]] == [
+        {"q": "alpha", "limit": "3", "entity_type": "concept"},
+        {
+            "source_entity_id": "alpha",
+            "target_entity_id": "beta",
+            "max_depth": "2",
+            "relation_limit": "20",
+        },
+        {"entity_id": "alpha", "depth": "2", "node_limit": "20", "relation_limit": "30"},
+    ]
 
 
 @pytest.mark.asyncio

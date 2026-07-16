@@ -62,6 +62,8 @@ async def test_traversal_scopes_every_graph_artifact_and_preserves_provenance() 
     assert "LIMIT $max_paths" in graph.statement
     assert graph.parameters["max_paths"] == 6
     assert "r1.id <> r2.id" in graph.statement
+    assert "r1.review_state <> 'rejected'" in graph.statement
+    assert "r2.review_state <> 'rejected'" in graph.statement
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 import re
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,13 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth import ProjectContext, require_project
-from app.community_reports import enqueue_community_report_jobs
-from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
 from app.graph_analytics import refresh_dataset_analytics, snapshot_hash
 from app.graph_models import (
     CanonicalEntity,
+    EntityAlias,
     GraphEvidence,
     GraphExtractionJob,
     GraphExtractionRun,
@@ -26,9 +26,6 @@ from app.graph_models import (
 )
 from app.models import (
     Chunk,
-    CommunityReport,
-    CommunityReportEvidence,
-    CommunityReportJob,
     GraphAnalyticsCommunity,
     GraphAnalyticsEntityMetric,
     GraphAnalyticsMembership,
@@ -40,6 +37,11 @@ Project = Annotated[ProjectContext, Depends(require_project)]
 Db = Annotated[AsyncSession, Depends(get_session)]
 MAX_NEIGHBORS = 100
 MAX_NODES = 200
+MAX_PATH_DEPTH = 4
+MAX_PATH_RELATIONS = 200
+MAX_SUBGRAPH_DEPTH = 2
+MAX_SUBGRAPH_RELATIONS = 400
+MAX_RELATION_CITATIONS = 20
 GRAPH_CANDIDATE_LIMIT = 2_000
 LOW_SIGNAL_ENTITY_TYPES = {
     "access_date",
@@ -111,6 +113,24 @@ class GraphSummary(BaseModel):
     relations: list[RelationView]
 
 
+class PathView(BaseModel):
+    dataset_id: str
+    source_entity_id: str
+    target_entity_id: str
+    found: bool
+    hops: int
+    nodes: list[EntityView]
+    relations: list[RelationView]
+
+
+class SubgraphView(BaseModel):
+    dataset_id: str
+    root_entity_id: str
+    depth: int
+    nodes: list[EntityView]
+    relations: list[RelationView]
+
+
 class EvidenceView(Citation):
     id: str
     run_id: str
@@ -154,133 +174,6 @@ class JobView(BaseModel):
 
 class ReviewInput(BaseModel):
     review_state: ReviewState
-
-
-class CommunityReportView(BaseModel):
-    id: str
-    job_id: str
-    dataset_id: str
-    analytics_run_id: str
-    community_id: str
-    level: int
-    title: str
-    summary: str
-    key_points: list[object]
-    evidence_chunk_ids: list[str]
-
-
-class CommunityReportJobView(BaseModel):
-    id: str
-    dataset_id: str
-    analytics_run_id: str
-    community_id: str
-    level: int
-    status: str
-    attempts: int
-    max_attempts: int
-    error_message: str | None
-
-
-async def report_view(db: AsyncSession, report: CommunityReport) -> CommunityReportView:
-    evidence = list(
-        await db.scalars(
-            select(CommunityReportEvidence.chunk_id)
-            .where(CommunityReportEvidence.report_id == report.id)
-            .order_by(CommunityReportEvidence.rank)
-        )
-    )
-    return CommunityReportView(
-        id=report.id,
-        job_id=report.job_id,
-        dataset_id=report.dataset_id,
-        analytics_run_id=report.analytics_run_id,
-        community_id=report.community_id,
-        level=report.level,
-        title=report.title,
-        summary=report.summary,
-        key_points=report.key_points,
-        evidence_chunk_ids=evidence,
-    )
-
-
-@router.get("/datasets/{dataset_id}/community-reports", response_model=list[CommunityReportView])
-async def list_community_reports(
-    dataset_id: str,
-    project: Project,
-    db: Db,
-    community_level: Annotated[int, Query(ge=0, le=2)] = 0,
-) -> list[CommunityReportView]:
-    await owned(db, project, dataset_id)
-    reports = list(
-        await db.scalars(
-            select(CommunityReport)
-            .where(
-                CommunityReport.project_id == project.project_id,
-                CommunityReport.dataset_id == dataset_id,
-                CommunityReport.level == community_level,
-            )
-            .order_by(CommunityReport.created_at.desc())
-        )
-    )
-    return [await report_view(db, report) for report in reports]
-
-
-@router.get(
-    "/datasets/{dataset_id}/community-reports/{report_id}", response_model=CommunityReportView
-)
-async def get_community_report(
-    dataset_id: str, report_id: str, project: Project, db: Db
-) -> CommunityReportView:
-    await owned(db, project, dataset_id)
-    report = await db.scalar(
-        select(CommunityReport).where(
-            CommunityReport.id == report_id,
-            CommunityReport.project_id == project.project_id,
-            CommunityReport.dataset_id == dataset_id,
-        )
-    )
-    if report is None:
-        raise HTTPException(404, "community report not found")
-    return await report_view(db, report)
-
-
-@router.get(
-    "/datasets/{dataset_id}/community-report-jobs", response_model=list[CommunityReportJobView]
-)
-async def list_community_report_jobs(
-    dataset_id: str, project: Project, db: Db
-) -> list[CommunityReportJobView]:
-    await owned(db, project, dataset_id)
-    jobs = list(
-        await db.scalars(
-            select(CommunityReportJob)
-            .where(
-                CommunityReportJob.project_id == project.project_id,
-                CommunityReportJob.dataset_id == dataset_id,
-            )
-            .order_by(CommunityReportJob.created_at.desc())
-        )
-    )
-    return [CommunityReportJobView.model_validate(job, from_attributes=True) for job in jobs]
-
-
-@router.get(
-    "/datasets/{dataset_id}/community-report-jobs/{job_id}", response_model=CommunityReportJobView
-)
-async def get_community_report_job(
-    dataset_id: str, job_id: str, project: Project, db: Db
-) -> CommunityReportJobView:
-    await owned(db, project, dataset_id)
-    job = await db.scalar(
-        select(CommunityReportJob).where(
-            CommunityReportJob.id == job_id,
-            CommunityReportJob.project_id == project.project_id,
-            CommunityReportJob.dataset_id == dataset_id,
-        )
-    )
-    if job is None:
-        raise HTTPException(404, "community report job not found")
-    return CommunityReportJobView.model_validate(job, from_attributes=True)
 
 
 class AnalyticsRunView(BaseModel):
@@ -362,6 +255,7 @@ def supported_entity() -> ColumnElement[bool]:
     """Entity needs direct evidence or endpoint of cited relation."""
     cited_endpoint = exists().where(
         GraphEvidence.relation_id == RelationAssertion.id,
+        RelationAssertion.review_state != ReviewState.REJECTED,
         or_(
             RelationAssertion.source_entity_id == CanonicalEntity.id,
             RelationAssertion.target_entity_id == CanonicalEntity.id,
@@ -413,6 +307,7 @@ async def citations(db: AsyncSession, relation_id: str) -> list[Citation]:
         .join(Chunk, Chunk.id == GraphEvidence.chunk_id)
         .where(GraphEvidence.relation_id == relation_id)
         .order_by(GraphEvidence.id)
+        .limit(MAX_RELATION_CITATIONS)
     )
     return [
         Citation(
@@ -455,6 +350,117 @@ async def scoped_entity(
     return item
 
 
+async def scoped_dataset_entity(
+    db: AsyncSession, project: ProjectContext, dataset_id: str, entity_id: str
+) -> CanonicalEntity:
+    item = await db.scalar(
+        select(CanonicalEntity).where(
+            CanonicalEntity.id == entity_id,
+            CanonicalEntity.project_id == project.project_id,
+            CanonicalEntity.dataset_id == dataset_id,
+            supported_entity(),
+        )
+    )
+    if item is None:
+        raise HTTPException(404, "entity not found")
+    return item
+
+
+async def bounded_walk(
+    db: AsyncSession,
+    project_id: UUID,
+    dataset_id: str,
+    root: CanonicalEntity,
+    depth: int,
+    node_limit: int,
+    relation_limit: int,
+    target_id: str | None = None,
+) -> tuple[dict[str, CanonicalEntity], dict[str, RelationAssertion], dict[str, tuple[str, str]]]:
+    entities = {root.id: root}
+    relations: dict[str, RelationAssertion] = {}
+    parents: dict[str, tuple[str, str]] = {}
+    frontier = {root.id}
+    for _ in range(depth):
+        if not frontier or len(entities) >= node_limit or len(relations) >= relation_limit:
+            break
+        filters = [
+            RelationAssertion.project_id == project_id,
+            RelationAssertion.dataset_id == dataset_id,
+            or_(
+                RelationAssertion.source_entity_id.in_(frontier),
+                RelationAssertion.target_entity_id.in_(frontier),
+            ),
+            supported_relation(),
+        ]
+        if relations:
+            filters.append(RelationAssertion.id.not_in(relations))
+        rows = list(
+            await db.scalars(
+                select(RelationAssertion)
+                .where(*filters)
+                .order_by(RelationAssertion.id)
+                .limit(relation_limit - len(relations))
+            )
+        )
+        candidate_ids = {
+            endpoint
+            for relation in rows
+            for endpoint in (relation.source_entity_id, relation.target_entity_id)
+            if endpoint not in entities
+        }
+        candidates = {
+            item.id: item
+            for item in await db.scalars(
+                select(CanonicalEntity).where(
+                    CanonicalEntity.id.in_(candidate_ids),
+                    CanonicalEntity.project_id == project_id,
+                    CanonicalEntity.dataset_id == dataset_id,
+                    supported_entity(),
+                )
+            )
+        }
+        next_frontier: set[str] = set()
+        for relation in rows:
+            source_id = relation.source_entity_id
+            target_entity_id = relation.target_entity_id
+            if source_id not in entities and source_id not in candidates:
+                continue
+            if target_entity_id not in entities and target_entity_id not in candidates:
+                continue
+            new_id = target_entity_id if source_id in frontier else source_id
+            previous_id = source_id if source_id in frontier else target_entity_id
+            if new_id not in entities:
+                if len(entities) >= node_limit:
+                    continue
+                entities[new_id] = candidates[new_id]
+                parents[new_id] = (previous_id, relation.id)
+                next_frontier.add(new_id)
+            relations[relation.id] = relation
+            if new_id == target_id:
+                return entities, relations, parents
+        frontier = next_frontier
+    return entities, relations, parents
+
+
+def path_ids(
+    source_id: str, target_id: str, parents: dict[str, tuple[str, str]]
+) -> tuple[list[str], list[str]]:
+    if source_id == target_id:
+        return [source_id], []
+    if target_id not in parents:
+        return [], []
+    entities = [target_id]
+    relations = []
+    current = target_id
+    while current != source_id:
+        current, relation_id = parents[current]
+        entities.append(current)
+        relations.append(relation_id)
+    entities.reverse()
+    relations.reverse()
+    return entities, relations
+
+
 @router.get("/entities/{entity_id}", response_model=EntityView)
 async def get_entity(
     entity_id: str,
@@ -462,6 +468,123 @@ async def get_entity(
     db: Db,
 ) -> EntityView:
     return entity_view(await scoped_entity(db, project, entity_id))
+
+
+@router.get("/datasets/{dataset_id}/entities/search", response_model=list[EntityView])
+async def search_entities(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    q: Annotated[str, Query(min_length=1, max_length=200)],
+    entity_type: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_NEIGHBORS)] = 25,
+) -> list[EntityView]:
+    await owned(db, project, dataset_id)
+    term = q.strip()
+    if not term:
+        raise HTTPException(422, "search query must not be blank")
+    alias_match = exists().where(
+        EntityAlias.entity_id == CanonicalEntity.id,
+        EntityAlias.project_id == project.project_id,
+        EntityAlias.dataset_id == dataset_id,
+        func.lower(EntityAlias.alias).contains(term.lower(), autoescape=True),
+    )
+    filters = [
+        CanonicalEntity.project_id == project.project_id,
+        CanonicalEntity.dataset_id == dataset_id,
+        or_(
+            func.lower(CanonicalEntity.canonical_name).contains(term.lower(), autoescape=True),
+            alias_match,
+        ),
+        supported_entity(),
+    ]
+    if entity_type is not None:
+        filters.append(func.lower(CanonicalEntity.entity_type) == entity_type.strip().lower())
+    rows = list(
+        await db.scalars(
+            select(CanonicalEntity)
+            .where(*filters)
+            .order_by(
+                (func.lower(CanonicalEntity.canonical_name) == term.lower()).desc(),
+                CanonicalEntity.confidence.desc(),
+                CanonicalEntity.canonical_name,
+                CanonicalEntity.id,
+            )
+            .limit(limit)
+        )
+    )
+    return [entity_view(item) for item in rows]
+
+
+@router.get("/datasets/{dataset_id}/graph/path", response_model=PathView)
+async def path(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    source_entity_id: str,
+    target_entity_id: str,
+    max_depth: Annotated[int, Query(ge=1, le=MAX_PATH_DEPTH)] = 3,
+    relation_limit: Annotated[int, Query(ge=1, le=MAX_PATH_RELATIONS)] = 100,
+) -> PathView:
+    await owned(db, project, dataset_id)
+    source = await scoped_dataset_entity(db, project, dataset_id, source_entity_id)
+    await scoped_dataset_entity(db, project, dataset_id, target_entity_id)
+    entities, relations, parents = await bounded_walk(
+        db,
+        project.project_id,
+        dataset_id,
+        source,
+        max_depth,
+        MAX_NODES,
+        relation_limit,
+        target_entity_id,
+    )
+    entity_ids, relation_ids = path_ids(source_entity_id, target_entity_id, parents)
+    return PathView(
+        dataset_id=dataset_id,
+        source_entity_id=source_entity_id,
+        target_entity_id=target_entity_id,
+        found=bool(entity_ids),
+        hops=len(relation_ids),
+        nodes=[entity_view(entities[item_id]) for item_id in entity_ids],
+        relations=[await relation_view(db, relations[item_id]) for item_id in relation_ids],
+    )
+
+
+@router.get("/datasets/{dataset_id}/graph/subgraph", response_model=SubgraphView)
+async def subgraph(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    entity_id: str,
+    depth: Annotated[int, Query(ge=0, le=MAX_SUBGRAPH_DEPTH)] = 1,
+    node_limit: Annotated[int, Query(ge=1, le=MAX_NODES)] = 100,
+    relation_limit: Annotated[int, Query(ge=1, le=MAX_SUBGRAPH_RELATIONS)] = 200,
+) -> SubgraphView:
+    await owned(db, project, dataset_id)
+    root = await scoped_dataset_entity(db, project, dataset_id, entity_id)
+    entities, relations, _ = await bounded_walk(
+        db,
+        project.project_id,
+        dataset_id,
+        root,
+        depth,
+        node_limit,
+        relation_limit,
+    )
+    included = set(entities)
+    relation_rows = [
+        item
+        for item in relations.values()
+        if item.source_entity_id in included and item.target_entity_id in included
+    ]
+    return SubgraphView(
+        dataset_id=dataset_id,
+        root_entity_id=entity_id,
+        depth=depth,
+        nodes=[entity_view(item) for item in entities.values()],
+        relations=[await relation_view(db, item) for item in relation_rows],
+    )
 
 
 @router.get("/entities/{entity_id}/neighbors", response_model=list[NeighborView])
@@ -512,7 +635,6 @@ async def refresh_analytics(dataset_id: str, project: Project, db: Db) -> Analyt
     await owned(db, project, dataset_id)
     try:
         run = await refresh_dataset_analytics(db, project.project_id, dataset_id)
-        await enqueue_community_report_jobs(db, project.project_id, dataset_id, run, get_settings())
         await db.commit()
     except ValueError as error:
         await db.rollback()
@@ -852,6 +974,65 @@ async def evidence(
         end_offset=item.end_offset,
         source_location=source_location(chunk.metadata_) if chunk else None,
     )
+
+
+@router.get(
+    "/datasets/{dataset_id}/relations/{relation_id}/evidence",
+    response_model=list[EvidenceView],
+)
+async def relation_evidence(
+    dataset_id: str,
+    relation_id: str,
+    project: Project,
+    db: Db,
+    limit: Annotated[int, Query(ge=1, le=MAX_NEIGHBORS)] = 25,
+) -> list[EvidenceView]:
+    await owned(db, project, dataset_id)
+    relation = await db.scalar(
+        select(RelationAssertion).where(
+            RelationAssertion.id == relation_id,
+            RelationAssertion.project_id == project.project_id,
+            RelationAssertion.dataset_id == dataset_id,
+            supported_relation(),
+        )
+    )
+    if relation is None:
+        raise HTTPException(404, "relation not found")
+    rows = list(
+        await db.execute(
+            select(GraphEvidence, Chunk.metadata_)
+            .join(
+                Chunk,
+                (Chunk.id == GraphEvidence.chunk_id)
+                & (Chunk.project_id == GraphEvidence.project_id)
+                & (Chunk.dataset_id == GraphEvidence.dataset_id),
+            )
+            .where(
+                GraphEvidence.relation_id == relation_id,
+                GraphEvidence.project_id == project.project_id,
+                GraphEvidence.dataset_id == dataset_id,
+            )
+            .order_by(GraphEvidence.id)
+            .limit(limit)
+        )
+    )
+    return [
+        EvidenceView(
+            id=item.id,
+            dataset_id=item.dataset_id,
+            document_id=item.document_id,
+            chunk_id=item.chunk_id,
+            quote=item.quote,
+            run_id=item.run_id,
+            entity_id=item.entity_id,
+            relation_id=item.relation_id,
+            confidence=item.confidence,
+            start_offset=item.start_offset,
+            end_offset=item.end_offset,
+            source_location=source_location(metadata),
+        )
+        for item, metadata in rows
+    ]
 
 
 @router.get("/graph-runs/{run_id}", response_model=RunView)

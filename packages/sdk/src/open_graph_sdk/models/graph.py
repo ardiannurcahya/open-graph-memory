@@ -11,6 +11,7 @@ class GraphCitation(BaseModel):
     document_id: str
     chunk_id: str
     quote: str
+    source_location: dict[str, int] | None = None
 
 
 class Entity(BaseModel):
@@ -54,6 +55,28 @@ class GraphSummary(BaseModel):
     relations: list[Relation]
 
 
+class GraphPath(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_id: str
+    source_entity_id: str
+    target_entity_id: str
+    found: bool
+    hops: int
+    nodes: list[Entity]
+    relations: list[Relation]
+
+
+class GraphSubgraph(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_id: str
+    root_entity_id: str
+    depth: int
+    nodes: list[Entity]
+    relations: list[Relation]
+
+
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -68,6 +91,7 @@ class Evidence(BaseModel):
     confidence: float
     start_offset: int | None = None
     end_offset: int | None = None
+    source_location: dict[str, int] | None = None
 
 
 class GraphRun(BaseModel):

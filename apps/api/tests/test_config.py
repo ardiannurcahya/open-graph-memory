@@ -5,8 +5,6 @@ from pydantic import ValidationError
 
 PRODUCTION_URLS = {
     "openai_base_url": "https://default.example/v1",
-    "openai_embedding_base_url": "https://embeddings.example/v1",
-    "openai_chat_base_url": "https://chat.example/v1",
     "openai_graph_extractor_base_url": "https://extractor.example/v1",
 }
 
@@ -75,22 +73,36 @@ def test_production_rejects_insecure_graph_endpoint() -> None:
             graph_extractor_model="gpt-4o-mini",
             openai_api_key="a-secure-openai-api-key",
             openai_base_url="https://default.example/v1",
-            openai_embedding_base_url="https://embeddings.example/v1",
-            openai_chat_base_url="https://chat.example/v1",
             openai_graph_extractor_base_url="http://localhost:8000/v1",
         )
 
 
-def test_provider_base_urls_can_be_split() -> None:
+def test_graph_extractor_base_url_can_be_split() -> None:
     settings = Settings(
         openai_base_url="https://default.example/v1",
-        openai_embedding_base_url="https://embeddings.example/v1",
-        openai_chat_base_url="https://chat.example/v1",
         openai_graph_extractor_base_url="https://extractor.example/v1",
     )
-    assert settings.embedding_base_url == "https://embeddings.example/v1"
-    assert settings.chat_base_url == "https://chat.example/v1"
     assert settings.graph_extractor_base_url == "https://extractor.example/v1"
+
+
+def test_vector_embedding_and_chat_settings_are_removed() -> None:
+    obsolete = {
+        "embedding_provider",
+        "chat_provider",
+        "embedding_model",
+        "chat_model",
+        "openai_embedding_base_url",
+        "openai_chat_base_url",
+        "embedding_dimensions",
+        "qdrant_url",
+        "qdrant_api_key",
+        "qdrant_collection",
+        "retrieval_fusion",
+        "retrieval_rrf_k",
+        "retrieval_vector_weight",
+        "retrieval_graph_weight",
+    }
+    assert obsolete.isdisjoint(Settings.model_fields)
 
 
 def test_graph_extractor_timeout_must_be_positive() -> None:

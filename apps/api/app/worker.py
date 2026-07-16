@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from celery import Celery
 from celery.exceptions import SoftTimeLimitExceeded
@@ -20,11 +20,14 @@ celery_app.conf.update(
     task_routes={
         "graph.extract_job": {"queue": "graph"},
         "graph.cleanup_projection": {"queue": "graph"},
-        "community.generate_report": {"queue": "community"},
     },
     beat_schedule={
         "dispatch-indexing-outbox": {
             "task": "ingestion.dispatch_outbox",
+            "schedule": settings.outbox_poll_seconds,
+        },
+        "reconcile-indexing-jobs": {
+            "task": "ingestion.reconcile_jobs",
             "schedule": settings.outbox_poll_seconds,
         },
         "dispatch-graph-extraction-outbox": {
@@ -41,14 +44,6 @@ celery_app.conf.update(
         },
         "reconcile-graph-cleanup-outbox": {
             "task": "graph.reconcile_cleanup_outbox",
-            "schedule": settings.outbox_poll_seconds,
-        },
-        "dispatch-community-report-outbox": {
-            "task": "community.dispatch_outbox",
-            "schedule": settings.outbox_poll_seconds,
-        },
-        "reconcile-community-report-jobs": {
-            "task": "community.reconcile_jobs",
             "schedule": settings.outbox_poll_seconds,
         },
     },
@@ -117,27 +112,6 @@ def reconcile_graph_cleanup_outbox() -> int:
     return runner.run(reconcile())
 
 
-@celery_app.task(name="community.generate_report")  # type: ignore[untyped-decorator]
-def generate_community_report(job_id: str) -> str:
-    from app.community_reports import execute_community_report_job
-
-    return runner.run(execute_community_report_job(job_id))
-
-
-@celery_app.task(name="community.dispatch_outbox")  # type: ignore[untyped-decorator]
-def dispatch_community_report_outbox() -> int:
-    from app.community_reports import dispatch_pending_community_report_jobs
-
-    return runner.run(dispatch_pending_community_report_jobs())
-
-
-@celery_app.task(name="community.reconcile_jobs")  # type: ignore[untyped-decorator]
-def reconcile_community_report_jobs() -> int:
-    from app.community_reports import reconcile_community_report_jobs as reconcile
-
-    return runner.run(reconcile())
-
-
 async def _dispatch_pending(limit: int = 100) -> int:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -176,6 +150,42 @@ async def _dispatch_pending(limit: int = 100) -> int:
     return sent
 
 
+async def _reconcile_indexing_jobs(limit: int = 100) -> int:
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db import engine
+    from app.models import IndexingJob, IndexingOutbox, JobStatus
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=settings.indexing_stale_seconds)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        jobs = list(
+            await db.scalars(
+                select(IndexingJob)
+                .where(IndexingJob.status == JobStatus.RUNNING, IndexingJob.updated_at < cutoff)
+                .order_by(IndexingJob.updated_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for job in jobs:
+            job.status = JobStatus.QUEUED
+            outbox = await db.get(IndexingOutbox, job.id)
+            if outbox is None:
+                db.add(IndexingOutbox(job_id=job.id, attempts=0))
+            else:
+                outbox.dispatched_at = None
+                outbox.last_error = None
+        await db.commit()
+        return len(jobs)
+
+
 @celery_app.task(name="ingestion.dispatch_outbox")  # type: ignore[untyped-decorator]
 def dispatch_outbox() -> int:
     return runner.run(_dispatch_pending())
+
+
+@celery_app.task(name="ingestion.reconcile_jobs")  # type: ignore[untyped-decorator]
+def reconcile_indexing_jobs() -> int:
+    return runner.run(_reconcile_indexing_jobs())

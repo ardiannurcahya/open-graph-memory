@@ -34,7 +34,6 @@ class DocumentStatus(StrEnum):
     QUEUED = "queued"
     PARSING = "parsing"
     CHUNKING = "chunking"
-    EMBEDDING = "embedding"
     PERSISTING = "persisting"
     INDEXED = "indexed"
     FAILED = "failed"
@@ -42,12 +41,6 @@ class DocumentStatus(StrEnum):
     STALE = "stale"
     DELETING = "deleting"
     DELETE_FAILED = "delete_failed"
-
-
-class MemoryFactStatus(StrEnum):
-    ACTIVE = "active"
-    SUPERSEDED = "superseded"
-    DELETED = "deleted"
 
 
 class JobStatus(StrEnum):
@@ -62,7 +55,6 @@ class IndexingStage(StrEnum):
     READING = "reading"
     PARSING = "parsing"
     CHUNKING = "chunking"
-    EMBEDDING = "embedding"
     PERSISTING = "persisting"
     COMPLETE = "complete"
 
@@ -202,126 +194,6 @@ class IndexingStageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class QueryLog(Base):
-    __tablename__ = "query_logs"
-    __table_args__ = (
-        Index("ix_query_logs_scope_created", "project_id", "dataset_id", "created_at"),
-    )
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    trace_id: Mapped[str] = mapped_column(String(40), unique=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
-    query: Mapped[str] = mapped_column(Text)
-    answer: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32))
-    provider: Mapped[str] = mapped_column(String(100))
-    model: Mapped[str] = mapped_column(String(255))
-    provider_version: Mapped[str] = mapped_column(String(100))
-    retrieval_trace: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
-    usage: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
-    latency_ms: Mapped[int] = mapped_column(BigInteger)
-    error_code: Mapped[str | None] = mapped_column(String(100))
-    error_message: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class MemoryUser(Base):
-    __tablename__ = "memory_users"
-    __table_args__ = (
-        UniqueConstraint("project_id", "external_id", name="uq_memory_users_project_external"),
-    )
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    external_id: Mapped[str] = mapped_column(String(255))
-    display_name: Mapped[str | None] = mapped_column(String(255))
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class MemoryAgent(Base):
-    __tablename__ = "memory_agents"
-    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_memory_agents_project_name"),)
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(Text)
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class MemorySession(Base):
-    __tablename__ = "memory_sessions"
-    __table_args__ = (Index("ix_memory_sessions_scope", "project_id", "user_id", "agent_id"),)
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    user_id: Mapped[str] = mapped_column(ForeignKey("memory_users.id", ondelete="CASCADE"))
-    agent_id: Mapped[str] = mapped_column(ForeignKey("memory_agents.id", ondelete="CASCADE"))
-    title: Mapped[str | None] = mapped_column(String(255))
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class MemoryMessage(Base):
-    __tablename__ = "memory_messages"
-    __table_args__ = (Index("ix_memory_messages_session_created", "session_id", "created_at"),)
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    session_id: Mapped[str] = mapped_column(ForeignKey("memory_sessions.id", ondelete="CASCADE"))
-    role: Mapped[str] = mapped_column(String(32))
-    content: Mapped[str] = mapped_column(Text)
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class MemoryFact(Base):
-    __tablename__ = "memory_facts"
-    __table_args__ = (
-        Index("ix_memory_facts_scope_status", "project_id", "scope", "status"),
-        Index("ix_memory_facts_subject", "project_id", "subject", "predicate"),
-    )
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("memory_users.id", ondelete="CASCADE"))
-    agent_id: Mapped[str | None] = mapped_column(ForeignKey("memory_agents.id", ondelete="CASCADE"))
-    session_id: Mapped[str | None] = mapped_column(
-        ForeignKey("memory_sessions.id", ondelete="CASCADE")
-    )
-    scope: Mapped[str] = mapped_column(String(32))
-    subject: Mapped[str] = mapped_column(String(255))
-    predicate: Mapped[str] = mapped_column(String(100))
-    value: Mapped[str] = mapped_column(Text)
-    content: Mapped[str] = mapped_column(Text)
-    confidence: Mapped[int] = mapped_column(default=100)
-    status: Mapped[MemoryFactStatus] = mapped_column(
-        Enum(MemoryFactStatus, name="memory_fact_status")
-    )
-    supersedes_id: Mapped[str | None] = mapped_column(
-        ForeignKey("memory_facts.id", ondelete="SET NULL")
-    )
-    source_message_id: Mapped[str | None] = mapped_column(
-        ForeignKey("memory_messages.id", ondelete="SET NULL")
-    )
-    provenance: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
 class GraphAnalyticsRun(Base):
     __tablename__ = "graph_analytics_runs"
     __table_args__ = (
@@ -381,112 +253,3 @@ class GraphAnalyticsCommunity(Base):
     external_edges: Mapped[int] = mapped_column(default=0)
     density: Mapped[float] = mapped_column(default=0.0)
     importance: Mapped[float] = mapped_column(default=0.0)
-
-
-class CommunityReportStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
-class CommunityReportJob(Base):
-    __tablename__ = "community_report_jobs"
-    __table_args__ = (
-        UniqueConstraint(
-            "analytics_run_id",
-            "community_id",
-            "level",
-            "input_hash",
-            name="uq_community_report_job_input",
-        ),
-        Index("ix_community_report_jobs_scope", "project_id", "dataset_id", "analytics_run_id"),
-        Index("ix_community_report_jobs_dispatch", "status", "next_attempt_at"),
-    )
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
-    analytics_run_id: Mapped[str] = mapped_column(
-        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
-    )
-    community_id: Mapped[str] = mapped_column(String(32))
-    level: Mapped[int] = mapped_column(default=0)
-    status: Mapped[CommunityReportStatus] = mapped_column(
-        Enum(CommunityReportStatus, name="community_report_status"),
-        default=CommunityReportStatus.QUEUED,
-    )
-    attempts: Mapped[int] = mapped_column(default=0)
-    max_attempts: Mapped[int]
-    next_attempt_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    error_message: Mapped[str | None] = mapped_column(Text)
-    provider: Mapped[str] = mapped_column(String(100))
-    model: Mapped[str] = mapped_column(String(255))
-    report_version: Mapped[str] = mapped_column(String(100))
-    prompt_version: Mapped[str] = mapped_column(String(100))
-    input_hash: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class CommunityReportOutbox(Base):
-    __tablename__ = "community_report_outbox"
-    job_id: Mapped[str] = mapped_column(
-        ForeignKey("community_report_jobs.id", ondelete="CASCADE"), primary_key=True
-    )
-    attempts: Mapped[int] = mapped_column(default=0)
-    last_error: Mapped[str | None] = mapped_column(Text)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class CommunityReport(Base):
-    __tablename__ = "community_reports"
-    __table_args__ = (
-        UniqueConstraint("job_id", name="uq_community_report_job"),
-        Index(
-            "ix_community_reports_scope",
-            "project_id",
-            "dataset_id",
-            "analytics_run_id",
-            "community_id",
-        ),
-    )
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("community_report_jobs.id", ondelete="CASCADE"))
-    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
-    analytics_run_id: Mapped[str] = mapped_column(
-        ForeignKey("graph_analytics_runs.id", ondelete="CASCADE")
-    )
-    community_id: Mapped[str] = mapped_column(String(32))
-    level: Mapped[int] = mapped_column(default=0)
-    title: Mapped[str] = mapped_column(String(500))
-    summary: Mapped[str] = mapped_column(Text)
-    key_points: Mapped[list[object]] = mapped_column(JSONB, default=list)
-    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class CommunityReportEvidence(Base):
-    __tablename__ = "community_report_evidence"
-    __table_args__ = (
-        UniqueConstraint("report_id", "chunk_id", name="uq_community_report_evidence"),
-    )
-    report_id: Mapped[str] = mapped_column(
-        ForeignKey("community_reports.id", ondelete="CASCADE"), primary_key=True
-    )
-    chunk_id: Mapped[str] = mapped_column(
-        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
-    )
-    rank: Mapped[int]

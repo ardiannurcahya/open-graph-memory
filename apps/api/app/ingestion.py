@@ -3,21 +3,18 @@ import hashlib
 import re
 
 from celery.exceptions import SoftTimeLimitExceeded
-from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.ids import new_id
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.async_runner import runner
 from app.chunking import RecursiveTextChunker
-from app.config import get_settings
 from app.db import engine
 from app.graph_gc import cleanup_document_graph
 from app.models import (
     Chunk,
     Document,
     DocumentStatus,
-    IndexingArtifact,
     IndexingJob,
     IndexingOutbox,
     IndexingStage,
@@ -25,16 +22,12 @@ from app.models import (
     JobStatus,
 )
 from app.parsers import default_registry
-from app.plugin_registry import create_embedding, create_vector_store
-from app.providers import EmbeddingProvider
 from app.storage import ObjectStore, get_object_store
-from app.vector_store import VectorPoint, VectorStore
 
 PIPELINE_VERSION = (
     "ingestion-v3:parser-v3-json-source-aware:"
-    "recursive-v3-source-aware-segment-offsets:embedding-v1"
+    "recursive-v3-source-aware-segment-offsets"
 )
-EMBEDDING_BATCH_SIZE = 64
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
 
@@ -43,27 +36,9 @@ def deterministic_id(prefix: str, *parts: object) -> str:
     return f"{prefix}_{digest}"
 
 
-def deterministic_point_id(*parts: object) -> str:
-    """Return a Qdrant-compatible UUID derived from stable pipeline inputs."""
-    digest = hashlib.sha256("\x1f".join(map(str, parts)).encode()).hexdigest()[:32]
-    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
-
-
 def sanitized_error(exc: BaseException) -> str:
     message = re.sub(r"(?i)(password|secret|token|key)=\S+", r"\1=[redacted]", str(exc))
     return " ".join(message.split())[:1000] or type(exc).__name__
-
-
-async def embed_in_batches(
-    embeddings: EmbeddingProvider,
-    texts: list[str],
-    model: str,
-    batch_size: int = EMBEDDING_BATCH_SIZE,
-) -> list[list[float]]:
-    vectors: list[list[float]] = []
-    for start in range(0, len(texts), batch_size):
-        vectors.extend(await embeddings.embed(texts[start : start + batch_size], model))
-    return vectors
 
 
 async def enqueue_document(db: AsyncSession, document: Document) -> IndexingJob:
@@ -110,33 +85,9 @@ async def _stage(db: AsyncSession, job: IndexingJob, stage: IndexingStage) -> No
     await db.commit()
 
 
-def _runtime() -> tuple[EmbeddingProvider, VectorStore, str]:
-    settings = get_settings()
-    provider = create_embedding(
-        settings.embedding_provider,
-        PluginConfig(
-            {"base_url": settings.embedding_base_url, "dimensions": settings.embedding_dimensions},
-            {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
-        ),
-    )
-    vectors = create_vector_store(
-        PluginConfig(
-            {
-                "url": settings.qdrant_url,
-                "collection": settings.qdrant_collection,
-                "dimensions": settings.embedding_dimensions,
-            }
-        )
-    )
-    return provider, vectors, settings.embedding_model
-
-
 async def run_ingestion(
     job_id: str,
     store: ObjectStore | None = None,
-    embeddings: EmbeddingProvider | None = None,
-    vectors: VectorStore | None = None,
-    embedding_model: str | None = None,
 ) -> str:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
@@ -168,44 +119,8 @@ async def run_ingestion(
             chunker = RecursiveTextChunker()
             chunks = await asyncio.to_thread(chunker.split_document, document.id, parsed)
 
-            runtime_model = embedding_model
-            if embeddings is None or vectors is None or runtime_model is None:
-                default_embeddings, default_vectors, default_model = _runtime()
-                embeddings = embeddings or default_embeddings
-                vectors = vectors or default_vectors
-                runtime_model = runtime_model or default_model
-            document.status = DocumentStatus.EMBEDDING
-            await _stage(db, job, IndexingStage.EMBEDDING)
-            embedded = await embed_in_batches(
-                embeddings, [item.text for item in chunks], runtime_model
-            )
-            if len(embedded) != len(chunks):
-                raise ValueError("embedding response count mismatch")
-
             document.status = DocumentStatus.PERSISTING
             await _stage(db, job, IndexingStage.PERSISTING)
-            points = [
-                VectorPoint(
-                    id=deterministic_point_id(
-                        document.id, document.content_hash, PIPELINE_VERSION, item.index
-                    ),
-                    vector=vector,
-                    project_id=str(document.project_id),
-                    dataset_id=document.dataset_id,
-                    document_id=document.id,
-                    text=item.text,
-                    pipeline_version=PIPELINE_VERSION,
-                    metadata={
-                        "parser": "parser-v3-json-source-aware",
-                        "chunker": chunker.version,
-                        **item.metadata,
-                        **parsed.metadata,
-                    },
-                )
-                for item, vector in zip(chunks, embedded, strict=True)
-            ]
-            # PostgreSQL is authoritative. Commit replacement chunks and graph cleanup before
-            # mutating Qdrant; failed projection stays retryable and is hidden by hydration.
             await db.execute(
                 delete(Chunk).where(
                     Chunk.project_id == document.project_id,
@@ -218,8 +133,8 @@ async def run_ingestion(
             for item in chunks:
                 db.add(
                     Chunk(
-                        # PostgreSQL and Qdrant share the same stable evidence identifier.
-                        id=deterministic_point_id(
+                        id=deterministic_id(
+                            "chunk",
                             document.id, document.content_hash, PIPELINE_VERSION, item.index
                         ),
                         project_id=document.project_id,
@@ -237,35 +152,17 @@ async def run_ingestion(
                         },
                     )
                 )
-            artifact = await db.get(
-                IndexingArtifact,
-                deterministic_id("artifact", job.id, "vectors", PIPELINE_VERSION),
-            )
-            if artifact is None:
-                db.add(
-                    IndexingArtifact(
-                        id=deterministic_id("artifact", job.id, "vectors", PIPELINE_VERSION),
-                        job_id=job.id,
-                        document_id=document.id,
-                        kind="vectors",
-                        version=PIPELINE_VERSION,
-                        metadata_={
-                            "count": len(chunks),
-                            "source_hash": document.content_hash,
-                            "chunker": chunker.version,
-                            "embedding_provider": embeddings.name,
-                            "embedding_model": runtime_model,
-                        },
-                    )
+            job.stage = IndexingStage.COMPLETE
+            db.add(
+                IndexingStageEvent(
+                    id=deterministic_id(
+                        "stage", job.id, job.attempt, IndexingStage.COMPLETE.value
+                    ),
+                    job_id=job.id,
+                    attempt=job.attempt,
+                    stage=IndexingStage.COMPLETE,
                 )
-            await db.commit()
-
-            # Delete before upsert so retry converges after partial projection failure.
-            await vectors.delete_document(
-                str(document.project_id), document.dataset_id, document.id
             )
-            await vectors.upsert(points)
-            await _stage(db, job, IndexingStage.COMPLETE)
             job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.PERSISTING
             document.error_message = None
             # Persist graph work in this transaction; the dispatcher publishes only committed rows.

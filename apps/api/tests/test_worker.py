@@ -16,6 +16,14 @@ def test_graph_cleanup_reconciliation_is_scheduled() -> None:
     )
 
 
+def test_community_report_tasks_are_not_registered_or_scheduled() -> None:
+    assert not any(name.startswith("community.") for name in celery_app.tasks)
+    assert not any(
+        entry["task"].startswith("community.")
+        for entry in celery_app.conf.beat_schedule.values()
+    )
+
+
 def test_graph_job_lease_exceeds_extractor_timeout(monkeypatch) -> None:
     from types import SimpleNamespace
 

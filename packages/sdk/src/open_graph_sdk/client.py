@@ -15,18 +15,12 @@ from open_graph_sdk.models import (
     Entity,
     Evidence,
     GraphJob,
+    GraphPath,
     GraphRun,
+    GraphSubgraph,
     GraphSummary,
-    MemoryAgent,
-    MemoryFact,
-    MemoryMessageBatch,
-    MemorySearchHit,
-    MemorySession,
-    MemoryUser,
     Neighbor,
     ProjectCreated,
-    QueryRequest,
-    QueryResponse,
     Relation,
 )
 
@@ -182,146 +176,6 @@ class AsyncOGMClient:
     async def delete_document(self, document_id: str) -> None:
         await self._request("DELETE", f"/v1/documents/{document_id}")
 
-    async def query(
-        self,
-        *,
-        dataset_id: str,
-        query: str,
-        mode: str = "vector_only",
-        include_communities: bool | None = None,
-        top_k: int = 5,
-        graph_depth: int | None = None,
-        graph_fanout: int | None = None,
-        graph_timeout_ms: int | None = None,
-        fusion: str | None = None,
-        memory_user_id: str | None = None,
-        memory_agent_id: str | None = None,
-        memory_session_id: str | None = None,
-        memory_top_k: int = 0,
-    ) -> QueryResponse:
-        body = QueryRequest(
-            dataset_id=dataset_id,
-            query=query,
-            mode=mode,  # type: ignore[arg-type]
-            include_communities=include_communities,
-            top_k=top_k,
-            graph_depth=graph_depth,
-            graph_fanout=graph_fanout,
-            graph_timeout_ms=graph_timeout_ms,
-            fusion=fusion,  # type: ignore[arg-type]
-            memory_user_id=memory_user_id,
-            memory_agent_id=memory_agent_id,
-            memory_session_id=memory_session_id,
-            memory_top_k=memory_top_k,
-        ).model_dump(mode="json", exclude_none=True)
-        data = await self._request("POST", "/v1/query", json=body)
-        return QueryResponse.model_validate(data)
-
-    async def create_memory_user(
-        self,
-        external_id: str,
-        *,
-        display_name: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> MemoryUser:
-        data = await self._request(
-            "POST",
-            "/v1/memory/users",
-            json={
-                "external_id": external_id,
-                "display_name": display_name,
-                "metadata": metadata or {},
-            },
-        )
-        return MemoryUser.model_validate(data)
-
-    async def create_memory_agent(
-        self,
-        name: str,
-        *,
-        description: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> MemoryAgent:
-        data = await self._request(
-            "POST",
-            "/v1/memory/agents",
-            json={"name": name, "description": description, "metadata": metadata or {}},
-        )
-        return MemoryAgent.model_validate(data)
-
-    async def create_memory_session(
-        self,
-        *,
-        user_id: str,
-        agent_id: str,
-        title: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> MemorySession:
-        data = await self._request(
-            "POST",
-            "/v1/memory/sessions",
-            json={
-                "user_id": user_id,
-                "agent_id": agent_id,
-                "title": title,
-                "metadata": metadata or {},
-            },
-        )
-        return MemorySession.model_validate(data)
-
-    async def add_memory_messages(
-        self,
-        session_id: str,
-        *,
-        messages: list[dict[str, Any]],
-        facts: list[dict[str, Any]] | None = None,
-    ) -> MemoryMessageBatch:
-        data = await self._request(
-            "POST",
-            f"/v1/memory/sessions/{session_id}/messages",
-            json={"messages": messages, "facts": facts or []},
-        )
-        return MemoryMessageBatch.model_validate(data)
-
-    async def get_session_memory(self, session_id: str) -> list[MemoryFact]:
-        data = await self._request("GET", f"/v1/memory/sessions/{session_id}/memory")
-        return [MemoryFact.model_validate(item) for item in data]
-
-    async def get_user_memory_context(self, user_id: str, *, limit: int = 20) -> list[MemoryFact]:
-        data = await self._request(
-            "GET", f"/v1/memory/users/{user_id}/context", params={"limit": limit}
-        )
-        return [MemoryFact.model_validate(item) for item in data]
-
-    async def search_memory(
-        self,
-        query: str,
-        *,
-        user_id: str | None = None,
-        agent_id: str | None = None,
-        session_id: str | None = None,
-        scopes: list[str] | None = None,
-        limit: int = 10,
-        include_superseded: bool = False,
-    ) -> list[MemorySearchHit]:
-        data = await self._request(
-            "POST",
-            "/v1/memory/search",
-            json={
-                "query": query,
-                "user_id": user_id,
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "scopes": scopes or ["user", "agent", "session"],
-                "limit": limit,
-                "include_superseded": include_superseded,
-            },
-        )
-        return [MemorySearchHit.model_validate(item) for item in data]
-
-    async def delete_memory(self, memory_id: str) -> None:
-        await self._request("DELETE", f"/v1/memory/{memory_id}")
-
     async def get_entity(self, entity_id: str) -> Entity:
         data = await self._request("GET", f"/v1/entities/{entity_id}")
         return Entity.model_validate(data)
@@ -340,9 +194,79 @@ class AsyncOGMClient:
         )
         return GraphSummary.model_validate(data)
 
+    async def search_graph(
+        self,
+        dataset_id: str,
+        query: str,
+        *,
+        entity_type: str | None = None,
+        limit: int = 25,
+    ) -> list[Entity]:
+        params: dict[str, Any] = {"q": query, "limit": limit}
+        if entity_type is not None:
+            params["entity_type"] = entity_type
+        data = await self._request(
+            "GET",
+            f"/v1/datasets/{dataset_id}/entities/search",
+            params=params,
+        )
+        return [Entity.model_validate(item) for item in data]
+
+    async def find_graph_path(
+        self,
+        dataset_id: str,
+        source_entity_id: str,
+        target_entity_id: str,
+        *,
+        max_depth: int = 3,
+        relation_limit: int = 100,
+    ) -> GraphPath:
+        data = await self._request(
+            "GET",
+            f"/v1/datasets/{dataset_id}/graph/path",
+            params={
+                "source_entity_id": source_entity_id,
+                "target_entity_id": target_entity_id,
+                "max_depth": max_depth,
+                "relation_limit": relation_limit,
+            },
+        )
+        return GraphPath.model_validate(data)
+
+    async def get_subgraph(
+        self,
+        dataset_id: str,
+        entity_id: str,
+        *,
+        depth: int = 1,
+        node_limit: int = 100,
+        relation_limit: int = 200,
+    ) -> GraphSubgraph:
+        data = await self._request(
+            "GET",
+            f"/v1/datasets/{dataset_id}/graph/subgraph",
+            params={
+                "entity_id": entity_id,
+                "depth": depth,
+                "node_limit": node_limit,
+                "relation_limit": relation_limit,
+            },
+        )
+        return GraphSubgraph.model_validate(data)
+
     async def get_evidence(self, evidence_id: str) -> Evidence:
         data = await self._request("GET", f"/v1/evidence/{evidence_id}")
         return Evidence.model_validate(data)
+
+    async def get_relation_evidence(
+        self, dataset_id: str, relation_id: str, *, limit: int = 25
+    ) -> list[Evidence]:
+        data = await self._request(
+            "GET",
+            f"/v1/datasets/{dataset_id}/relations/{relation_id}/evidence",
+            params={"limit": limit},
+        )
+        return [Evidence.model_validate(item) for item in data]
 
     async def get_graph_run(self, run_id: str) -> GraphRun:
         data = await self._request("GET", f"/v1/graph-runs/{run_id}")

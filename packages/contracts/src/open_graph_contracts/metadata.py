@@ -9,13 +9,10 @@ from enum import StrEnum
 class Capability(StrEnum):
     """Plugin capability kinds for interface categorization."""
 
-    EMBEDDING = "embedding"
-    CHAT = "chat"
     EXTRACTION = "extraction"
     PARSER = "parser"
     CHUNKER = "chunker"
     OBJECT_STORE = "object_store"
-    VECTOR_STORE = "vector_store"
     GRAPH_STORE = "graph_store"
     GRAPH_RETRIEVER = "graph_retriever"
 
