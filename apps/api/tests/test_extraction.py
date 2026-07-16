@@ -1,8 +1,11 @@
+import json
+
 from open_graph_core.extraction import (
     Candidate,
     DeterministicExtractor,
     Entity,
     Extraction,
+    NlpExtractor,
     OpenAICompatibleExtractor,
     _load_json_object,
     _load_openai_response,
@@ -102,6 +105,124 @@ def test_openai_response_loader_accepts_first_json_object_with_trailing_data() -
     assert payload["choices"][0]["message"]["content"] == '{"entities":[],"relations":[]}'
 
 
+def test_openai_extractor_combines_sse_content_chunks(monkeypatch) -> None:
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        first_event = json.dumps(
+            {"choices": [{"delta": {"content": '{"entities":[{"name":"Acme",'}}]}
+        )
+        second_event = json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "content": '"type":"Company","confidence":0.9}],"relations":[]}'
+                        }
+                    }
+                ]
+            }
+        )
+        return _FakeResponse(
+            f"data: {first_event}\n\ndata: {second_event}\n\ndata: [DONE]\n\n"
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+
+    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
+
+    assert [entity.model_dump() for entity in result.entities] == [
+        {"name": "Acme", "type": "Company", "confidence": 0.9}
+    ]
+    assert result.relations == []
+
+
+def test_openai_extractor_preserves_json_response_handling(monkeypatch) -> None:
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"entities":[{"name":"Acme","type":"Company",'
+                                '"confidence":0.9}],"relations":[]}'
+                            }
+                        }
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+
+    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
+
+    assert result.entities[0].name == "Acme"
+
+
+def test_openai_extractor_accepts_final_message_sse(monkeypatch) -> None:
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        event = json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"entities":[{"name":"Acme","type":"Company",'
+                            '"confidence":0.9}],"relations":[]}'
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        )
+        return _FakeResponse(f"data: {event}\n\n")
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+
+    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
+
+    assert result.entities[0].name == "Acme"
+
+
+def test_openai_extractor_prompt_requires_complete_named_relations(monkeypatch) -> None:
+    request: dict[str, object] = {}
+
+    def fake_post(*_args, **kwargs) -> _FakeResponse:
+        request.update(kwargs["json"])
+        return _FakeResponse(
+            '{"choices":[{"message":{"content":"{\\"entities\\":[],\\"relations\\":[]}"}}]}'
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+
+    OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
+
+    system_prompt = request["messages"][0]["content"]
+    required_relation_instruction = (
+        "every explicit action, ownership, development, and acquisition relationship"
+    )
+    assert required_relation_instruction in system_prompt
+    assert "source and target exactly match emitted entity names" in system_prompt
+
+
+def test_openai_extractor_falls_back_for_malformed_or_empty_sse(monkeypatch) -> None:
+    responses = iter(
+        [
+            "data: {not json}\n\ndata: [DONE]\n\n",
+            "data: {\"choices\":[{\"delta\":{}}]}\n\ndata: [DONE]\n\n",
+        ]
+    )
+
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        return _FakeResponse(next(responses))
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    extractor = OpenAICompatibleExtractor("http://provider", "key", "model")
+    source_text = "RX1 Driver [Software] -> DRIVES -> DNP RX1 [Printer]"
+
+    assert extractor.extract(source_text).relations[0].type == "DRIVES"
+    assert extractor.extract(source_text).relations[0].type == "DRIVES"
+
+
 def test_openai_parse_falls_back_to_deterministic_extractor_for_non_json() -> None:
     result = _parse_extraction_content(
         "I cannot return JSON.",
@@ -126,6 +247,32 @@ def test_deterministic_extractor_falls_back_to_heuristic_entities() -> None:
         "PostgreSQL",
         "Docker",
     }
+    assert result.relations == []
+
+
+def test_nlp_extractor_emits_typed_entities_and_explicit_active_relations() -> None:
+    result = NlpExtractor().extract(
+        "Alice Nguyen works at Acme Labs. Acme Labs acquired Widget Cloud. "
+        "Alice Nguyen built Atlas Service."
+    )
+
+    assert [(entity.name, entity.type) for entity in result.entities] == [
+        ("Acme Labs", "Organization"),
+        ("Alice Nguyen", "Person"),
+        ("Atlas Service", "Product"),
+        ("Widget Cloud", "Organization"),
+    ]
+    assert [relation.model_dump() for relation in result.relations] == [
+        {"source": "Acme Labs", "target": "Widget Cloud", "type": "ACQUIRED", "confidence": 0.85},
+        {"source": "Alice Nguyen", "target": "Atlas Service", "type": "BUILT", "confidence": 0.85},
+        {"source": "Alice Nguyen", "target": "Acme Labs", "type": "WORKS_AT", "confidence": 0.85},
+    ]
+
+
+def test_nlp_extractor_does_not_emit_cooccurrence_relations() -> None:
+    result = NlpExtractor().extract("Alice Nguyen met Bob Smith at Acme Labs.")
+
+    assert result.entities == []
     assert result.relations == []
 
 

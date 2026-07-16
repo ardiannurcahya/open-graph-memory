@@ -147,6 +147,7 @@ async def refresh_dataset_analytics(db: AsyncSession, project_id: UUID, dataset_
         return existing
     run = GraphAnalyticsRun(id=str(uuid4()), project_id=project_id, dataset_id=dataset_id, snapshot_hash=result.snapshot_hash, entity_count=len(entities), relation_count=result.relation_count, community_count=len(result.community_stats[0]), resolution=LOUVAIN_RESOLUTION, seed=LOUVAIN_SEED, levels=3, algorithm_version=HIERARCHY_ALGORITHM_VERSION, config={"resolutions": list(HIERARCHY_RESOLUTIONS)})
     db.add(run)
+    await db.flush()
     for entity in entities:
         db.add(GraphAnalyticsEntityMetric(run_id=run.id, entity_id=entity, degree=result.degree[entity], weighted_degree=result.weighted_degree[entity], importance=result.importance[entity]))
         for level in range(3): db.add(GraphAnalyticsMembership(run_id=run.id, entity_id=entity, level=level, community_id=result.memberships[level][entity]))

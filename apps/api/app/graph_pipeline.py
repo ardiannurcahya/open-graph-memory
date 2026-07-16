@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from asyncio import Semaphore, gather, to_thread
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import get_settings
 from app.db import engine
+from app.graph_analytics import refresh_dataset_analytics
 from app.graph_models import (
     CanonicalEntity,
     GraphEvidence,
@@ -58,9 +60,11 @@ class ChunkExtractionResult:
 def extractor_metadata() -> ExtractorMetadata:
     settings = get_settings()
     return ExtractorMetadata(
-        provider="openai_compatible"
-        if settings.graph_extractor_provider == "openai"
-        else "deterministic",
+        provider={
+            "openai": "openai_compatible",
+            "nlp": "nlp",
+            "deterministic": "deterministic",
+        }[settings.graph_extractor_provider],
         model=settings.graph_extractor_model,
         extractor_version=settings.graph_extractor_version,
         prompt_version=settings.graph_extractor_prompt_version,
@@ -98,7 +102,10 @@ def _store() -> GraphStore:
 
 
 async def extract_document(
-    document_id: str, extractor: Extractor | None = None, graph: GraphStore | None = None
+    document_id: str,
+    extractor: Extractor | None = None,
+    graph: GraphStore | None = None,
+    on_batch_committed: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     selected_extractor, metadata = (
         build_extractor()
@@ -127,7 +134,6 @@ async def extract_document(
                 .order_by(Chunk.chunk_index)
             )
         )
-        chunk_inputs = [(chunk.id, chunk.text) for chunk in chunks]
         try:
             pending_chunks = [
                 chunk
@@ -142,26 +148,39 @@ async def extract_document(
                 len(pending_chunks),
                 parallelism,
             )
-            for chunk in pending_chunks:
-                await _ensure_running_run(db, document, chunk, metadata)
-            await db.commit()
-            extracted = await _extract_chunks(pending_chunks, selected_extractor, parallelism)
-            for index, item in enumerate(extracted, start=1):
-                await _persist_chunk_result(db, document, item.chunk, item.extraction, metadata)
-                logger.info(
-                    "graph extraction chunk persisted document=%s progress=%d/%d",
-                    document.id,
-                    index,
-                    len(extracted),
+            completed = 0
+            active_batch: list[Chunk] = []
+            for active_batch in _batches(pending_chunks, parallelism):
+                for chunk in active_batch:
+                    await _ensure_running_run(db, document, chunk, metadata)
+                await db.commit()
+                extracted, extraction_error = await _extract_batch(
+                    active_batch, selected_extractor, parallelism
                 )
-            await db.commit()
+                for item in extracted:
+                    await _persist_chunk_result(db, document, item.chunk, item.extraction, metadata)
+                    completed += 1
+                    logger.info(
+                        "graph extraction chunk persisted document=%s progress=%d/%d",
+                        document.id,
+                        completed,
+                        len(pending_chunks),
+                    )
+                await db.commit()
+                if on_batch_committed is not None:
+                    await on_batch_committed()
+                if extraction_error is not None:
+                    raise extraction_error
             await project_document(db, document, graph or _store())
             logger.info("graph projection completed document=%s", document.id)
+            await refresh_dataset_analytics(db, document.project_id, document.dataset_id)
+            await db.commit()
+            logger.info("graph analytics refreshed dataset=%s", document.dataset_id)
             return document.id
         except BaseException as exc:
             await db.rollback()
-            # Rollback expires ORM instances; use values captured before the transaction.
-            for chunk_id, chunk_text in chunk_inputs:
+            for chunk in active_batch:
+                chunk_id, chunk_text = chunk.id, chunk.text
                 run_id = stable_id("run", chunk_id, metadata.extractor_version, _hash(chunk_text))
                 run = await db.get(GraphExtractionRun, run_id)
                 if run is not None and run.status != RunStatus.SUCCEEDED:
@@ -175,6 +194,11 @@ async def extract_document(
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
+    for start in range(0, len(chunks), size):
+        yield chunks[start : start + size]
 
 
 async def _chunk_run_succeeded(
@@ -218,15 +242,33 @@ async def _ensure_running_run(
 async def _extract_chunks(
     chunks: list[Chunk], extractor: Extractor, parallelism: int
 ) -> list[ChunkExtractionResult]:
+    results, error = await _extract_batch(chunks, extractor, parallelism)
+    if error is not None:
+        raise error
+    return results
+
+
+async def _extract_batch(
+    chunks: list[Chunk], extractor: Extractor, parallelism: int
+) -> tuple[list[ChunkExtractionResult], BaseException | None]:
     if parallelism <= 1:
-        return [ChunkExtractionResult(chunk, extractor.extract(chunk.text)) for chunk in chunks]
+        results: list[ChunkExtractionResult] = []
+        for chunk in chunks:
+            try:
+                results.append(ChunkExtractionResult(chunk, extractor.extract(chunk.text)))
+            except BaseException as exc:
+                return results, exc
+        return results, None
     semaphore = Semaphore(parallelism)
 
     async def run(chunk: Chunk) -> ChunkExtractionResult:
         async with semaphore:
             return ChunkExtractionResult(chunk, await to_thread(extractor.extract, chunk.text))
 
-    return list(await gather(*(run(chunk) for chunk in chunks)))
+    outcomes = await gather(*(run(chunk) for chunk in chunks), return_exceptions=True)
+    results = [outcome for outcome in outcomes if isinstance(outcome, ChunkExtractionResult)]
+    error = next((outcome for outcome in outcomes if isinstance(outcome, BaseException)), None)
+    return results, error
 
 
 async def _persist_chunk(

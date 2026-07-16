@@ -113,3 +113,9 @@ def test_graph_extractor_timeout_must_be_positive() -> None:
 def test_graph_extractor_parallelism_must_be_positive() -> None:
     with pytest.raises(ValidationError, match="graph settings"):
         Settings(graph_extractor_parallelism=0)
+
+
+def test_nlp_graph_extractor_requires_no_openai_key() -> None:
+    settings = Settings(graph_extractor_provider="nlp", openai_api_key="")
+
+    assert settings.graph_extractor_provider == "nlp"

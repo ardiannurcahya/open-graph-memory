@@ -17,7 +17,7 @@ Package also exports version metadata, capability declarations, bounded `PluginC
 
 ## Registry
 
-Registry loads built-ins explicitly through `app.plugin_registry.register_builtin_plugins()`. Factories construct extractors and graph stores through typed helpers. Runtime does not discover arbitrary Python entry points or dynamically import plugin packages.
+Registry loads built-ins explicitly through `app.plugin_registry.register_builtin_plugins()`. Extraction built-ins are `deterministic`, `nlp`, and `openai`. Factories construct extractors and graph stores through typed helpers. Runtime does not discover arbitrary Python entry points or dynamically import plugin packages.
 
 Repeated identical registration is idempotent. Conflicting registration for same capability/name raises `PluginValidationError`.
 

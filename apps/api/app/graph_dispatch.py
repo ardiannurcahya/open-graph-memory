@@ -117,6 +117,17 @@ async def reconcile_graph_jobs(limit: int = 100) -> int:
     return len(jobs)
 
 
+async def renew_graph_job_lease(job_id: str) -> None:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        job = await db.scalar(
+            select(GraphExtractionJob).where(GraphExtractionJob.id == job_id).with_for_update()
+        )
+        if job is not None and job.status == GraphJobStatus.RUNNING:
+            job.lease_expires_at = datetime.now(UTC) + timedelta(seconds=lease_seconds())
+            await db.commit()
+
+
 async def execute_graph_job(job_id: str) -> str:
     now = datetime.now(UTC)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -153,7 +164,10 @@ async def execute_graph_job(job_id: str) -> str:
         )
         await db.commit()
     try:
-        await extract_document(job.document_id)
+        await extract_document(
+            job.document_id,
+            on_batch_committed=lambda: renew_graph_job_lease(job_id),
+        )
     except Exception as exc:
         message = sanitized_error(exc)
         async with factory() as db:

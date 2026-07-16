@@ -37,3 +37,10 @@ def test_graph_job_lease_exceeds_extractor_timeout(monkeypatch) -> None:
     )
 
     assert lease_seconds() == 480
+
+
+def test_graph_extraction_has_no_celery_time_limit() -> None:
+    from app.worker import extract_graph
+
+    assert extract_graph.soft_time_limit is None
+    assert extract_graph.time_limit is None

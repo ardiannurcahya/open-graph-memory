@@ -14,7 +14,13 @@ from app.graph_models import (
     RelationAssertion,
     RunStatus,
 )
-from app.graph_pipeline import ExtractorMetadata, _extract_chunks, _persist_chunk, build_extractor
+from app.graph_pipeline import (
+    ExtractorMetadata,
+    _extract_chunks,
+    _persist_chunk,
+    build_extractor,
+    extract_document,
+)
 from app.graph_store import (
     ChunkProjection,
     DocumentProjection,
@@ -23,7 +29,7 @@ from app.graph_store import (
     Neo4jGraphStore,
     RelationProjection,
 )
-from app.models import Chunk, Document
+from app.models import Chunk, Document, DocumentStatus
 from open_graph_core.extraction import (
     DeterministicExtractor,
     Entity,
@@ -92,6 +98,39 @@ class FakeSession:
         self.commits += 1
 
 
+class PipelineSession(FakeSession):
+    def __init__(self, document: Document, chunks: list[Chunk] | None = None) -> None:
+        super().__init__()
+        self.document = document
+        self.chunks = chunks or []
+        self.rollbacks = 0
+
+    async def get(self, model: type[object], row_id: str) -> object | None:
+        if model is Document and row_id == self.document.id:
+            return self.document
+        return await super().get(model, row_id)
+
+    async def scalars(self, statement: object) -> list[object]:
+        return self.chunks
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+class SessionFactory:
+    def __init__(self, session: PipelineSession) -> None:
+        self.session = session
+
+    def __call__(self) -> "SessionFactory":
+        return self
+
+    async def __aenter__(self) -> PipelineSession:
+        return self.session
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
 class RecordingStore(Neo4jGraphStore):
     def __init__(self) -> None:
         super().__init__("http://neo4j", "user/password")
@@ -141,6 +180,8 @@ def test_build_extractor_defaults_to_deterministic(monkeypatch: pytest.MonkeyPat
         lambda: Settings(
             graph_extractor_provider="deterministic",
             graph_extractor_model="deterministic-graph-v1",
+            graph_extractor_version="graph-extractor-v1",
+            graph_extractor_prompt_version="graph-v1",
         ),
     )
 
@@ -362,6 +403,236 @@ async def test_failed_attempt_is_durable_and_can_be_sanitized_by_caller() -> Non
     run = next(row for row in db.rows.values() if isinstance(row, GraphExtractionRun))
     assert run.status == RunStatus.RUNNING
     assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_document_refreshes_analytics_only_after_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, _ = inputs()
+    document.status = DocumentStatus.PERSISTING
+    db = PipelineSession(document)
+    events: list[str] = []
+
+    async def project(*args: object) -> None:
+        events.append("projection")
+
+    async def refresh(*args: object) -> None:
+        events.append("analytics")
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr("app.graph_pipeline.project_document", project)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+
+    result = await extract_document(
+        document.id,
+        Extractor(Extraction(entities=[], relations=[])),
+        object(),
+    )
+    assert result == document.id
+    assert events == ["projection", "analytics"]
+    assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_document_does_not_complete_when_analytics_refresh_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, _ = inputs()
+    document.status = DocumentStatus.PERSISTING
+    db = PipelineSession(document)
+    analytics_called = False
+
+    async def project(*args: object) -> None:
+        return None
+
+    async def refresh(*args: object) -> None:
+        nonlocal analytics_called
+        analytics_called = True
+        raise RuntimeError("analytics unavailable")
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr("app.graph_pipeline.project_document", project)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+
+    with pytest.raises(RuntimeError, match="analytics unavailable"):
+        await extract_document(
+            document.id,
+            Extractor(Extraction(entities=[], relations=[])),
+            object(),
+        )
+    assert analytics_called
+    assert db.rollbacks == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_document_skips_analytics_when_projection_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, _ = inputs()
+    document.status = DocumentStatus.PERSISTING
+    db = PipelineSession(document)
+    analytics_called = False
+
+    async def project(*args: object) -> None:
+        raise RuntimeError("projection unavailable")
+
+    async def refresh(*args: object) -> None:
+        nonlocal analytics_called
+        analytics_called = True
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr("app.graph_pipeline.project_document", project)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+
+    with pytest.raises(RuntimeError, match="projection unavailable"):
+        await extract_document(
+            document.id,
+            Extractor(Extraction(entities=[], relations=[])),
+            object(),
+        )
+    assert not analytics_called
+
+
+@pytest.mark.asyncio
+async def test_extract_document_commits_batches_and_renews_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, first = inputs()
+    document.status = DocumentStatus.PERSISTING
+    chunks = [
+        first,
+        Chunk(
+            id="chunk-1",
+            project_id=document.project_id,
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            chunk_index=1,
+            text="Beta [Org]",
+        ),
+        Chunk(
+            id="chunk-2",
+            project_id=document.project_id,
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            chunk_index=2,
+            text="Gamma [Org]",
+        ),
+    ]
+    db = PipelineSession(document, chunks)
+    renewals = 0
+
+    async def renew() -> None:
+        nonlocal renewals
+        renewals += 1
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr(
+        "app.graph_pipeline.get_settings", lambda: Settings(graph_extractor_parallelism=2)
+    )
+
+    async def no_op(*args: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+
+    await extract_document(
+        document.id,
+        Extractor(Extraction(entities=[], relations=[])),
+        object(),
+        renew,
+    )
+
+    assert db.commits == 5
+    assert renewals == 2
+    assert all(
+        row.status == RunStatus.SUCCEEDED
+        for row in db.rows.values()
+        if isinstance(row, GraphExtractionRun)
+    )
+
+
+@pytest.mark.asyncio
+async def test_extract_document_retries_only_unfinished_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, first = inputs()
+    document.status = DocumentStatus.PERSISTING
+    chunks = [
+        first,
+        Chunk(
+            id="chunk-1",
+            project_id=document.project_id,
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            chunk_index=1,
+            text="Beta [Org]",
+        ),
+        Chunk(
+            id="chunk-2",
+            project_id=document.project_id,
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            chunk_index=2,
+            text="Gamma [Org]",
+        ),
+        Chunk(
+            id="chunk-3",
+            project_id=document.project_id,
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            chunk_index=3,
+            text="Delta [Org]",
+        ),
+    ]
+    db = PipelineSession(document, chunks)
+    calls: list[str] = []
+
+    class FailsOnce:
+        def extract(self, text: str) -> Extraction:
+            calls.append(text)
+            if text == "Gamma [Org]" and calls.count(text) == 1:
+                raise RuntimeError("provider unavailable")
+            return Extraction(entities=[], relations=[])
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr(
+        "app.graph_pipeline.get_settings", lambda: Settings(graph_extractor_parallelism=2)
+    )
+
+    async def no_op(*args: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await extract_document(document.id, FailsOnce(), object())  # type: ignore[arg-type]
+    await extract_document(document.id, FailsOnce(), object())  # type: ignore[arg-type]
+
+    assert calls == [
+        chunks[0].text,
+        chunks[1].text,
+        chunks[2].text,
+        chunks[3].text,
+        chunks[2].text,
+    ]
+    assert all(
+        row.status == RunStatus.SUCCEEDED
+        for row in db.rows.values()
+        if isinstance(row, GraphExtractionRun)
+    )
 
 
 def projection(

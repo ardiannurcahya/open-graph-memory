@@ -10,7 +10,7 @@ OpenGraphMemory runs as local Docker Compose stack or with selected managed depe
 | Source-object authority | RustFS | Verified S3-compatible storage | `S3_*` |
 | Queue and broker | Redis 7 | Managed Redis reachable by Celery | `REDIS_URL` |
 | Graph projection | Neo4j Community | Compatible Neo4j endpoint | `NEO4J_*` |
-| Graph extraction | Deterministic extractor | OpenAI-compatible structured-output endpoint | `GRAPH_EXTRACTOR_*`, `OPENAI_*` |
+| Graph extraction | Deterministic or local NLP extractor | OpenAI-compatible structured-output endpoint | `GRAPH_EXTRACTOR_*`, `OPENAI_*` |
 | API | FastAPI | Scale behind trusted ingress | application service |
 | Background work | Celery worker, graph worker, dispatcher | Scale replicas and concurrency | application service |
 | Web | React/Vite behind Caddy | Deployment preserving same-origin `/api` proxy | application service |
@@ -88,6 +88,19 @@ GRAPH_EXTRACTOR_PARALLELISM=1
 Extractor calls OpenAI-compatible chat completions and expects JSON matching extraction schema. Test structured output, malformed responses, timeout, retries, and representative documents. Production requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS endpoint, and non-placeholder key.
 
 `OPENAI_GRAPH_EXTRACTOR_BASE_URL` falls back to `OPENAI_BASE_URL` when blank.
+
+Local NLP extraction:
+
+```dotenv
+GRAPH_EXTRACTOR_PROVIDER=nlp
+GRAPH_EXTRACTOR_MODEL=nlp-graph-v1
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v1
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v1
+GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
+GRAPH_EXTRACTOR_PARALLELISM=1
+```
+
+NLP mode has no external dependency or credential. It recognizes conservative explicit active relations including employment, acquisition, creation, and technology use. It emits no relation for entity co-occurrence or unmatched grammar. Model value is provenance metadata and can be user-selected. Production still requires OpenAI-compatible extraction.
 
 ## Neo4j
 

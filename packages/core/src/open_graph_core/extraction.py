@@ -223,6 +223,88 @@ class DeterministicExtractor:
 
 
 @dataclass(frozen=True)
+class NlpExtractor:
+    model: str = "nlp-graph-v1"
+
+    relation_patterns = (
+        (
+            re.compile(
+                r"(?P<source>[A-Z][A-Za-z0-9&' -]{1,79}?)\s+works at\s+"
+                r"(?P<target>[A-Z][A-Za-z0-9&' -]{1,79}?)(?=[.!?;]|$)"
+            ),
+            "WORKS_AT",
+            "Person",
+            "Organization",
+        ),
+        (
+            re.compile(
+                r"(?P<source>[A-Z][A-Za-z0-9&' -]{1,79}?)\s+(?:acquired|bought)\s+"
+                r"(?P<target>[A-Z][A-Za-z0-9&' -]{1,79}?)(?=[.!?;]|$)"
+            ),
+            "ACQUIRED",
+            "Organization",
+            "Organization",
+        ),
+        (
+            re.compile(
+                r"(?P<source>[A-Z][A-Za-z0-9&' -]{1,79}?)\s+(?:built|developed|created)\s+"
+                r"(?P<target>[A-Z][A-Za-z0-9&' -]{1,79}?)(?=[.!?;]|$)"
+            ),
+            "BUILT",
+            "Person",
+            "Product",
+        ),
+        (
+            re.compile(
+                r"(?P<source>[A-Z][A-Za-z0-9&' -]{1,79}?)\s+(?:use|uses)\s+"
+                r"(?P<target>[A-Z][A-Za-z0-9&' .+-]{1,79}?)(?=[.!?;]|$)"
+            ),
+            "USES",
+            "Organization",
+            "Technology",
+        ),
+    )
+
+    def extract(self, text: str) -> Extraction:
+        entities: dict[tuple[str, str], Entity] = {}
+        relations: list[Relation] = []
+        for pattern, relation_type, source_type, target_type in self.relation_patterns:
+            for match in pattern.finditer(text):
+                source = " ".join(match["source"].split())
+                target = " ".join(match["target"].split())
+                if not source or not target:
+                    continue
+                entities[(normalize_name(source), source_type)] = Entity(
+                    name=source, type=source_type, confidence=0.85
+                )
+                entities[(normalize_name(target), target_type)] = Entity(
+                    name=target, type=target_type, confidence=0.85
+                )
+                relations.append(
+                    Relation(
+                        source=source,
+                        target=target,
+                        type=relation_type,
+                        confidence=0.85,
+                    )
+                )
+        return Extraction(
+            entities=sorted(
+                entities.values(),
+                key=lambda entity: (normalize_name(entity.name), entity.type),
+            ),
+            relations=sorted(
+                relations,
+                key=lambda relation: (
+                    normalize_name(relation.source),
+                    relation.type,
+                    normalize_name(relation.target),
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class OpenAICompatibleExtractor:
     base_url: str
     api_key: str
@@ -245,7 +327,10 @@ class OpenAICompatibleExtractor:
                             "Extract entities and relations. Return only valid JSON with top-level "
                             "entities and relations arrays. Entity fields: name, type, confidence. "
                             "Relation fields: source, target, type, confidence. No markdown, "
-                            f"prose, or explanations. Prompt version: {self.prompt_version}"
+                            "prose, or explanations. Emit a typed relation for every explicit "
+                            "action, ownership, development, and acquisition relationship. "
+                            "Relation source and target exactly match emitted entity names. "
+                            f"Prompt version: {self.prompt_version}"
                         ),
                     },
                     {"role": "user", "content": text},
@@ -259,8 +344,7 @@ class OpenAICompatibleExtractor:
         )
         response.raise_for_status()
         try:
-            payload = cast(dict[str, Any], _load_openai_response(response.text))
-            content = payload["choices"][0]["message"]["content"]
+            content = _load_openai_content(response.text)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return DeterministicExtractor().extract(text)
         return _parse_extraction_content(content, text)
@@ -274,3 +358,58 @@ def _load_openai_response(text: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("OpenAI-compatible response is not a JSON object")
     return payload
+
+
+def _load_openai_content(text: str) -> str:
+    try:
+        payload = cast(dict[str, Any], _load_openai_response(text))
+        content = payload["choices"][0]["message"]["content"]
+        if not isinstance(content, str):
+            raise ValueError("OpenAI-compatible response content is not a string")
+        return content
+    except json.JSONDecodeError:
+        return _load_openai_sse_content(text)
+
+
+def _load_openai_sse_content(text: str) -> str:
+    content_parts: list[str] = []
+    event_data: list[str] = []
+    received_data = False
+    done = False
+
+    def consume_event() -> None:
+        nonlocal done, received_data
+        if not event_data:
+            return
+        raw_data = "\n".join(event_data)
+        event_data.clear()
+        received_data = True
+        if raw_data == "[DONE]":
+            done = True
+            return
+        payload = _object_map(json.loads(raw_data))
+        choices = _object_list(payload.get("choices"))
+        for choice in choices:
+            choice_data = _object_map(choice)
+            if choice_data.get("finish_reason") == "stop":
+                done = True
+            delta = _object_map(choice_data.get("delta"))
+            message = _object_map(choice_data.get("message"))
+            chunk = delta.get("content", message.get("content"))
+            if chunk is not None and not isinstance(chunk, str):
+                raise ValueError("OpenAI-compatible SSE content is not a string")
+            if isinstance(chunk, str):
+                content_parts.append(chunk)
+
+    for line in text.splitlines():
+        if not line:
+            consume_event()
+            continue
+        if line.startswith("data:"):
+            event_data.append(line[5:].lstrip(" "))
+        elif not line.startswith(("event:", "id:", "retry:", ":")):
+            raise ValueError("OpenAI-compatible response is not valid SSE")
+    consume_event()
+    if not received_data or not done or not content_parts:
+        raise ValueError("OpenAI-compatible SSE response contains no content")
+    return "".join(content_parts)

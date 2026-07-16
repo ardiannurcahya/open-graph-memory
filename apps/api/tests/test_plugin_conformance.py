@@ -5,6 +5,7 @@ from io import BytesIO
 
 import pytest
 from app.plugin_registry import (
+    create_extractor,
     create_object_store,
     register_builtin_plugins,
 )
@@ -13,9 +14,15 @@ from open_graph_contracts import Capability, PluginConfig, SecretValue
 
 def test_builtin_registry_declares_expected_plugins() -> None:
     registry = register_builtin_plugins()
-    assert registry.list_names(Capability.EXTRACTION) == ["deterministic", "openai"]
+    assert registry.list_names(Capability.EXTRACTION) == ["deterministic", "nlp", "openai"]
     assert registry.list_names(Capability.OBJECT_STORE) == ["s3"]
     assert registry.list_names(Capability.GRAPH_STORE) == ["neo4j"]
+
+
+def test_nlp_factory_accepts_model_without_secret() -> None:
+    extractor = create_extractor("nlp", PluginConfig({"model": "local-nlp-v1"}))
+
+    assert extractor.extract("Alice Nguyen works at Acme Labs.").relations[0].type == "WORKS_AT"
 
 
 def test_s3_factory_accepts_bounded_plugin_config() -> None:

@@ -17,7 +17,7 @@ Acme Labs [Organization]
 Acme Labs -> EMPLOYS -> Alice Nguyen
 ```
 
-Unsupported grammar is ignored deliberately. `OpenAICompatibleExtractor` remains available as a configurable adapter with caller-supplied base URL, key, model, prompt version, and timeout; it requests strict JSON Schema at temperature zero. Credentials are never persisted by graph artifacts.
+Unsupported grammar is ignored deliberately. `NlpExtractor` is a local dependency-free option for conservative explicit active sentences such as `Alice Nguyen works at Acme Labs` and `Acme Labs acquired Widget Cloud`. It emits typed entities and relations only for matched sentence patterns; it never creates co-occurrence edges. `OpenAICompatibleExtractor` remains available as a configurable adapter with caller-supplied base URL, key, model, prompt version, and timeout; it requests strict JSON Schema at temperature zero. Credentials are never persisted by graph artifacts.
 
 ## Operations and API
 

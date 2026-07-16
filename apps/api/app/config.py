@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     def validate_settings(self) -> "Settings":
         if self.upload_max_bytes < 1 or self.upload_spool_max_bytes < 1:
             raise ValueError("upload limits must be positive")
-        if self.graph_extractor_provider not in {"deterministic", "openai"}:
-            raise ValueError("graph extractor provider must be deterministic or openai")
+        if self.graph_extractor_provider not in {"deterministic", "nlp", "openai"}:
+            raise ValueError("graph extractor provider must be deterministic, nlp, or openai")
         if self.outbox_poll_seconds <= 0 or self.indexing_stale_seconds <= 0:
             raise ValueError("outbox polling interval must be positive")
         if self.graph_extractor_timeout_seconds < 1 or self.graph_extractor_parallelism < 1:

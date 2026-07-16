@@ -7,14 +7,12 @@ from app.async_runner import runner
 from app.config import get_settings
 
 settings = get_settings()
-task_soft_time_limit = max(270, int(settings.graph_extractor_timeout_seconds) + 90)
-task_time_limit = task_soft_time_limit + 30
+indexing_task_soft_time_limit = max(270, int(settings.graph_extractor_timeout_seconds) + 90)
+indexing_task_time_limit = indexing_task_soft_time_limit + 30
 celery_app = Celery("opengraphrag", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    task_soft_time_limit=task_soft_time_limit,
-    task_time_limit=task_time_limit,
     task_reject_on_worker_lost=True,
     task_default_queue="default",
     task_routes={
@@ -63,6 +61,8 @@ def ping() -> str:
     retry_backoff_max=60,
     retry_jitter=True,
     max_retries=4,
+    soft_time_limit=indexing_task_soft_time_limit,
+    time_limit=indexing_task_time_limit,
 )  # type: ignore[untyped-decorator]
 def index_document(self: object, job_id: str) -> str:
     from app.ingestion import execute

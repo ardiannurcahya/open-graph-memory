@@ -89,7 +89,7 @@ Important variables:
 | `S3_ENDPOINT_URL` | S3-compatible endpoint |
 | `S3_ACCESS_KEY` | Object-storage access key |
 | `S3_SECRET_KEY` | Object-storage secret key |
-| `GRAPH_EXTRACTOR_PROVIDER` | `deterministic` or `openai` |
+| `GRAPH_EXTRACTOR_PROVIDER` | `deterministic`, `nlp`, or `openai` |
 | `GRAPH_EXTRACTOR_MODEL` | Extraction model identifier |
 | `OPENAI_GRAPH_EXTRACTOR_BASE_URL` | OpenAI-compatible extraction endpoint |
 | `OPENAI_API_KEY` | Extraction provider credential |
@@ -98,7 +98,7 @@ Important variables:
 | `WORKER_CONCURRENCY` | Ingestion worker concurrency |
 | `GRAPH_WORKER_CONCURRENCY` | Graph worker concurrency |
 
-Deterministic extraction needs no external model credentials. Production requires OpenAI-compatible graph extraction over HTTPS. See [Service and Provider Configuration](docs/service-configuration.md).
+Deterministic and local NLP extraction need no external model credentials. NLP extraction recognizes conservative explicit active-sentence relations without co-occurrence edges. Production requires OpenAI-compatible graph extraction over HTTPS. See [Service and Provider Configuration](docs/service-configuration.md).
 
 Never commit `.env` or credentials.
 

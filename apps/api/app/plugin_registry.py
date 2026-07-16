@@ -15,7 +15,11 @@ from open_graph_contracts import (
     PluginVersion,
     get_registry,
 )
-from open_graph_core.extraction import DeterministicExtractor, OpenAICompatibleExtractor
+from open_graph_core.extraction import (
+    DeterministicExtractor,
+    NlpExtractor,
+    OpenAICompatibleExtractor,
+)
 
 from app.graph_store import GraphStore as AppGraphStore
 from app.graph_store import Neo4jGraphStore
@@ -61,6 +65,14 @@ def _deterministic_extractor_factory(**kwargs: object) -> DeterministicExtractor
     return DeterministicExtractor()
 
 
+def _nlp_extractor_factory(**kwargs: object) -> NlpExtractor:
+    config = _config(kwargs)
+    model = config.get("model", "nlp-graph-v1")
+    if not isinstance(model, str):
+        raise TypeError("config key 'model' must be a string")
+    return NlpExtractor(model=model)
+
+
 def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
     config = _config(kwargs)
     return OpenAICompatibleExtractor(
@@ -86,6 +98,7 @@ def register_builtin_plugins(registry: PluginRegistry | None = None) -> PluginRe
     target = registry or get_registry()
     registrations = (
         (Capability.EXTRACTION, "deterministic", _deterministic_extractor_factory, Extractor),
+        (Capability.EXTRACTION, "nlp", _nlp_extractor_factory, Extractor),
         (Capability.EXTRACTION, "openai", _openai_extractor_factory, Extractor),
         (Capability.OBJECT_STORE, "s3", _s3_factory, ObjectStore),
         (Capability.GRAPH_STORE, "neo4j", _neo4j_factory, GraphStore),
