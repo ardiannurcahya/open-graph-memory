@@ -14,10 +14,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     status_type = postgresql.ENUM(
-        "queued",
-        "running",
-        "succeeded",
-        "failed",
+        "QUEUED",
+        "RUNNING",
+        "SUCCEEDED",
+        "FAILED",
         name="community_report_status",
     )
     status_type.create(op.get_bind(), checkfirst=True)
