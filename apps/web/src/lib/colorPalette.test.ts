@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { colorForCommunity, buildCommunityPalette, hexRgba, hslToHex } from "./colorPalette";
+import { colorForCommunity, buildCommunityPalette, hexRgba, hslToHex, vividNodeColorForCommunity } from "./colorPalette";
 
 describe("colorPalette", () => {
   it("generates deterministic color for same community id", () => {
@@ -19,6 +19,14 @@ describe("colorPalette", () => {
     const c = colorForCommunity("test");
     expect(c.color).toMatch(/^#[0-9a-f]{6}$/);
     expect(c.darkColor).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("produces distinct vivid node colors for dark and light canvases", () => {
+    const dark = vividNodeColorForCommunity("c0", true);
+    const light = vividNodeColorForCommunity("c0", false);
+    expect(dark).toMatch(/^#[0-9a-f]{6}$/);
+    expect(light).toMatch(/^#[0-9a-f]{6}$/);
+    expect(dark).not.toBe(light);
   });
 
   it("builds palette with spread hues", () => {

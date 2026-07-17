@@ -4,6 +4,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
 import type { GraphNode, GraphState } from "../lib/graphTypes";
 import { highlightConnected } from "../lib/graphPhysics";
+import { vividNodeColorForCommunity } from "../lib/colorPalette";
 import { useTheme } from "../themeState";
 
 export interface SigmaGraphCanvasProps {
@@ -196,14 +197,12 @@ export default function SigmaGraphCanvas({
     // Add nodes
     for (const node of state.nodes) {
       const pos = seeded.positions[node.id] ?? { x: 0, y: 0 };
-      const info = state.communities.get(node.community);
-      const color = dark ? (info?.color ?? "#78716c") : (info?.darkColor ?? info?.color ?? "#78716c");
       const neighbors = state.adj.get(node.id) ?? [];
       graph.addNode(node.id, {
         x: pos.x,
         y: pos.y,
         size: 3 + Math.min(neighbors.length * 0.5, 8),
-        color,
+        color: vividNodeColorForCommunity(node.community, dark),
         label: node.label,
         community: node.community,
       });
@@ -478,9 +477,7 @@ export default function SigmaGraphCanvas({
     if (!graph || !sigma) return;
     const dark = resolvedTheme === "dark";
     graph.forEachNode((id, attrs) => {
-      const info = state.communities.get(attrs.community as string);
-      const color = dark ? (info?.color ?? "#78716c") : (info?.darkColor ?? info?.color ?? "#78716c");
-      graph.setNodeAttribute(id, "color", color);
+      graph.setNodeAttribute(id, "color", vividNodeColorForCommunity(attrs.community as string, dark));
     });
     graph.forEachEdge((_id, _attrs, source, _target) => {
       const srcComm = graph.getNodeAttribute(source, "community") as string;

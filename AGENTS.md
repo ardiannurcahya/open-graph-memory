@@ -1,47 +1,41 @@
-# AGENTS.md
+# OpenGraphMemory Agent Notes
 
-## Repo shape
+## Layout
 
-- Python project uses `uv`; root `pyproject.toml` sets pytest `pythonpath` for `apps/api`, `packages/core/src`, `packages/contracts/src`, and `packages/sdk/src`.
-- API entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). Worker entrypoint: `apps/worker/worker/main.py` re-exports `app.worker.celery_app`.
-- Web app lives in `apps/web` and is independent npm workspace-less Vite/React project; run npm commands from `apps/web`.
-- Authoritative stores are PostgreSQL plus S3-compatible object storage; the Neo4j graph is a rebuildable projection.
+- Root Python project uses `uv` and Python 3.12+. Root `pyproject.toml` supplies import paths for `apps/api`, `packages/core/src`, `packages/contracts/src`, and `packages/sdk/src`; run Python commands from repo root.
+- FastAPI entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). Celery entrypoint: `apps/worker/worker/main.py`, re-exporting `app.worker.celery_app`.
+- `apps/web` is separate Vite/React project, not npm workspace. Run all npm commands there. Vite dev server proxies `/api` to `http://localhost:8000`, stripping `/api`.
+- PostgreSQL and S3-compatible storage are authoritative. Neo4j is rebuildable traversal projection; do not make graph reads depend on Neo4j-only state.
+- Public plugin contracts live in `packages/contracts`; SDK in `packages/sdk`. Built-in plugins use explicit registration in `apps/api/app/plugin_registry.py`; no dynamic entry-point discovery.
 
 ## Commands
 
-- Install Python deps: `uv sync --frozen --group dev`.
-- Install web deps: `cd apps/web && npm ci --no-audit --no-fund` (CI uses npm `11.6.2`; Dockerfile uses npm `12.0.1`).
-- Full local gate: `scripts/check.sh` → runs `scripts/lint.sh`, `scripts/test.sh`, then `scripts/build.sh`.
-- Python gates: `uv run ruff check .`, `uv run mypy`, `uv run pytest`.
-- Single Python test: `uv run pytest apps/api/tests/test_config.py -q` or `uv run pytest apps/api/tests/test_config.py::test_name -q`.
-- Web gates from `apps/web`: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
-- Single web test: `cd apps/web && npx vitest run src/App.test.tsx -t "test name"`.
-- Compose config check: `docker compose -f deployments/docker-compose.yml config --quiet`.
-- Local stack: copy `.env.example` to `.env`, replace every `change-me`, then `docker compose -f deployments/docker-compose.yml up -d`.
+- Install Python dev deps: `uv sync --frozen --group dev`.
+- Install web deps: `cd apps/web && npm ci --no-audit --no-fund`.
+- Full gate, fixed order: `scripts/check.sh` runs lint, tests, then build.
+- Python checks: `uv run ruff check .`, `uv run mypy`, `uv run pytest`.
+- Focus Python test: `uv run pytest apps/api/tests/test_config.py::test_name -q`.
+- Web checks from `apps/web`: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
+- Focus web test: `npx vitest run src/App.test.tsx -t "test name"` from `apps/web`.
+- Compose syntax check: `docker compose -f deployments/docker-compose.yml config --quiet`.
 
-## Runtime and migrations
+## Runtime And Data
 
-- Compose service dependency order includes `migrate` and `bucket-init`; API waits on both, workers wait on migrate/bucket init.
-- Migration command in container: `docker compose -f deployments/docker-compose.yml exec api alembic upgrade head`; `scripts/migrate.sh` wraps this.
-- Alembic config is under `apps/api`; `apps/api/migrations/env.py` reads `DATABASE_URL` and has `target_metadata = None`, so migrations are hand-authored.
-- `scripts/runtime-gate.sh` overwrites `.env` from `.env.example`, uses `WEB_PORT=${RUNTIME_GATE_PORT:-39091}`, builds stack, runs migrate and bucket-init, then destroys volumes on exit.
+- Local stack needs Docker Compose v2 and 4 GB RAM. Copy `.env.example` to `.env`, replace all `change-me` values, then `docker compose -f deployments/docker-compose.yml up -d`.
+- `migrate` and `bucket-init` must complete before API and workers start. Run migrations through `scripts/migrate.sh`; Alembic has `target_metadata = None`, so author migrations by hand.
+- `scripts/runtime-gate.sh` overwrites `.env`, builds stack, uses `RUNTIME_GATE_PORT` or `39091`, then destroys volumes. Treat it as destructive, expensive vertical test.
+- Runtime gates present: `scripts/runtime-gate.sh`, `scripts/m1-runtime-gate.sh`, `scripts/m3-runtime-gate.sh`, `scripts/m4-runtime-gate.sh`.
+- Deterministic extractor needs no model credentials. Production validation requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS provider URL, and non-placeholder secrets.
 
-## Providers and plugins
+## Contracts And Tests
 
-- The deterministic graph extractor is the default and needs no external model credentials; the OpenAI-compatible graph extractor can use `OPENAI_GRAPH_EXTRACTOR_BASE_URL`, which falls back to `OPENAI_BASE_URL` when unset.
-- Production validation requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS provider base URLs, and non-placeholder secrets.
-- Plugin registry is explicit only. Do not add dynamic entry-point discovery unless changing design; built-ins register through `app.plugin_registry.register_builtin_plugins()` and construct extraction, object-storage, and graph-store plugins.
-- Plugin factories receive `PluginConfig` only, not `Settings`, `Runtime`, DB sessions, or service clients; secrets must use `SecretValue`.
+- Plugin factories receive only `PluginConfig`; pass secrets as `SecretValue`, never runtime, settings, sessions, or clients.
+- Root pytest config supplies paths and async mode; no shared `conftest.py`.
+- Web tests run in jsdom. Mock `@xyflow/react` for canvas/SVG tests; mock `sigma`, `graphology`, and ForceAtlas2 for graph renderer tests because jsdom lacks WebGL.
+- Evaluation golden files are versioned baselines. Add new version; never edit published golden fixture.
 
-## Tests and evaluation quirks
-
-- No pytest `conftest.py`; tests rely on root pytest `pythonpath` and mostly deterministic providers.
-- Web tests run in jsdom with `apps/web/src/test/setup.ts`; `App.test.tsx` mocks `@xyflow/react` because SVG/canvas breaks in jsdom; graph renderer tests mock `sigma`, `graphology`, and `graphology-layout-forceatlas2` since jsdom has no WebGL.
-- Runtime gates are expensive Docker vertical slices and create/destroy their own resources: `scripts/runtime-gate.sh`, `scripts/m1-runtime-gate.sh`, `scripts/m2-runtime-gate.sh`, `scripts/m3-runtime-gate.sh`, `scripts/m4-runtime-gate.sh`.
-- Evaluation golden files are versioned; do not mutate a published golden baseline. Add new version instead.
-
-## Security and generated files
+## Safety
 
 - Never commit `.env`, credentials, provider responses, volumes, or private content.
-- `scripts/security-gate.sh` fails on tracked/untracked `.env`, `*.tsbuildinfo`, generated `apps/web/vite.config.{js,d.ts}`, and credential-shaped GitHub/AWS tokens.
-- If `npm ci` fails, README says retry `npm cache verify` then `npm ci`; do not replace with unlocked install.
+- `scripts/security-gate.sh` rejects tracked or untracked `.env`, `*.tsbuildinfo`, generated `apps/web/vite.config.{js,d.ts}`, plus GitHub/AWS token patterns.
+- If locked web install fails, run `npm cache verify` then retry `npm ci`; do not replace it with unlocked install.

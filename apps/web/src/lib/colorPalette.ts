@@ -42,6 +42,11 @@ export function colorForCommunity(communityId: string): CommunityInfo {
   };
 }
 
+export function vividNodeColorForCommunity(communityId: string, darkBackground: boolean): string {
+  const hue = hashString(communityId) % 360;
+  return hslToHex(hue, 88, darkBackground ? 58 : 42);
+}
+
 export function buildCommunityPalette(
   communityIds: string[],
   names?: Map<string, string>,
