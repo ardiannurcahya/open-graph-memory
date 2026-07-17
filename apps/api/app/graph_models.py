@@ -156,6 +156,7 @@ class CanonicalEntity(ScopeMixin, Base):
             "dataset_id", "normalized_name", "entity_type", name="uq_entity_candidate"
         ),
         CheckConstraint("confidence BETWEEN 0 AND 1"),
+        Index("ix_entities_explorer_page", "project_id", "dataset_id", "id"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     canonical_name: Mapped[str] = mapped_column(String(500))
@@ -200,6 +201,7 @@ class RelationAssertion(ScopeMixin, Base):
         ),
         CheckConstraint("confidence BETWEEN 0 AND 1"),
         CheckConstraint("source_entity_id <> target_entity_id"),
+        Index("ix_relations_explorer_page", "project_id", "dataset_id", "id"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_entity_id: Mapped[str] = mapped_column(
@@ -223,6 +225,8 @@ class GraphEvidence(ScopeMixin, Base):
     __table_args__ = (
         CheckConstraint("(entity_id IS NULL) <> (relation_id IS NULL)", name="ck_evidence_subject"),
         CheckConstraint("confidence BETWEEN 0 AND 1"),
+        Index("ix_graph_evidence_entity", "entity_id"),
+        Index("ix_graph_evidence_relation", "relation_id"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))

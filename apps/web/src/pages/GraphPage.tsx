@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { datasetsApi, graphApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { Dataset, EntityView, ExplorerView, GraphSummary } from "../api/types";
@@ -41,12 +41,14 @@ export default function GraphPage() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
+  const explorerRequestRef = useRef(0);
+  const explorerAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     void datasetsApi.list().then(setDatasets).catch(() => undefined);
@@ -59,31 +61,56 @@ export default function GraphPage() {
   }, [summary, view]);
 
   const loadExplorer = useCallback(async (id: string, communityLevel: number) => {
+    explorerAbortRef.current?.abort();
+    const controller = new AbortController();
+    explorerAbortRef.current = controller;
+    const requestId = ++explorerRequestRef.current;
     setLoading(true);
     setError(null);
     setSelectedNode(null);
     try {
-      const response = await graphApi.getExplorer(id, { community_level: communityLevel });
-      setView(response);
+      const response = await graphApi.getExplorer(id, {
+        community_level: communityLevel,
+        node_limit: 3000,
+        relation_limit: 5000,
+      }, controller.signal);
+      const [nodes, relations] = await Promise.all([
+        response.nodes.length < response.stats.entity_count
+          ? loadAllExplorerNodes(id, communityLevel, controller.signal)
+          : Promise.resolve(response.nodes),
+        response.relations.length < response.stats.relation_count
+          ? loadAllExplorerRelations(id, controller.signal)
+          : Promise.resolve(response.relations),
+      ]);
+      if (requestId !== explorerRequestRef.current) return;
+      const completeResponse = { ...response, nodes, relations };
+      setView(completeResponse);
       setSummary(null);
-      setPayload(response);
+      setPayload(completeResponse);
+      setActiveFilters(new Set());
     } catch (err) {
+      if (requestId !== explorerRequestRef.current || controller.signal.aborted) return;
       setError(errorMessage(err, "failed to load graph"));
       setView(null);
       setSummary(null);
     } finally {
-      setLoading(false);
+      if (requestId === explorerRequestRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (datasetId) void loadExplorer(datasetId, level);
     else {
+      explorerAbortRef.current?.abort();
+      explorerRequestRef.current += 1;
       setView(null);
       setSummary(null);
       setPayload(null);
+      setActiveFilters(new Set());
     }
   }, [datasetId, level, loadExplorer]);
+
+  useEffect(() => () => explorerAbortRef.current?.abort(), []);
 
   const runTool = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -103,6 +130,7 @@ export default function GraphPage() {
           relations: [],
         });
         setPayload(response);
+        setActiveFilters(new Set());
       } else if (tool === "neighbors") {
         const [entity, neighbors] = await Promise.all([
           graphApi.getEntity(entityId.trim()),
@@ -119,6 +147,7 @@ export default function GraphPage() {
         };
         setSummary(response);
         setPayload({ entity, neighbors });
+        setActiveFilters(new Set());
       } else if (tool === "path") {
         const response = await graphApi.findPath(
           datasetId,
@@ -128,10 +157,12 @@ export default function GraphPage() {
         );
         setSummary(toGraphSummary(response));
         setPayload(response);
+        setActiveFilters(new Set());
       } else if (tool === "subgraph") {
         const response = await graphApi.getSubgraph(datasetId, subgraphEntityId.trim(), depth);
         setSummary(toGraphSummary(response));
         setPayload(response);
+        setActiveFilters(new Set());
       } else {
         const response = await graphApi.getRelationEvidence(datasetId, relationId.trim());
         setPayload(response);
@@ -159,6 +190,8 @@ export default function GraphPage() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
       if (cmdOpen) return;
       if ((event.ctrlKey || event.metaKey) && event.key === "k") {
         event.preventDefault();
@@ -169,9 +202,6 @@ export default function GraphPage() {
         setShowLegend((value) => !value);
       } else if (event.key.toLowerCase() === "f") {
         setShowFilters((value) => !value);
-      } else if (event.key === " ") {
-        event.preventDefault();
-        setPhysicsEnabled((value) => !value);
       }
     };
     document.addEventListener("keydown", handler);
@@ -192,7 +222,7 @@ export default function GraphPage() {
   };
 
   return (
-    <div className="relative h-screen min-h-[640px] overflow-hidden bg-stone-50">
+    <div className="relative h-screen min-h-[640px] overflow-hidden bg-ui-canvas">
       {graphState ? (
         <GraphCanvas
           state={graphState}
@@ -234,7 +264,7 @@ export default function GraphPage() {
         <button
           type="button"
           onClick={() => setPanelOpen((value) => !value)}
-          className="rounded-md border border-stone-900 bg-stone-900 px-3 py-1 text-xs text-white"
+          className="rounded-md border border-stone-900 bg-stone-900 px-3 py-1 text-xs text-ui-inverse"
         >
           {panelOpen ? "Hide tools" : "Show tools"}
         </button>
@@ -268,7 +298,7 @@ export default function GraphPage() {
                 type="button"
                 onClick={() => setTool(item.id)}
                 className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                  tool === item.id ? "bg-amber-600 text-white" : "text-stone-600 hover:bg-stone-100"
+                  tool === item.id ? "bg-amber-600 text-ui-inverse" : "text-stone-600 hover:bg-stone-100"
                 }`}
               >
                 {item.label}
@@ -297,7 +327,7 @@ export default function GraphPage() {
               <button
                 type="submit"
                 disabled={!datasetId || loading || !toolReady(tool, { query, entityId, sourceId, targetId, subgraphEntityId, relationId })}
-                className="w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-ui-inverse disabled:opacity-40"
               >
                 {loading ? "Running..." : `Run ${TOOLS.find((item) => item.id === tool)?.label}`}
               </button>
@@ -334,8 +364,15 @@ export default function GraphPage() {
           <Stat value={`${graphState.communities.size} groups`} />
           <Stat value={`${zoom.toFixed(1)}x`} />
           <button type="button" onClick={() => triggerCanvasEvent("graph:fit")} className="px-2 py-1 text-xs text-stone-600">Fit</button>
-          <button type="button" onClick={() => triggerCanvasEvent("graph:reset")} className="px-2 py-1 text-xs text-stone-600">Reset</button>
-          <button type="button" onClick={() => setPhysicsEnabled((value) => !value)} className="px-2 py-1 text-xs text-stone-600">Physics {physicsEnabled ? "on" : "off"}</button>
+          <button type="button" onClick={() => triggerCanvasEvent("graph:reset")} className="px-2 py-1 text-xs text-stone-600">Reset layout</button>
+          <button
+            type="button"
+            aria-pressed={physicsEnabled}
+            onClick={() => setPhysicsEnabled((value) => !value)}
+            className={`rounded px-2 py-1 text-xs ${physicsEnabled ? "bg-stone-900 text-ui-inverse" : "text-stone-600"}`}
+          >
+            Physics {physicsEnabled ? "on" : "off"}
+          </button>
           <button type="button" onClick={() => setShowLabels((value) => !value)} className="px-2 py-1 text-xs text-stone-600">Labels {showLabels ? "on" : "off"}</button>
         </div>
       )}
@@ -359,7 +396,9 @@ export default function GraphPage() {
               key={community.id}
               type="button"
               onClick={() => toggleFilter(community.id)}
-              className={`rounded-full border px-3 py-1 text-xs ${activeFilters.has(community.id) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-600"}`}
+              aria-pressed={activeFilters.has(community.id)}
+              data-active={activeFilters.has(community.id)}
+              className={`rounded-full border px-3 py-1 text-xs ${activeFilters.has(community.id) ? "border-stone-900 bg-stone-900 text-ui-inverse" : "border-stone-200 bg-white text-stone-600"}`}
             >
               {community.name}
             </button>
@@ -413,9 +452,35 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.detail : fallback;
 }
 
+async function loadAllExplorerNodes(datasetId: string, communityLevel: number, signal: AbortSignal) {
+  const nodes: ExplorerView["nodes"] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await graphApi.getExplorerNodes(datasetId, {
+      cursor,
+      limit: 3000,
+      community_level: communityLevel,
+    }, signal);
+    nodes.push(...page.nodes);
+    cursor = page.next_cursor ?? undefined;
+  } while (cursor);
+  return nodes;
+}
+
+async function loadAllExplorerRelations(datasetId: string, signal: AbortSignal) {
+  const relations: ExplorerView["relations"] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await graphApi.getExplorerRelations(datasetId, { cursor, limit: 5000 }, signal);
+    relations.push(...page.relations);
+    cursor = page.next_cursor ?? undefined;
+  } while (cursor);
+  return relations;
+}
+
 function ToolbarButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-md border px-2 py-1 text-xs ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 text-stone-600"}`}>
+    <button type="button" aria-pressed={active} data-active={active} onClick={onClick} className={`rounded-md border px-2 py-1 text-xs ${active ? "border-stone-900 bg-stone-900 text-ui-inverse" : "border-stone-200 text-stone-600"}`}>
       {children}
     </button>
   );

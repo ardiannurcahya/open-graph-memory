@@ -141,7 +141,7 @@ export default function DatasetsPage() {
             <button
               type="submit"
               disabled={creating || !newName.trim()}
-              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-50"
+              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-ui-inverse hover:bg-stone-700 disabled:opacity-50"
             >
               {creating ? "Creating…" : "Create Dataset"}
             </button>
@@ -151,7 +151,7 @@ export default function DatasetsPage() {
             <div className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-700">
               Datasets {loading && "· loading…"}
             </div>
-            <ul className="divide-y divide-stone-100">
+            <ul className="divide-y divide-ui-border">
               {datasets.map((d) => (
                 <li key={d.id}>
                   <button
@@ -196,19 +196,25 @@ export default function DatasetsPage() {
                     <p className="text-sm text-stone-500">{selected.description}</p>
                   )}
                 </div>
-                <label className="cursor-pointer rounded-md bg-stone-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-stone-700">
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={uploading}
+                  className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-semibold text-ui-inverse hover:bg-stone-700 disabled:opacity-50"
+                >
                   {uploading ? "Uploading…" : "Upload"}
-                  <input
-                    ref={fileInput}
-                    type="file"
-                    accept={ACCEPTED_EXTENSIONS.join(",")}
-                    onChange={handleUpload}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                </label>
+                </button>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  aria-label="Select document to upload"
+                  accept={ACCEPTED_EXTENSIONS.join(",")}
+                  onChange={handleUpload}
+                  disabled={uploading}
+                  className="sr-only"
+                />
               </div>
-              <ul className="divide-y divide-stone-100">
+              <ul className="divide-y divide-ui-border">
                 {documents.map((doc) => (
                   <li key={doc.id} className="px-4 py-3">
                     <div className="flex items-center justify-between">

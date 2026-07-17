@@ -26,10 +26,10 @@ Explorer endpoints:
 
 ```text
 POST /v1/datasets/{dataset_id}/analytics/refresh
-GET  /v1/datasets/{dataset_id}/graph/explorer?node_limit=100&relation_limit=200&community_level=0|1|2
+GET  /v1/datasets/{dataset_id}/graph/explorer?node_limit=3000&relation_limit=5000&community_level=0|1|2
 ```
 
-Explorer bounds: `node_limit` and `relation_limit` are 1–200. It remains PostgreSQL-backed when analytics is unavailable.
+Explorer bounds: `node_limit` is 1–3,000 and `relation_limit` is 1–5,000. Both default to their maximums, allowing browser to request all supported explorer nodes and relations. It remains PostgreSQL-backed when analytics is unavailable.
 
 ## Dashboard semantic zoom
 

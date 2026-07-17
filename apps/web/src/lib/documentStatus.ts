@@ -20,24 +20,24 @@ export const ACCEPTED_EXTENSIONS = [".txt", ".md", ".html", ".json", ".pdf", ".c
 export function statusColor(status: string): string {
   switch (status) {
     case "indexed":
-      return "bg-green-100 text-green-800";
+      return "bg-ui-success-bg text-ui-success";
     case "failed":
     case "storage_failed":
     case "delete_failed":
-      return "bg-red-100 text-red-800";
+      return "bg-ui-danger-bg text-ui-danger";
     case "queued":
     case "parsing":
     case "chunking":
     case "persisting":
     case "uploaded":
     case "pending_upload":
-      return "bg-amber-100 text-amber-800";
+      return "bg-ui-warning-bg text-ui-warning";
     case "deleting":
-      return "bg-stone-200 text-stone-700";
+      return "bg-ui-raised text-ui-subdued";
     case "cancelled":
     case "stale":
-      return "bg-stone-100 text-stone-500";
+      return "bg-ui-muted text-ui-subdued";
     default:
-      return "bg-stone-100 text-stone-700";
+      return "bg-ui-muted text-ui-subdued";
   }
 }

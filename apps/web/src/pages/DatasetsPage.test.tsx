@@ -117,6 +117,87 @@ describe("DatasetsPage", () => {
     expect(screen.getByText("indexed")).toBeInTheDocument();
   });
 
+  it("uploads selected file with multipart auth request and refreshes documents", async () => {
+    const uploadedDocument = {
+      id: "doc_1",
+      project_id: "p",
+      dataset_id: "ds_1",
+      filename: "notes.txt",
+      mime_type: "text/plain",
+      size_bytes: 12,
+      content_hash: "abc",
+      object_key: "k",
+      status: "queued",
+      error_message: null,
+      graph_stage: null,
+      duplicate: false,
+      created_at: "t",
+      updated_at: "t",
+    };
+    const fetchMock = makeFetch({
+      datasets: [
+        { id: "ds_1", project_id: "p", name: "Research", description: null, status: "active", error_message: null, metadata: {} },
+      ],
+      uploadedDoc: uploadedDocument,
+      docs: () => {
+        const uploadCall = fetchMock.mock.calls.some(
+          ([url, init]) => url === "/api/v1/datasets/ds_1/documents" && init?.method === "POST",
+        );
+        return uploadCall ? [uploadedDocument] : [];
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("Research"));
+    const input = screen.getByLabelText("Select document to upload");
+    const file = new File(["hello upload"], "notes.txt", { type: "text/plain" });
+    await user.upload(input, file);
+
+    await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+    const [url, init] = fetchMock.mock.calls.find(
+      ([requestUrl, requestInit]) => requestUrl === "/api/v1/datasets/ds_1/documents" && requestInit?.method === "POST",
+    ) as [string, RequestInit];
+    expect(url).toBe("/api/v1/datasets/ds_1/documents");
+    expect(init.headers).toMatchObject({
+      "X-API-Key": "ogm_key",
+      "X-Project-Id": "11111111-2222-3333-4444-555555555555",
+    });
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBe(file);
+  });
+
+  it("shows upload error and allows selecting same file again", async () => {
+    let uploads = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/datasets" && method === "GET") {
+        return ok([
+          { id: "ds_1", project_id: "p", name: "Research", description: null, status: "active", error_message: null, metadata: {} },
+        ]);
+      }
+      if (url === "/api/v1/datasets/ds_1/documents" && method === "GET") return ok([]);
+      if (url === "/api/v1/datasets/ds_1/documents" && method === "POST") {
+        uploads += 1;
+        return uploads === 1 ? ok({ detail: "invalid file" }, 415) : ok({ id: "doc_1" }, 201);
+      }
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("Research"));
+    const input = screen.getByLabelText("Select document to upload");
+    const file = new File(["hello upload"], "notes.txt", { type: "text/plain" });
+    await user.upload(input, file);
+    await waitFor(() => expect(screen.getByText("invalid file")).toBeInTheDocument());
+
+    await user.upload(input, file);
+    await waitFor(() => expect(uploads).toBe(2));
+  });
+
   it("polls documents while a document is processing", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let docCalls = 0;

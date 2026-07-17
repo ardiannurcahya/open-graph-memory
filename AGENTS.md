@@ -36,7 +36,7 @@
 ## Tests and evaluation quirks
 
 - No pytest `conftest.py`; tests rely on root pytest `pythonpath` and mostly deterministic providers.
-- Web tests run in jsdom with `apps/web/src/test/setup.ts`; `App.test.tsx` mocks `@xyflow/react` because SVG/canvas breaks in jsdom.
+- Web tests run in jsdom with `apps/web/src/test/setup.ts`; `App.test.tsx` mocks `@xyflow/react` because SVG/canvas breaks in jsdom; graph renderer tests mock `sigma`, `graphology`, and `graphology-layout-forceatlas2` since jsdom has no WebGL.
 - Runtime gates are expensive Docker vertical slices and create/destroy their own resources: `scripts/runtime-gate.sh`, `scripts/m1-runtime-gate.sh`, `scripts/m2-runtime-gate.sh`, `scripts/m3-runtime-gate.sh`, `scripts/m4-runtime-gate.sh`.
 - Evaluation golden files are versioned; do not mutate a published golden baseline. Add new version instead.
 

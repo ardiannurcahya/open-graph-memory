@@ -184,6 +184,16 @@ export interface ExplorerView {
   communities: ExplorerCommunity[];
 }
 
+export interface ExplorerNodePage {
+  nodes: ExplorerNode[];
+  next_cursor: string | null;
+}
+
+export interface ExplorerRelationPage {
+  relations: ExplorerRelation[];
+  next_cursor: string | null;
+}
+
 export interface AnalyticsRunView {
   id: string;
   dataset_id: string;

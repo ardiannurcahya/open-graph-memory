@@ -8,6 +8,8 @@ import type {
   EntityView,
   EvidenceView,
   ExplorerView,
+  ExplorerNodePage,
+  ExplorerRelationPage,
   GraphJobView,
   GraphPathView,
   GraphRunView,
@@ -72,7 +74,18 @@ export const graphApi = {
   getExplorer: (
     datasetId: string,
     params: { node_limit?: number; relation_limit?: number; community_level?: number } = {},
-  ) => api.get<ExplorerView>(`/v1/datasets/${datasetId}/graph/explorer`, { params }),
+    signal?: AbortSignal,
+  ) => api.get<ExplorerView>(`/v1/datasets/${datasetId}/graph/explorer`, { params, signal }),
+  getExplorerNodes: (
+    datasetId: string,
+    params: { cursor?: string; limit?: number; community_level?: number } = {},
+    signal?: AbortSignal,
+  ) => api.get<ExplorerNodePage>(`/v1/datasets/${datasetId}/graph/explorer/nodes`, { params, signal }),
+  getExplorerRelations: (
+    datasetId: string,
+    params: { cursor?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ) => api.get<ExplorerRelationPage>(`/v1/datasets/${datasetId}/graph/explorer/relations`, { params, signal }),
   getEvidence: (id: string) => api.get<EvidenceView>(`/v1/evidence/${id}`),
   getRelationEvidence: (datasetId: string, relationId: string, limit = 25) =>
     api.get<EvidenceView[]>(`/v1/datasets/${datasetId}/relations/${relationId}/evidence`, {

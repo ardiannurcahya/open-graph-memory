@@ -59,11 +59,11 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="absolute inset-0 z-30 flex items-start justify-center bg-stone-900/30 pt-[15vh] backdrop-blur-sm"
+      className="absolute inset-0 z-30 flex items-start justify-center bg-black/50 pt-[15vh] backdrop-blur-sm"
     >
-      <div className="w-[560px] max-w-[90vw] overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl">
-        <div className="flex items-center gap-2.5 border-b border-stone-200 px-4 py-3">
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth={2} strokeLinecap="round">
+      <div className="w-[560px] max-w-[90vw] overflow-hidden rounded-xl border border-ui-border bg-ui-surface shadow-xl">
+        <div className="flex items-center gap-2.5 border-b border-ui-border px-4 py-3 text-ui-subdued">
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
             <circle cx="11" cy="11" r="8" />
             <path d="M21 21l-4.35-4.35" />
           </svg>
@@ -78,13 +78,13 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
             onKeyDown={handleKeyDown}
             placeholder="Search visible entities and topics..."
             autoComplete="off"
-            className="flex-1 border-none bg-transparent text-sm text-stone-800 outline-none"
+            className="flex-1 border-none bg-transparent text-sm text-ui-text outline-none"
           />
         </div>
 
         <div className="max-h-[320px] overflow-y-auto p-1.5">
           {items.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-stone-400">No results found.</div>
+            <div className="px-3 py-4 text-sm text-ui-subdued">No results found.</div>
           ) : (
             items.map((n, i) => {
               const col = state.communities.get(n.community)?.color ?? "#78716c";
@@ -99,7 +99,7 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
                   }}
                   onMouseEnter={() => setSelection(i)}
                   className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                    isSel ? "bg-stone-100" : ""
+                    isSel ? "bg-ui-muted" : ""
                   }`}
                 >
                   <div
@@ -109,12 +109,12 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
                     {n.type[0].toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold text-stone-800">{n.label}</div>
-                    <div className="mt-0.5 truncate text-[9px] text-stone-400">
+                    <div className="truncate text-xs font-semibold text-ui-text">{n.label}</div>
+                    <div className="mt-0.5 truncate text-[9px] text-ui-subdued">
                       {commName} · {n.type}
                     </div>
                   </div>
-                  <span className="flex-shrink-0 rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[9px] text-stone-500">
+                  <span className="flex-shrink-0 rounded bg-ui-muted px-1.5 py-0.5 font-mono text-[9px] text-ui-subdued">
                     d{n.degree}
                   </span>
                 </div>
@@ -123,7 +123,7 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
           )}
         </div>
 
-        <div className="flex gap-4 border-t border-stone-200 px-4 py-2 font-mono text-[9px] text-stone-400">
+        <div className="flex gap-4 border-t border-ui-border px-4 py-2 font-mono text-[9px] text-ui-subdued">
           <span>
             <Kbd>↑</Kbd>
             <Kbd>↓</Kbd> Navigate
@@ -145,7 +145,7 @@ export function CommandPalette({ state, onSelectNode, onClose }: CommandPaletteP
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="mr-1 inline-block rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[9px] text-stone-500">
+    <kbd className="mr-1 inline-block rounded border border-ui-border bg-ui-muted px-1.5 py-0.5 text-[9px] text-ui-subdued">
       {children}
     </kbd>
   );

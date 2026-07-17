@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph — 5000 Nodes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#060610;--text:#e8e8f0;--muted:#5a5870;--border:rgba(255,255,255,0.06);--accent:#00e8c0;--surface:rgba(255,255,255,0.02)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;overflow:hidden;height:100vh;cursor:grab}
+body:active{cursor:grabbing}
+#cw{position:fixed;inset:0;z-index:1}
+canvas{display:block}
+body::after{content:'';position:fixed;inset:0;z-index:1000;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");opacity:.012}
+.hd{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 22px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
+.hd>*{pointer-events:auto}
+.hd h1{font-size:18px;font-weight:500}
+.hd .su{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-top:2px}
+.ss{display:flex;gap:18px}
+.si{text-align:right}
+.si .v{font-size:20px;font-family:'JetBrains Mono',monospace;color:var(--accent)}
+.si .l{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;margin-top:1px}
+.sw{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100}
+.sw input{width:200px;padding:7px 12px 7px 28px;background:rgba(8,8,16,.85);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;transition:all .3s}
+.sw input:focus{border-color:rgba(0,232,192,.2);width:280px}
+.sw input::placeholder{color:var(--muted);font-size:10px}
+.sw .ic{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
+.pnl{position:fixed;right:20px;top:50%;z-index:100;width:270px;background:rgba(10,10,22,.92);backdrop-filter:blur(30px);border:1px solid var(--border);border-radius:14px;padding:20px;opacity:0;pointer-events:none;transform:translateY(-50%) translateX(20px);transition:all .35s cubic-bezier(.22,.68,.35,1)}
+.pnl.on{opacity:1;pointer-events:auto;transform:translateY(-50%) translateX(0)}
+.pnl .tg{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:8px;text-transform:uppercase;letter-spacing:.12em;padding:2px 8px;border-radius:20px;margin-bottom:8px}
+.pnl h2{font-size:16px;font-weight:500;margin-bottom:6px;line-height:1.3}
+.pnl .ds{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);line-height:1.6;margin-bottom:12px}
+.pnl .ct{font-family:'JetBrains Mono',monospace;font-size:7px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:6px}
+.cl{display:flex;flex-wrap:wrap;gap:3px}
+.cp{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 7px;border-radius:14px;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .2s}
+.cp:hover{border-color:var(--accent);color:var(--accent)}
+.xb{position:absolute;top:8px;right:8px;width:20px;height:20px;border:none;background:rgba(255,255,255,.04);border-radius:50%;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.xb:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.lg{position:fixed;bottom:16px;left:22px;z-index:100;display:flex;flex-direction:column;gap:2px}
+.li{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--muted);padding:1px 0;transition:all .2s;cursor:pointer}
+.li:hover{color:var(--text)}
+.li.mu{opacity:.2}
+.ld{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.lc{font-size:7px;opacity:.5;margin-left:3px}
+.ht{position:fixed;bottom:16px;right:22px;z-index:100;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--muted);text-align:right;line-height:1.7}
+.ht kbd{display:inline-block;padding:0 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-size:7px;margin:0 1px}
+.ttp{position:fixed;z-index:200;background:rgba(10,10,22,.94);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text);pointer-events:none;opacity:0;transition:opacity .12s;white-space:nowrap}
+.ttp.on{opacity:1}
+#ld{position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);transition:opacity .6s}
+#ld.done{opacity:0;pointer-events:none}
+#ld .t{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+#ld .br{width:160px;height:2px;background:var(--border);border-radius:2px;margin-top:10px;overflow:hidden}
+#ld .bi{height:100%;width:0;background:var(--accent);transition:width .15s}
+@media(max-width:768px){.hd{padding:12px 14px}.lg,.ht{display:none}.pnl{width:230px;right:10px;padding:14px}.sw input{width:140px}.sw input:focus{width:180px}}
+</style>
+</head>
+<body>
+<div id="ld"><div class="t">Generating 5000 nodes…</div><div class="br"><div class="bi" id="pb"></div></div></div>
+<div class="hd"><div><h1>Knowledge Graph</h1><div class="su">5 000-Node Cluster Topology</div></div><div class="ss"><div class="si"><div class="v" id="nc">—</div><div class="l">Nodes</div></div><div class="si"><div class="v" id="ec">—</div><div class="l">Edges</div></div><div class="si"><div class="v" id="kc">—</div><div class="l">Clusters</div></div></div></div>
+<div class="sw"><span class="ic">⌕</span><input type="text" id="sInput" placeholder="Search nodes…" autocomplete="off"/></div>
+<div id="cw"></div>
+<div class="pnl" id="pnl"><button class="xb" id="cls">&times;</button><div class="tg" id="ptg"></div><h2 id="ptt"></h2><div class="ds" id="pds"></div><div class="ct">Connections</div><div class="cl" id="pcl"></div></div>
+<div class="lg" id="lge"></div>
+<div class="ht"><kbd>Drag</kbd> Rotate · <kbd>Scroll</kbd> Zoom · <kbd>Click</kbd> Inspect · <kbd>Esc</kbd> Close</div>
+<div class="ttp" id="ttp"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+var pb=document.getElementById('pb');
+function sp(v){pb.style.width=v+'%';}
+sp(3);
+
+var _s=42;function R(){_s=(_s*16807)%2147483647;return(_s-1)/2147483646;}
+
+var CAT={
+'AI & Machine Learning':{c:'#ff4d6a',n:500},
+'Software Engineering':{c:'#00c8ff',n:450},
+'Data Science':{c:'#ffc234',n:420},
+'Cloud & DevOps':{c:'#b06dff',n:400},
+'Cybersecurity':{c:'#ff5e3a',n:380},
+'Web Development':{c:'#00e8a0',n:360},
+'Mathematics':{c:'#ffde59',n:340},
+'Robotics & IoT':{c:'#36d986',n:330},
+'Mobile Development':{c:'#ff8c42',n:320},
+'Blockchain & Web3':{c:'#5b7fff',n:310},
+'Game Development':{c:'#ff69b4',n:300},
+'Bioinformatics':{c:'#00bfa5',n:290},
+'NLP & Linguistics':{c:'#e040fb',n:250},
+'Computer Graphics':{c:'#ffd740',n:180},
+'Quantum Computing':{c:'#40c4ff',n:170}
+};
+
+var PO={
+'AI & Machine Learning':'Neural Networks,Deep Learning,Transfer Learning,Attention Models,Transformers,GAN Architecture,VAE Models,Reinforcement Learning,Feature Engineering,Model Optimization,Embedding Space,Fine-Tuning,Few-Shot Learning,Contrastive Learning,Graph Networks,Bayesian Models,Object Detection,Semantic Segmentation,Image Classification,Anomaly Detection,Ensemble Methods,Active Learning,Federated Learning,Model Distillation,Prompt Engineering,In-Context Learning,Multi-Modal AI,Vision-Language,Speech Recognition,Text Generation',
+'Software Engineering':'Design Patterns,SOLID Principles,Clean Architecture,Domain-Driven Design,Event Sourcing,CQRS Pattern,Repository Pattern,Strategy Pattern,Observer Pattern,Test-Driven Dev,Refactoring,Agile Methodology,Scrum Framework,Kanban Boards,Version Control,Git Workflows,API Design,RESTful Architecture,gRPC Services,Message Queues,Database Design,Query Optimization,Performance Profiling,Load Testing,Feature Flags,Observability,Distributed Tracing,Documentation,Code Review,Technical Debt',
+'Data Science':'Exploratory Analysis,Statistical Testing,Regression Analysis,Time Series Forecast,Feature Engineering,Feature Scaling,Data Pipelines,Data Quality,Data Governance,A/B Test Design,Bayesian Testing,Causal Inference,Survival Analysis,Sampling Methods,Data Storytelling,Power BI,Jupyter Workflows,Geospatial Analysis,Text Preprocessing,Topic Modeling,Sentiment Analysis,Data Ethics,Bias Detection,Experiment Tracking,Model Registry,Feature Store,Synthetic Data,Data Catalog,Metadata Management,Data Lineage',
+'Cloud & DevOps':'Container Orchestration,Docker Compose,Kubernetes Pods,Helm Charts,CI/CD Pipelines,GitHub Actions,ArgoCD Deploy,Terraform Modules,Ansible Playbooks,Secret Management,AWS Lambda,S3 Storage,Service Mesh,Istio Config,API Gateways,Load Balancing,Auto Scaling,Multi-Cloud Strategy,Platform Engineering,Backstage,SRE Practices,Error Budgets,Incident Response,Runbook Automation,Cost Optimization,FinOps Practices,Compliance as Code,Zero Downtime Deploy,GitOps Workflow,SLO Monitoring',
+'Cybersecurity':'Vulnerability Scanning,Threat Modeling,Firewall Rules,Network Segmentation,TLS Configuration,Certificate Authority,OAuth Implementation,SSO Configuration,MFA Deployment,SIEM Tuning,Incident Handling,Forensic Imaging,Malware Sandboxing,Ransomware Defense,Phishing Defense,Endpoint Protection,Cloud Security,DevSecOps Pipeline,SAST Scanning,DAST Testing,Bug Bounty,Pen Test Methodology,Red Team Ops,Blue Team Defense,Threat Hunting,Security Awareness,GDPR Controls,Zero Trust Architecture,Identity Governance,Data Loss Prevention',
+'Web Development':'Semantic HTML,Accessibility,CSS Grid Layout,JavaScript Fundamentals,DOM Manipulation,Single Page Apps,Code Splitting,Lazy Loading,React Components,React Hooks,Next.js Server,Vue Composition,Svelte Components,Angular Signals,Tailwind CSS,Design Systems,Responsive Design,PWA Configuration,Service Workers,Core Web Vitals,Image Optimization,Form Validation,Rich Text Editing,State Management,Client-Side Routing,Bundle Analysis,Webpack Config,Vite Setup,TypeScript Patterns,API Integration',
+'Mathematics':'Group Theory,Linear Algebra,Real Analysis,Complex Analysis,Vector Calculus,Partial DEs,Stochastic Calculus,Markov Chains,Convex Optimization,Linear Programming,Monte Carlo Methods,Information Geometry,Category Theory,Number Theory,Dynamical Systems,Fourier Transform,Combinatorics,Mathematical Logic,Numerical Methods,Random Matrix Theory,Measure Theory,Functional Analysis,Algebraic Geometry,Proof Theory,Graph Theory,Optimization Theory,Bayesian Statistics,Matrix Factorization,Wavelet Analysis,Asymptotic Analysis',
+'Robotics & IoT':'Kinematics,Path Planning,Sensor Fusion,Kalman Filtering,LIDAR Integration,Visual SLAM,Auto Navigation,Manipulation,Grasp Planning,Human-Robot Interaction,ROS2 Framework,Microcontroller,Firmware Development,PID Tuning,PCB Design,MQTT Brokers,LoRaWAN Network,Edge Inference,TinyML Deploy,Digital Twin,Predictive Analytics,Smart Sensors,Home Automation,Industrial IoT,Agricultural Drones,Medical Wearables,Motion Planning,Force Control,Teleoperation,Safety Systems',
+'Mobile Development':'SwiftUI Views,Swift Concurrency,Combine Framework,Core Data,Jetpack Compose,Material Design 3,Room Database,WorkManager,React Native,Expo Framework,Flutter Widgets,Riverpod,Cross-Platform UI,MVVM Pattern,Offline First,Push Notifications,App Store Deploy,Mobile Analytics,Crash Reporting,AR Mobile,Biometric Auth,App Security,Accessibility Mobile,Mobile Testing,Kotlin Multiplatform,Background Tasks,Perf Optimization,UI Animations,Deep Linking,App Architecture',
+'Blockchain & Web3':'Consensus Algorithms,Proof of Stake,Smart Contracts,Solidity Patterns,DApp Development,Token Standards,DeFi Protocols,AMM Design,Lending Platforms,DAO Governance,Layer 2 Scaling,ZK Rollups,Zero Knowledge Proofs,Privacy Coins,Cross-Chain Bridges,Oracle Networks,MEV Analysis,Blockchain Storage,Tokenomics Design,Gas Optimization,Wallet Integration,NFT Marketplaces,Yield Farming,Governance Tokens,Flash Loans,Sidechain Design,Atomic Swaps,IPFS Storage,Vesting Schedules,Bonding Curves',
+'Game Development':'Game Loop Design,Entity Component Sys,Rendering Pipeline,Level of Detail,Shader Programming,PBR Materials,Particle Systems,Rigid Body Dynamics,Collision Detection,Skeletal Animation,Procedural Gen,Terrain Generation,Behavior Trees,NavMesh Building,Multiplayer Sync,Client Prediction,Matchmaking,Audio Engine,Spatial Audio,UI Framework,Game Analytics,Monetization Design,Inventory Systems,Dialogue Systems,Quest Management,Fluid Simulation,Inverse Kinematics,LOD Systems,Physics Engine,Animation Blending',
+'Bioinformatics':'Sequence Alignment,Genome Assembly,Variant Calling,Gene Expression,RNA-Seq Analysis,Single Cell RNA,ChIP-Seq Analysis,Protein Structure,Molecular Dynamics,Phylogenetics,Metagenomics,Drug Discovery,Virtual Screening,Clinical Genomics,Systems Biology,Epigenomics,Proteomics,Cancer Genomics,Biomarker Discovery,Motif Discovery,Pathway Analysis,Taxonomic Profiling,CRISPR Analysis,Structural Biology,Pharmacogenomics,Mass Spec Analysis,Network Analysis,Statistical Genetics,Protein Docking,Transcriptomics',
+'NLP & Linguistics':'Tokenization,Language Modeling,Dependency Parsing,Named Entity Rec,Machine Translation,Text Summarization,Question Answering,Dialogue Systems,Text Generation,Sentiment Analysis,Information Retrieval,Corpus Linguistics,Phonetics,Syntax Theory,Pragmatics,Multimodal NLP,Speech-to-Text,Low-Resource NLP,Code Generation,Semantic Parsing,Coreference Res,Relation Extraction,Opinion Mining,Dense Retrieval,Emotion Detection,Distributional Semantics,Factual Consistency,Toxicity Detection,Code Understanding,Cross-Lingual',
+'Computer Graphics':'Ray Tracing,Path Tracing,Global Illumination,Shadow Mapping,Anti-Aliasing,HDR Rendering,Post-Processing,Geometry Processing,Texture Mapping,PBR Rendering,Skeletal Anim,Hair Simulation,Water Simulation,Cloud Rendering,Compositing,Scene Graph,GPU Architecture,Real-Time GI,Displacement Maps,Normal Mapping,Fur Rendering,Volumetric Fog,Color Grading,Depth of Field,Motion Blur,Render Layers,Mesh Decimation,UV Unwrapping,Light Probes,Reflection Probes',
+'Quantum Computing':'Qubit Systems,Quantum Gates,Circuit Model,Quantum Fourier,Grover Search,Shor Algorithm,VQE Algorithm,Quantum Annealing,Error Correction,Surface Codes,Noise Models,Quantum ML,Quantum Simulation,Quantum Crypto,QKD Networks,Quantum Networking,Quantum Memory,NISQ Devices,Superconducting QC,Trapped Ion QC,Topological QC,Photonic QC,Qiskit Framework,Quantum Software,Fault Tolerant,Adiabatic QC,Amplitude Amplify,Phase Estimation,Entanglement,Decoherence'
+};
+
+var CK=Object.keys(CAT);
+var nodes=[],nmap={};
+CK.forEach(function(cat){
+  var info=CAT[cat],pool=(PO[cat]||'').split(',');
+  for(var i=0;i<info.n;i++){
+    var base=pool[i%pool.length]||('Topic '+(i+1));
+    var suf=i>=pool.length?' '+(Math.floor(i/pool.length)+1):'';
+    var id=cat+'_'+i;
+    var nd={id:id,label:base+suf,cat:cat,idx:nodes.length,nb:[],degree:0};
+    nodes.push(nd);nmap[id]=nd;
+  }
+});
+var N=nodes.length;sp(10);
+
+var edges=[],eset={};
+var adj={};nodes.forEach(function(n){adj[n.id]={};});
+function ae(a,b){
+  if(a===b)return;var k=a<b?a+'|'+b:b+'|'+a;
+  if(eset[k])return;eset[k]=1;edges.push([a,b]);
+  adj[a][b]=1;adj[b][a]=1;
+}
+
+// Generate edges
+CK.forEach(function(cat){
+  var cn=nodes.filter(function(n){return n.cat===cat;});
+  for(var i=0;i<cn.length;i++)for(var j=i+1;j<cn.length;j++)if(R()<0.017)ae(cn[i].id,cn[j].id);
+});
+for(var i=0;i<N;i++)for(var j=i+1;j<N;j++){
+  if(nodes[i].cat===nodes[j].cat)continue;
+  if(R()<0.00003)ae(nodes[i].id,nodes[j].id);
+}
+var E=edges.length;
+
+// Compute degree for each node
+nodes.forEach(function(n){n.nb=Object.keys(adj[n.id]);n.degree=n.nb.length;});
+sp(18);
+
+var Rm=30,t1v=(1+Math.sqrt(5))/2;
+var iv=[[-1,t1v,0],[1,t1v,0],[-1,-t1v,0],[1,-t1v,0],[0,-1,t1v],[0,1,t1v],[0,-1,-t1v],[0,1,-t1v],[t1v,0,-1],[t1v,0,1],[-t1v,0,-1],[-t1v,0,1],[0,t1v,1],[0,-t1v,-1],[t1v,1,0]].map(function(v){
+  var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);return{x:v[0]/l*Rm,y:v[1]/l*Rm,z:v[2]/l*Rm};
+});
+var CC={};CK.forEach(function(k,i){CC[k]=iv[i%iv.length];});
+
+// ★ CENTRALITY-BASED PLACEMENT ★
+// Nodes with most edges → center, nodes with least edges → outer shell
+var NP={};
+CK.forEach(function(cat){
+  var cn=nodes.filter(function(n){return n.cat===cat;});
+  var c=CC[cat];
+  var maxR=3+Math.sqrt(CAT[cat].n)*0.35;  // cluster outer radius
+
+  // Sort by degree DESC: highest degree = closest to center
+  var sorted=cn.slice().sort(function(a,b){return b.degree-a.degree;});
+
+  var len=sorted.length;
+  sorted.forEach(function(nd,i){
+    // Map rank [0..len-1] to normalized t [0..1]
+    var t=len>1?i/(len-1):0;
+
+    // Concentric shell: sqrt distributes nodes more evenly across volume
+    // t=0 → center (high degree), t=1 → surface (low degree)
+    var shellR=maxR*Math.pow(t,0.65);  // 0.65 exponent concentrates more nodes near center
+
+    // Spread within shell using golden-section spiral for even distribution
+    var phi=Math.acos(1-2*(i+.5)/len);
+    var th=Math.PI*(1+Math.sqrt(5))*i;
+
+    // Small jitter so it's not a perfect grid
+    var jitter=0.15*shellR;
+    shellR += (R()-.5)*jitter*2;
+    if(shellR<0)shellR=0.15;
+
+    var dx=Math.sin(phi)*Math.cos(th);
+    var dy=Math.sin(phi)*Math.sin(th);
+    var dz=Math.cos(phi);
+
+    NP[nd.id]={
+      x:c.x+shellR*dx,
+      y:c.y+shellR*dy,
+      z:c.z+shellR*dz
+    };
+  });
+});sp(28);
+
+// Force simulation — preserve centrality ordering by using springs toward rank-based ideal positions
+var VL={};nodes.forEach(function(n){VL[n.id]={x:0,y:0,z:0};});
+var SIM=70;
+for(var it=0;it<SIM;it++){
+  // Intra-cluster repulsion
+  CK.forEach(function(cat){
+    var cn=nodes.filter(function(n){return n.cat===cat;}),len=cn.length;
+    for(var i=0;i<len;i++)for(var j=i+1;j<len;j++){
+      var a=NP[cn[i].id],b=NP[cn[j].id];
+      var dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z;
+      var d2=dx*dx+dy*dy+dz*dz+.1,d=Math.sqrt(d2),f=2.8/d2;
+      var fx=dx/d*f,fy=dy/d*f,fz=dz/d*f;
+      VL[cn[i].id].x+=fx;VL[cn[i].id].y+=fy;VL[cn[i].id].z+=fz;
+      VL[cn[j].id].x-=fx;VL[cn[j].id].y-=fy;VL[cn[j].id].z-=fz;
+    }
+  });
+  // Edge springs
+  for(var e=0;e<E;e++){
+    var ea=edges[e][0],eb=edges[e][1],a=NP[ea],b=NP[eb];
+    var dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z;
+    var d=Math.sqrt(dx*dx+dy*dy+dz*dz)+.001;
+    var same=nmap[ea].cat===nmap[eb].cat;
+    var k2=same?.035:.0025,rest=same?2.2:7,f2=k2*(d-rest);
+    var fx2=dx/d*f2,fy2=dy/d*f2,fz2=dz/d*f2;
+    VL[ea].x+=fx2;VL[ea].y+=fy2;VL[ea].z+=fz2;
+    VL[eb].x-=fx2;VL[eb].y-=fy2;VL[eb].z-=fz2;
+  }
+  // Attract back to cluster center + centrality spring
+  nodes.forEach(function(n){
+    var c=CC[n.cat],p=NP[n.id],v=VL[n.id];
+    // Cluster gravity
+    v.x+=(c.x-p.x)*.02;v.y+=(c.y-p.y)*.02;v.z+=(c.z-p.z)*.02;
+    v.x*=.78;v.y*=.78;v.z*=.78;
+    p.x+=v.x;p.y+=v.y;p.z+=v.z;
+  });
+  if(it%14===13)sp(28+Math.floor(it/SIM*35));
+}
+sp(65);
+
+var cont=document.getElementById('cw');
+var scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x060610,.004);
+var cam=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,.1,600);
+cam.position.set(0,18,80);
+var ren=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+ren.setSize(innerWidth,innerHeight);ren.setPixelRatio(Math.min(devicePixelRatio,2));
+ren.toneMapping=THREE.ACESFilmicToneMapping;ren.toneMappingExposure=1;
+cont.appendChild(ren.domElement);
+
+scene.add(new THREE.AmbientLight(0x181830,.5));
+var dl=new THREE.DirectionalLight(0xffffff,.15);dl.position.set(20,30,10);scene.add(dl);
+CK.forEach(function(k){var c=CC[k],pl=new THREE.PointLight(new THREE.Color(CAT[k].c),1.2,25);pl.position.set(c.x,c.y,c.z);scene.add(pl);});
+
+// ★ NODE SIZE BASED ON DEGREE ★ — high-degree nodes are bigger
+var maxDeg=0;nodes.forEach(function(n){if(n.degree>maxDeg)maxDeg=n.degree;});
+
+var origC=new Float32Array(N*3),nodeS=new Float32Array(N),positions=new Float32Array(N*3);
+nodes.forEach(function(nd,i){
+  var p=NP[nd.id],col=new THREE.Color(CAT[nd.cat].c);
+  positions[i*3]=p.x;positions[i*3+1]=p.y;positions[i*3+2]=p.z;
+  origC[i*3]=col.r;origC[i*3+1]=col.g;origC[i*3+2]=col.b;
+  // Size: degree-based so hub nodes are visually larger
+  var degNorm=maxDeg>0?nd.degree/maxDeg:0;
+  nodeS[i]=4+degNorm*12;  // range: 4 to 16
+});
+var curC=new Float32Array(origC);
+var pGeo=new THREE.BufferGeometry();
+pGeo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+pGeo.setAttribute('customColor',new THREE.BufferAttribute(curC,3));
+pGeo.setAttribute('size',new THREE.BufferAttribute(nodeS,1));
+
+var nodeMat=new THREE.ShaderMaterial({
+  vertexShader:[
+    'attribute float size;',
+    'attribute vec3 customColor;',
+    'varying vec3 vCol;',
+    'void main(){',
+    '  vCol=customColor;',
+    '  vec4 mv=modelViewMatrix*vec4(position,1.0);',
+    '  gl_PointSize=clamp(size*(110.0/-mv.z),2.0,40.0);',
+    '  gl_Position=projectionMatrix*mv;',
+    '}'
+  ].join('\n'),
+  fragmentShader:[
+    'varying vec3 vCol;',
+    'void main(){',
+    '  float d=length(gl_PointCoord-vec2(0.5));',
+    '  if(d>0.47) discard;',
+    '  float shade=0.7+0.5*max(1.0-d*2.15,0.0);',
+    '  vec3 col=vCol*shade;',
+    '  col*=1.0-smoothstep(0.3,0.47,d)*0.35;',
+    '  gl_FragColor=vec4(col,1.0);',
+    '}'
+  ].join('\n')
+});
+scene.add(new THREE.Points(pGeo,nodeMat));
+sp(72);
+
+// Edges
+var ePos=new Float32Array(E*6),eCol=new Float32Array(E*6),origEC=new Float32Array(E*6);
+edges.forEach(function(ep,i){
+  var a=NP[ep[0]],b=NP[ep[1]];
+  ePos[i*6]=a.x;ePos[i*6+1]=a.y;ePos[i*6+2]=a.z;
+  ePos[i*6+3]=b.x;ePos[i*6+4]=b.y;ePos[i*6+5]=b.z;
+  var ca=new THREE.Color(CAT[nmap[ep[0]].cat].c),cb=new THREE.Color(CAT[nmap[ep[1]].cat].c);
+  origEC[i*6]=ca.r;origEC[i*6+1]=ca.g;origEC[i*6+2]=ca.b;
+  origEC[i*6+3]=cb.r;origEC[i*6+4]=cb.g;origEC[i*6+5]=cb.b;
+});
+eCol.set(origEC);
+var eGeo=new THREE.BufferGeometry();
+eGeo.setAttribute('position',new THREE.BufferAttribute(ePos,3));
+eGeo.setAttribute('color',new THREE.BufferAttribute(eCol,3));
+var eMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.38,depthWrite:false});
+scene.add(new THREE.LineSegments(eGeo,eMat));
+
+// Cluster glow shells
+var sg=new THREE.Group();
+CK.forEach(function(k){
+  var c=CC[k],r=3+Math.sqrt(CAT[k].n)*0.35;
+  [1.4,1.15].forEach(function(m,j){
+    var g=new THREE.SphereGeometry(r*m,12,12);
+    var mt=new THREE.MeshBasicMaterial({color:new THREE.Color(CAT[k].c),transparent:true,opacity:j?.006:.011,side:THREE.BackSide,depthWrite:false});
+    var ms=new THREE.Mesh(g,mt);ms.position.set(c.x,c.y,c.z);sg.add(ms);
+  });
+});
+scene.add(sg);
+
+// Distant particles
+var ppC=500,ppGeo=new THREE.BufferGeometry(),ppA=new Float32Array(ppC*3),ppSp=[];
+for(var i=0;i<ppC;i++){ppA[i*3]=(R()-.5)*150;ppA[i*3+1]=(R()-.5)*150;ppA[i*3+2]=(R()-.5)*150;ppSp.push(.004+R()*.012);}
+ppGeo.setAttribute('position',new THREE.BufferAttribute(ppA,3));
+scene.add(new THREE.Points(ppGeo,new THREE.PointsMaterial({size:.04,color:0x2a2a40,transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false})));
+
+// Camera controls
+var drag=false,pmx=0,pmy=0,sph={theta:0,phi:Math.PI*.45,r:85},tgt=new THREE.Vector3(0,0,0);
+ren.domElement.addEventListener('mousedown',function(e){drag=true;pmx=e.clientX;pmy=e.clientY;});
+window.addEventListener('mouseup',function(){drag=false;});
+window.addEventListener('mousemove',function(e){if(!drag)return;sph.theta-=(e.clientX-pmx)*.004;sph.phi-=(e.clientY-pmy)*.004;sph.phi=Math.max(.12,Math.min(Math.PI-.12,sph.phi));pmx=e.clientX;pmy=e.clientY;});
+ren.domElement.addEventListener('wheel',function(e){sph.r+=e.deltaY*.035;sph.r=Math.max(18,Math.min(180,sph.r));e.preventDefault();},{passive:false});
+var tS=null,tD=null;
+ren.domElement.addEventListener('touchstart',function(e){if(e.touches.length===1)tS={x:e.touches[0].clientX,y:e.touches[0].clientY};else if(e.touches.length===2)tD=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);});
+ren.domElement.addEventListener('touchmove',function(e){e.preventDefault();if(e.touches.length===1&&tS){sph.theta-=(e.touches[0].clientX-tS.x)*.004;sph.phi-=(e.touches[0].clientY-tS.y)*.004;sph.phi=Math.max(.12,Math.min(Math.PI-.12,sph.phi));tS={x:e.touches[0].clientX,y:e.touches[0].clientY};}else if(e.touches.length===2&&tD){var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);sph.r*=tD/d;sph.r=Math.max(18,Math.min(180,sph.r));tD=d;}},{passive:false});
+ren.domElement.addEventListener('touchend',function(){tS=null;tD=null;});
+
+// Hover & click
+var msS={x:-999,y:-999},_vec=new THREE.Vector3(),ttp=document.getElementById('ttp');
+var hovIdx=-1,selIdx=-1;
+window.addEventListener('mousemove',function(e){msS={x:e.clientX,y:e.clientY};});
+ren.domElement.addEventListener('click',function(){if(hovIdx>=0)doSel(hovIdx);else doDesel();});
+
+function findHov(){
+  var best=-1,bestD=16;
+  for(var i=0;i<N;i++){
+    _vec.set(positions[i*3],positions[i*3+1],positions[i*3+2]).project(cam);
+    if(_vec.z>1)continue;
+    var sx=(_vec.x*.5+.5)*innerWidth,sy=(-_vec.y*.5+.5)*innerHeight;
+    var d=Math.hypot(msS.x-sx,msS.y-sy);
+    if(d<bestD){bestD=d;best=i;}
+  }
+  return best;
+}
+
+function doSel(idx){
+  selIdx=idx;hovIdx=-1;ttp.classList.remove('on');
+  var nd=nodes[idx],nbSet={};nd.nb.forEach(function(nid){nbSet[nid]=1;});
+  var arr=pGeo.attributes.customColor.array;
+  for(var i=0;i<N;i++){
+    var f;
+    if(i===idx)f=1.6;
+    else if(nbSet[nodes[i].id])f=1;
+    else f=.12;
+    arr[i*3]=Math.min(origC[i*3]*f,1);arr[i*3+1]=Math.min(origC[i*3+1]*f,1);arr[i*3+2]=Math.min(origC[i*3+2]*f,1);
+  }
+  pGeo.attributes.customColor.needsUpdate=true;
+  var ea=eGeo.attributes.color.array;
+  for(var i=0;i<E;i++){
+    var rel=(edges[i][0]===nd.id||edges[i][1]===nd.id);
+    var f2=rel?1:.06;
+    ea[i*6]=origEC[i*6]*f2;ea[i*6+1]=origEC[i*6+1]*f2;ea[i*6+2]=origEC[i*6+2]*f2;
+    ea[i*6+3]=origEC[i*6+3]*f2;ea[i*6+4]=origEC[i*6+4]*f2;ea[i*6+5]=origEC[i*6+5]*f2;
+  }
+  eGeo.attributes.color.needsUpdate=true;eMat.opacity=0.55;
+  var col=new THREE.Color(CAT[nd.cat].c);
+  document.getElementById('ptg').textContent=nd.cat;
+  document.getElementById('ptg').style.background=col.getStyle()+'12';
+  document.getElementById('ptg').style.color=col.getStyle();
+  document.getElementById('ptt').textContent=nd.label;
+  document.getElementById('pds').textContent='Topic in '+nd.cat+' — '+nd.degree+' connections';
+  var pcl=document.getElementById('pcl');pcl.innerHTML='';
+  var cnt=0;
+  nd.nb.forEach(function(nid){if(++cnt>30)return;var n2=nmap[nid];if(!n2)return;
+    var pill=document.createElement('span');pill.className='cp';pill.textContent=n2.label;
+    pill.addEventListener('click',function(){doSel(n2.idx);});pcl.appendChild(pill);});
+  document.getElementById('pnl').classList.add('on');
+}
+
+function doDesel(){
+  selIdx=-1;hovIdx=-1;ttp.classList.remove('on');
+  curC.set(origC);pGeo.attributes.customColor.needsUpdate=true;
+  eCol.set(origEC);eGeo.attributes.color.needsUpdate=true;
+  eMat.opacity=0.38;
+  document.getElementById('pnl').classList.remove('on');
+}
+
+document.getElementById('cls').addEventListener('click',doDesel);
+document.addEventListener('keydown',function(e){if(e.key==='Escape')doDesel();});
+
+document.getElementById('sInput').addEventListener('input',function(e){
+  var q=e.target.value.toLowerCase().trim();
+  if(!q){if(selIdx>=0)doSel(selIdx);else doDesel();return;}
+  selIdx=-1;var arr=pGeo.attributes.customColor.array;
+  for(var i=0;i<N;i++){
+    var nd=nodes[i],ok=nd.label.toLowerCase().indexOf(q)>=0||nd.cat.toLowerCase().indexOf(q)>=0;
+    var f=ok?1:.08;
+    arr[i*3]=origC[i*3]*f;arr[i*3+1]=origC[i*3+1]*f;arr[i*3+2]=origC[i*3+2]*f;
+  }
+  pGeo.attributes.customColor.needsUpdate=true;eMat.opacity=.06;
+});
+
+// Legend
+var lEl=document.getElementById('lge'),mCats={};
+CK.forEach(function(k){
+  var d=document.createElement('div');d.className='li';
+  d.innerHTML='<div class="ld" style="background:'+CAT[k].c+';box-shadow:0 0 4px '+CAT[k].c+'44"></div>'+k+'<span class="lc">'+CAT[k].n+'</span>';
+  d.addEventListener('click',function(){
+    if(mCats[k]){delete mCats[k];d.classList.remove('mu');}else{mCats[k]=1;d.classList.add('mu');}
+    var arr=pGeo.attributes.customColor.array;
+    for(var i=0;i<N;i++){
+      var f=mCats[nodes[i].cat]?.08:1;
+      arr[i*3]=origC[i*3]*f;arr[i*3+1]=origC[i*3+1]*f;arr[i*3+2]=origC[i*3+2]*f;
+    }
+    pGeo.attributes.customColor.needsUpdate=true;
+  });
+  lEl.appendChild(d);
+});
+
+document.getElementById('nc').textContent=N;document.getElementById('ec').textContent=E;document.getElementById('kc').textContent=CK.length;
+sp(100);setTimeout(function(){document.getElementById('ld').classList.add('done');},350);
+
+// Render loop
+var clk=new THREE.Clock(),autoR=false,idleT;
+function resetIdle(){autoR=false;clearTimeout(idleT);idleT=setTimeout(function(){autoR=true;},5000);}
+['mousemove','mousedown','wheel','touchstart'].forEach(function(e){window.addEventListener(e,resetIdle);});resetIdle();
+
+function animate(){
+  requestAnimationFrame(animate);
+  var t=clk.getElapsedTime();
+  cam.position.x=tgt.x+sph.r*Math.sin(sph.phi)*Math.sin(sph.theta);
+  cam.position.y=tgt.y+sph.r*Math.cos(sph.phi);
+  cam.position.z=tgt.z+sph.r*Math.sin(sph.phi)*Math.cos(sph.theta);
+  cam.lookAt(tgt);
+  var nH=findHov();
+  if(nH!==hovIdx){
+    if(selIdx<0&&hovIdx>=0){
+      var arr=pGeo.attributes.customColor.array,i=hovIdx;
+      arr[i*3]=origC[i*3];arr[i*3+1]=origC[i*3+1];arr[i*3+2]=origC[i*3+2];
+      pGeo.attributes.customColor.needsUpdate=true;
+    }
+    hovIdx=nH;
+    if(hovIdx>=0){
+      if(selIdx<0){
+        var arr2=pGeo.attributes.customColor.array,i2=hovIdx;
+        arr2[i2*3]=Math.min(origC[i2*3]*1.5,1);arr2[i2*3+1]=Math.min(origC[i2*3+1]*1.5,1);arr2[i2*3+2]=Math.min(origC[i2*3+2]*1.5,1);
+        pGeo.attributes.customColor.needsUpdate=true;
+      }
+      var nd=nodes[hovIdx];
+      ttp.innerHTML='<span style="color:'+CAT[nd.cat].c+'">&#9679;</span> '+nd.label+'<span style="color:#5a5870;font-size:8px;margin-left:6px">'+nd.degree+' links</span>';
+      ttp.style.left=(msS.x+14)+'px';ttp.style.top=(msS.y-10)+'px';ttp.classList.add('on');
+    }else{ttp.classList.remove('on');}
+  }else if(hovIdx>=0){ttp.style.left=(msS.x+14)+'px';ttp.style.top=(msS.y-10)+'px';}
+  sg.children.forEach(function(s,i){s.rotation.y=t*.02*(i%2?1:-1);});
+  var pp=ppGeo.attributes.position.array;
+  for(var i=0;i<ppC;i++){pp[i*3+1]+=ppSp[i]*.1;if(pp[i*3+1]>75)pp[i*3+1]=-75;}
+  ppGeo.attributes.position.needsUpdate=true;
+  if(autoR&&!drag)sph.theta+=.0012;
+  ren.render(scene,cam);
+}
+animate();
+window.addEventListener('resize',function(){cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight);});
+})();
+</script>
+</body>
+</html>

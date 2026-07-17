@@ -41,6 +41,8 @@ MAX_PATH_DEPTH = 4
 MAX_PATH_RELATIONS = 200
 MAX_SUBGRAPH_DEPTH = 2
 MAX_SUBGRAPH_RELATIONS = 400
+MAX_EXPLORER_NODES = 3_000
+MAX_EXPLORER_RELATIONS = 5_000
 MAX_RELATION_CITATIONS = 20
 GRAPH_CANDIDATE_LIMIT = 2_000
 LOW_SIGNAL_ENTITY_TYPES = {
@@ -238,6 +240,16 @@ class ExplorerView(BaseModel):
     nodes: list[ExplorerNode]
     relations: list[ExplorerRelation]
     communities: list[ExplorerCommunity]
+
+
+class ExplorerNodePage(BaseModel):
+    nodes: list[ExplorerNode]
+    next_cursor: str | None = None
+
+
+class ExplorerRelationPage(BaseModel):
+    relations: list[ExplorerRelation]
+    next_cursor: str | None = None
 
 
 def entity_view(item: CanonicalEntity) -> EntityView:
@@ -742,8 +754,8 @@ async def explorer(
     dataset_id: str,
     project: Project,
     db: Db,
-    node_limit: int = Query(100, ge=1, le=MAX_NODES),
-    relation_limit: int = Query(200, ge=1, le=MAX_NODES),
+    node_limit: int = Query(MAX_EXPLORER_NODES, ge=1, le=MAX_EXPLORER_NODES),
+    relation_limit: int = Query(MAX_EXPLORER_RELATIONS, ge=1, le=MAX_EXPLORER_RELATIONS),
     community_level: int = Query(0, ge=0, le=2),
 ) -> ExplorerView:
     """Bounded Postgres graph view. Analytics enriches but never gates nodes."""
@@ -837,7 +849,10 @@ async def explorer(
                 & (GraphAnalyticsEntityMetric.run_id == latest.id),
             )
             .where(*base_entities)
-            .order_by(GraphAnalyticsEntityMetric.importance.desc(), CanonicalEntity.id)
+            .order_by(
+                GraphAnalyticsEntityMetric.importance.desc(),
+                CanonicalEntity.id,
+            )
             .limit(node_limit)
         )
         nodes = [
@@ -943,6 +958,149 @@ async def explorer(
             for item in relation_rows
         ],
         communities=communities,
+    )
+
+
+@router.get(
+    "/datasets/{dataset_id}/graph/explorer/nodes", response_model=ExplorerNodePage
+)
+async def explorer_nodes(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    cursor: str | None = Query(None, max_length=64),
+    limit: int = Query(MAX_EXPLORER_NODES, ge=1, le=MAX_EXPLORER_NODES),
+    community_level: int = Query(0, ge=0, le=2),
+) -> ExplorerNodePage:
+    """Keyset-paged supported nodes; analytics enriches but never gates rows."""
+    await owned(db, project, dataset_id)
+    latest = await db.scalar(
+        select(GraphAnalyticsRun)
+        .where(
+            GraphAnalyticsRun.project_id == project.project_id,
+            GraphAnalyticsRun.dataset_id == dataset_id,
+        )
+        .order_by(GraphAnalyticsRun.created_at.desc(), GraphAnalyticsRun.id.desc())
+        .limit(1)
+    )
+    filters: list[ColumnElement[bool]] = [
+        CanonicalEntity.project_id == project.project_id,
+        CanonicalEntity.dataset_id == dataset_id,
+        supported_entity(),
+    ]
+    if cursor is not None:
+        filters.append(CanonicalEntity.id > cursor)
+    if latest is None:
+        rows = list(
+            await db.scalars(
+                select(CanonicalEntity)
+                .where(*filters)
+                .order_by(CanonicalEntity.id)
+                .limit(limit + 1)
+            )
+        )
+        has_more = len(rows) > limit
+        entity_page = rows[:limit]
+        nodes = [
+            ExplorerNode(
+                id=item.id,
+                canonical_name=item.canonical_name,
+                entity_type=item.entity_type,
+                community_id=None,
+                degree=0,
+                weighted_degree=0.0,
+                importance=0.0,
+            )
+            for item in entity_page
+        ]
+    else:
+        result = list(
+            await db.execute(
+                select(
+                    CanonicalEntity,
+                    GraphAnalyticsMembership.community_id,
+                    GraphAnalyticsEntityMetric,
+                )
+                .outerjoin(
+                    GraphAnalyticsMembership,
+                    (GraphAnalyticsMembership.entity_id == CanonicalEntity.id)
+                    & (GraphAnalyticsMembership.run_id == latest.id)
+                    & (GraphAnalyticsMembership.level == community_level),
+                )
+                .outerjoin(
+                    GraphAnalyticsEntityMetric,
+                    (GraphAnalyticsEntityMetric.entity_id == CanonicalEntity.id)
+                    & (GraphAnalyticsEntityMetric.run_id == latest.id),
+                )
+                .where(*filters)
+                .order_by(CanonicalEntity.id)
+                .limit(limit + 1)
+            )
+        )
+        has_more = len(result) > limit
+        metric_page = result[:limit]
+        nodes = [
+            ExplorerNode(
+                id=item.id,
+                canonical_name=item.canonical_name,
+                entity_type=item.entity_type,
+                community_id=community_id,
+                degree=0 if metric is None else metric.degree,
+                weighted_degree=0.0 if metric is None else metric.weighted_degree,
+                importance=0.0 if metric is None else metric.importance,
+            )
+            for item, community_id, metric in metric_page
+        ]
+    return ExplorerNodePage(
+        nodes=nodes,
+        next_cursor=nodes[-1].id if has_more and nodes else None,
+    )
+
+
+@router.get(
+    "/datasets/{dataset_id}/graph/explorer/relations",
+    response_model=ExplorerRelationPage,
+)
+async def explorer_relations(
+    dataset_id: str,
+    project: Project,
+    db: Db,
+    cursor: str | None = Query(None, max_length=64),
+    limit: int = Query(MAX_EXPLORER_RELATIONS, ge=1, le=MAX_EXPLORER_RELATIONS),
+) -> ExplorerRelationPage:
+    """Keyset-paged relations independent of node pages, preserving cross-page edges."""
+    await owned(db, project, dataset_id)
+    filters: list[ColumnElement[bool]] = [
+        RelationAssertion.project_id == project.project_id,
+        RelationAssertion.dataset_id == dataset_id,
+        supported_relation(),
+    ]
+    if cursor is not None:
+        filters.append(RelationAssertion.id > cursor)
+    rows = list(
+        await db.scalars(
+            select(RelationAssertion)
+            .where(*filters)
+            .order_by(RelationAssertion.id)
+            .limit(limit + 1)
+        )
+    )
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    relations = [
+        ExplorerRelation(
+            id=item.id,
+            source=item.source_entity_id,
+            target=item.target_entity_id,
+            type=item.relation_type,
+            weight=float(item.confidence),
+            confidence=item.confidence,
+        )
+        for item in page
+    ]
+    return ExplorerRelationPage(
+        relations=relations,
+        next_cursor=relations[-1].id if has_more and relations else None,
     )
 
 

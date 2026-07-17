@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { projectsApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { useAuthStore } from "../store/auth";
+import { ThemeControl } from "../components/ThemeControl";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -49,8 +50,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-stone-100 px-4">
-      <div className="w-full max-w-md rounded-xl border border-stone-200 bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-ui-canvas px-4">
+      <div className="w-full max-w-md rounded-xl border border-ui-border bg-ui-surface p-8 shadow-sm">
+        <div className="mb-5 flex justify-end"><ThemeControl /></div>
         <h1 className="text-2xl font-semibold text-stone-900">OpenGraphMemory</h1>
         <p className="mt-1 text-sm text-stone-500">
           Enter project credentials to access the dashboard.
@@ -95,7 +97,7 @@ export default function LoginPage() {
             />
             <button
               type="submit"
-              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-ui-inverse hover:bg-stone-700"
             >
               Sign In
             </button>
@@ -107,7 +109,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-50"
+              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-ui-inverse hover:bg-stone-700 disabled:opacity-50"
             >
               {busy ? "Creating…" : "Create Project"}
             </button>

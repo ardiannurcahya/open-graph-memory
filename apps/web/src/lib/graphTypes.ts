@@ -21,7 +21,6 @@ export interface GraphEdge {
   target: string;
   label: string;
   weight: number;
-  particles: number[];
 }
 
 export interface CommunityInfo {
@@ -29,6 +28,14 @@ export interface CommunityInfo {
   name: string;
   color: string;
   darkColor: string;
+}
+
+export interface CommunityLayout {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  nodeCount: number;
 }
 
 export interface CameraState {
@@ -42,17 +49,10 @@ export interface GraphState {
   edges: GraphEdge[];
   adj: Map<string, GraphEdge[]>;
   communities: Map<string, CommunityInfo>;
+  communityLayout: Map<string, CommunityLayout>;
+  seedPositions: Map<string, [number, number]>;
   maxDegree: number;
 }
-
-export const SHAPE_MAP: Record<EntityType, string> = {
-  person: "circle",
-  org: "roundRect",
-  tech: "star",
-  concept: "diamond",
-  document: "rect",
-  unknown: "circle",
-};
 
 export function classifyEntityType(raw: string): EntityType {
   const lower = raw.trim().toLowerCase();

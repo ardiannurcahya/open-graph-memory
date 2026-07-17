@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import LoginPage from "./LoginPage";
 import { useAuthStore } from "../store/auth";
+import { ThemeProvider } from "../theme";
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -18,9 +19,10 @@ describe("LoginPage", () => {
   it("shows error when fields empty on connect", async () => {
     render(
       <MemoryRouter>
-        <LoginPage />
+        <ThemeProvider><LoginPage /></ThemeProvider>
       </MemoryRouter>,
     );
+    expect(screen.getByRole("group", { name: "Theme" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Sign In" }));
     expect(screen.getByText("API key and project ID are required")).toBeInTheDocument();
   });
@@ -28,7 +30,7 @@ describe("LoginPage", () => {
   it("connects and stores credentials", async () => {
     render(
       <MemoryRouter>
-        <LoginPage />
+        <ThemeProvider><LoginPage /></ThemeProvider>
       </MemoryRouter>,
     );
     await userEvent.type(screen.getByLabelText("Project ID"), "11111111-2222-3333-4444-555555555555");
@@ -50,7 +52,7 @@ describe("LoginPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(
       <MemoryRouter>
-        <LoginPage />
+        <ThemeProvider><LoginPage /></ThemeProvider>
       </MemoryRouter>,
     );
     await userEvent.click(screen.getByRole("button", { name: "Create New" }));

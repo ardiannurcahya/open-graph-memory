@@ -17,26 +17,26 @@ export function Inspector({ node, state, onSelectNode, onClose }: InspectorProps
   return (
     <div
       id="inspector"
-      className="absolute right-0 top-0 bottom-0 z-20 flex w-80 flex-col gap-3 overflow-y-auto border-l border-stone-200 bg-white p-4"
+      className="absolute right-0 top-0 bottom-0 z-20 flex w-80 flex-col gap-3 overflow-y-auto border-l border-ui-border bg-ui-surface p-4"
     >
       <button
         onClick={onClose}
-        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded border border-stone-200 text-stone-500 hover:bg-stone-100"
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded border border-ui-border text-ui-subdued hover:bg-ui-muted"
       >
         ×
       </button>
 
-      <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
-        <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-stone-500">
+      <div className="rounded-lg border border-ui-border bg-ui-muted p-4">
+        <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-ui-subdued">
           {node.type} · {commName}
         </div>
-        <div className="text-lg font-semibold leading-tight text-stone-900">{node.label}</div>
-        <div className="mt-2 text-sm leading-relaxed text-stone-600">
+        <div className="text-lg font-semibold leading-tight text-ui-text">{node.label}</div>
+        <div className="mt-2 text-sm leading-relaxed text-ui-subdued">
           {node.description || "No description available."}
         </div>
       </div>
 
-      <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
+      <div className="rounded-lg border border-ui-border bg-ui-muted p-4">
         <div className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-stone-400">
           Connectivity
         </div>
@@ -57,7 +57,7 @@ export function Inspector({ node, state, onSelectNode, onClose }: InspectorProps
         </div>
       </div>
 
-      <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
+      <div className="rounded-lg border border-ui-border bg-ui-muted p-4">
         <div className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-stone-400">
           Relationships ({rels.length})
         </div>

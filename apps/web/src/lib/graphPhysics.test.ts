@@ -1,10 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildGraphState,
-  physicsStep,
-  fitAll,
   highlightConnected,
-  DEFAULT_PHYSICS,
 } from "./graphPhysics";
 import { buildCommunityPalette } from "./colorPalette";
 
@@ -22,12 +19,15 @@ const sampleEdges = [
 ];
 
 describe("buildGraphState", () => {
-  it("builds nodes with computed degree and radius", () => {
+  it("builds nodes with reduced degree-scaled radii", () => {
     const state = buildGraphState(sampleNodes, sampleEdges, palette);
     const n0 = state.nodes.find((n) => n.id === "n0");
+    const n1 = state.nodes.find((n) => n.id === "n1");
     expect(n0?.degree).toBe(2);
     expect(n0?.degFrac).toBe(1);
-    expect(n0?.radius).toBeGreaterThan(8);
+    expect(n0?.radius).toBe(16.9);
+    expect(n1?.radius).toBe(11.05);
+    expect(n0?.radius).toBeGreaterThan(n1?.radius ?? 0);
     expect(state.maxDegree).toBe(2);
   });
 
@@ -38,45 +38,30 @@ describe("buildGraphState", () => {
     expect(state.adj.get("n2")?.length).toBe(1);
   });
 
-  it("assigns particles to edges", () => {
-    const state = buildGraphState(sampleNodes, sampleEdges, palette);
-    expect(state.edges[0].particles.length).toBe(3);
-    expect(state.edges[0].particles.every((p) => p >= 0 && p < 1)).toBe(true);
-  });
-});
-
-describe("physicsStep", () => {
-  it("moves nodes when physics applied", () => {
-    const state = buildGraphState(sampleNodes, sampleEdges, palette);
-    const before = state.nodes.map((n) => ({ x: n.x, y: n.y }));
-    physicsStep(state, DEFAULT_PHYSICS, null);
-    const after = state.nodes.map((n) => ({ x: n.x, y: n.y }));
-    const moved = after.some((p, i) => p.x !== before[i].x || p.y !== before[i].y);
-    expect(moved).toBe(true);
-  });
-
-  it("does not move dragged node", () => {
-    const state = buildGraphState(sampleNodes, sampleEdges, palette);
-    const n0 = state.nodes.find((n) => n.id === "n0")!;
-    const beforeX = n0.x;
-    const beforeY = n0.y;
-    physicsStep(state, DEFAULT_PHYSICS, "n0");
-    expect(n0.x).toBe(beforeX);
-    expect(n0.y).toBe(beforeY);
-  });
-});
-
-describe("fitAll", () => {
-  it("computes camera that fits all nodes", () => {
-    const state = buildGraphState(sampleNodes, sampleEdges, palette);
-    const cam = fitAll(state.nodes, 800, 600, 1);
-    expect(cam.zoom).toBeGreaterThan(0.12);
-    expect(cam.zoom).toBeLessThanOrEqual(3);
+  it("canonicalizes parallel raw edges after reversal", () => {
+    const edges = [
+      { id: "", source: "n0", target: "n1", label: "knows", weight: 3 },
+      { id: "", source: "n0", target: "n1", label: "knows", weight: 1 },
+      { id: "", source: "n0", target: "n1", label: "knows", weight: 2 },
+      { id: "same", source: "n0", target: "n1", label: "knows", weight: 2 },
+    ];
+    const first = buildGraphState(sampleNodes, edges, palette);
+    const second = buildGraphState(sampleNodes, [...edges].reverse(), palette);
+    expect(first.edges).toEqual(second.edges);
+    expect(first.edges.map((edge) => [edge.id, edge.weight])).toEqual([
+      ["edge_0", 1],
+      ["edge_1", 2],
+      ["edge_2", 3],
+      ["same", 2],
+    ]);
   });
 
-  it("returns default camera for empty node list", () => {
-    const cam = fitAll([], 800, 600, 1);
-    expect(cam).toEqual({ x: 0, y: 0, zoom: 1 });
+  it("avoids generated edge ID collisions", () => {
+    const state = buildGraphState(sampleNodes, [
+      { id: "edge_0", source: "n0", target: "n1", label: "explicit", weight: 1 },
+      { id: "", source: "n1", target: "n2", label: "generated", weight: 1 },
+    ], palette);
+    expect(new Set(state.edges.map((edge) => edge.id)).size).toBe(2);
   });
 });
 

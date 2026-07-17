@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 from app.graph_api import (
+    MAX_EXPLORER_NODES,
+    MAX_EXPLORER_RELATIONS,
     MAX_PATH_DEPTH,
     MAX_PATH_RELATIONS,
     MAX_SUBGRAPH_DEPTH,
@@ -98,10 +100,46 @@ def test_agent_graph_routes_publish_hard_bounds_and_structured_responses() -> No
             "parameters"
         ]
     }
+    explorer_parameters = {
+        item["name"]: item["schema"]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/explorer"]["get"][
+            "parameters"
+        ]
+    }
     assert path_parameters["max_depth"]["maximum"] == MAX_PATH_DEPTH
     assert path_parameters["relation_limit"]["maximum"] == MAX_PATH_RELATIONS
     assert subgraph_parameters["depth"]["maximum"] == MAX_SUBGRAPH_DEPTH
     assert subgraph_parameters["relation_limit"]["maximum"] == MAX_SUBGRAPH_RELATIONS
+    assert explorer_parameters["node_limit"] == {
+        "type": "integer",
+        "maximum": MAX_EXPLORER_NODES,
+        "minimum": 1,
+        "default": MAX_EXPLORER_NODES,
+        "title": "Node Limit",
+    }
+    assert explorer_parameters["relation_limit"] == {
+        "type": "integer",
+        "maximum": MAX_EXPLORER_RELATIONS,
+        "minimum": 1,
+        "default": MAX_EXPLORER_RELATIONS,
+        "title": "Relation Limit",
+    }
+    node_page_parameters = {
+        item["name"]: item["schema"]
+        for item in schema["paths"][
+            "/v1/datasets/{dataset_id}/graph/explorer/nodes"
+        ]["get"]["parameters"]
+    }
+    relation_page_parameters = {
+        item["name"]: item["schema"]
+        for item in schema["paths"][
+            "/v1/datasets/{dataset_id}/graph/explorer/relations"
+        ]["get"]["parameters"]
+    }
+    assert node_page_parameters["limit"]["maximum"] == MAX_EXPLORER_NODES
+    assert relation_page_parameters["limit"]["maximum"] == MAX_EXPLORER_RELATIONS
+    assert node_page_parameters["cursor"]["anyOf"][0]["type"] == "string"
+    assert relation_page_parameters["cursor"]["anyOf"][0]["type"] == "string"
     assert schema["paths"][
         "/v1/datasets/{dataset_id}/relations/{relation_id}/evidence"
     ]["get"]["responses"]["200"]

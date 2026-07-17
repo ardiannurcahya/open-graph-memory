@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyEntityType, SHAPE_MAP } from "./graphTypes";
+import { classifyEntityType } from "./graphTypes";
 
 describe("classifyEntityType", () => {
   it("classifies person variants", () => {
@@ -32,14 +32,5 @@ describe("classifyEntityType", () => {
   it("returns unknown for unrecognized types", () => {
     expect(classifyEntityType("")).toBe("unknown");
     expect(classifyEntityType("xyz")).toBe("unknown");
-  });
-
-  it("SHAPE_MAP covers all entity types", () => {
-    expect(SHAPE_MAP.person).toBe("circle");
-    expect(SHAPE_MAP.org).toBe("roundRect");
-    expect(SHAPE_MAP.tech).toBe("star");
-    expect(SHAPE_MAP.concept).toBe("diamond");
-    expect(SHAPE_MAP.document).toBe("rect");
-    expect(SHAPE_MAP.unknown).toBe("circle");
   });
 });

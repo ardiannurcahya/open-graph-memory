@@ -3,11 +3,12 @@ import { render, screen, act, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import { useAuthStore } from "./store/auth";
+import { ThemeProvider } from "./theme";
 
 function renderApp(initial = "/") {
   return render(
     <MemoryRouter initialEntries={[initial]}>
-      <App />
+      <ThemeProvider><App /></ThemeProvider>
     </MemoryRouter>,
   );
 }
@@ -23,6 +24,7 @@ describe("App routing", () => {
 
   it("redirects to login when unauthenticated", () => {
     renderApp("/");
+    expect(screen.getByRole("group", { name: "Theme" })).toBeInTheDocument();
     expect(screen.getByText("Enter project credentials to access the dashboard.")).toBeInTheDocument();
   });
 
@@ -35,6 +37,7 @@ describe("App routing", () => {
       });
     });
     renderApp("/");
+    expect(screen.getByRole("group", { name: "Theme" }).closest(".hidden")).toBeNull();
     expect(screen.getByText("Datasets", { selector: "h3" })).toBeInTheDocument();
     expect(screen.getByText("Graph Playground", { selector: "h3" })).toBeInTheDocument();
     expect(screen.queryByText("Query Playground")).not.toBeInTheDocument();
