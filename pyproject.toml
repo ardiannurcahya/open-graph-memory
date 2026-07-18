@@ -16,6 +16,7 @@ dependencies = [
     "boto3>=1.35,<2",
     "python-multipart>=0.0.18,<1",
     "pypdf>=6.13.3,<7",
+    "liteparse==2.6.0",
     "markdown-it-py>=3,<4",
     "beautifulsoup4>=4.12,<5",
     "lxml>=6.1,<7",

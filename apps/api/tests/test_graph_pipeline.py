@@ -377,6 +377,7 @@ async def test_run_persists_selected_extractor_metadata() -> None:
 async def test_resolution_is_exact_conservative_and_scoped() -> None:
     db = FakeSession()
     document, chunk = inputs("dataset-a")
+    chunk.text = "ACME [Org] and Acme [Product]"
     extractor = Extractor(
         Extraction(
             entities=[

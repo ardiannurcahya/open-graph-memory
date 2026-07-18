@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.graph_models import (
     CanonicalEntity,
     EntityAlias,
+    EntityAliasEvidence,
     EntityMergeHistory,
     GraphEvidence,
     RelationAssertion,
@@ -31,6 +32,22 @@ async def cleanup_document_graph(
     )
     for item in evidence:
         await db.delete(item)
+    await db.flush()
+
+    aliases = list(
+        await db.scalars(
+            select(EntityAlias).where(
+                EntityAlias.project_id == project_id,
+                EntityAlias.dataset_id == dataset_id,
+            )
+        )
+    )
+    for alias in aliases:
+        supported = await db.scalar(
+            select(exists().where(EntityAliasEvidence.alias_id == alias.id))
+        )
+        if not supported:
+            await db.delete(alias)
     await db.flush()
 
     relations = list(

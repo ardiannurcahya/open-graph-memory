@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base
@@ -141,6 +142,7 @@ class GraphExtractionRun(ScopeMixin, Base):
     prompt_version: Mapped[str] = mapped_column(String(100))
     ontology_version: Mapped[str | None] = mapped_column(String(100))
     input_hash: Mapped[str] = mapped_column(String(64))
+    raw_extraction: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -187,6 +189,45 @@ class EntityAlias(ScopeMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class EntityAliasEvidence(Base):
+    __tablename__ = "entity_alias_evidence"
+    alias_id: Mapped[str] = mapped_column(
+        ForeignKey("entity_aliases.id", ondelete="CASCADE"), primary_key=True
+    )
+    evidence_id: Mapped[str] = mapped_column(
+        ForeignKey("graph_evidence.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GraphConsolidationRun(ScopeMixin, Base):
+    __tablename__ = "graph_consolidation_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "snapshot_hash",
+            "extractor_version",
+            "consolidation_version",
+            name="uq_graph_consolidation_input",
+        ),
+        Index("ix_graph_consolidation_scope", "project_id", "dataset_id", "document_id"),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    snapshot_hash: Mapped[str] = mapped_column(String(64))
+    extractor_version: Mapped[str] = mapped_column(String(100))
+    consolidation_version: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(100))
+    status: Mapped[RunStatus] = mapped_column(Enum(RunStatus, name="graph_run_status"))
+    output: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RelationAssertion(ScopeMixin, Base):

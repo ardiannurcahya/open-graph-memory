@@ -119,3 +119,27 @@ def test_nlp_graph_extractor_requires_no_openai_key() -> None:
     settings = Settings(graph_extractor_provider="nlp", openai_api_key="")
 
     assert settings.graph_extractor_provider == "nlp"
+
+
+@pytest.mark.parametrize("pdf_parser", ["pypdf", "liteparse"])
+def test_pdf_parser_backends_are_explicit(pdf_parser: str) -> None:
+    assert Settings(pdf_parser=pdf_parser).pdf_parser == pdf_parser
+
+
+def test_unknown_pdf_parser_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="PDF parser"):
+        Settings(pdf_parser="automatic")
+
+
+@pytest.mark.parametrize("ocr_mode", ["auto", "always", "disabled"])
+def test_liteparse_ocr_modes_are_bounded(ocr_mode: str) -> None:
+    assert Settings(liteparse_ocr_mode=ocr_mode).liteparse_ocr_mode == ocr_mode
+
+
+def test_invalid_liteparse_settings_are_rejected() -> None:
+    with pytest.raises(ValidationError, match="OCR mode"):
+        Settings(liteparse_ocr_mode="sometimes")
+    with pytest.raises(ValidationError, match="page limit"):
+        Settings(liteparse_max_pages=0)
+    with pytest.raises(ValidationError, match="image mode"):
+        Settings(liteparse_image_mode="placeholder")

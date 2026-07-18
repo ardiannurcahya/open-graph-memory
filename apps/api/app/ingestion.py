@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.async_runner import runner
 from app.chunking import RecursiveTextChunker
+from app.config import get_settings
 from app.db import engine
 from app.graph_gc import cleanup_document_graph
 from app.models import (
@@ -21,12 +22,12 @@ from app.models import (
     IndexingStageEvent,
     JobStatus,
 )
-from app.parsers import default_registry
+from app.parsers import LiteParsePdfParser, default_registry
 from app.storage import ObjectStore, get_object_store
 
 PIPELINE_VERSION = (
-    "ingestion-v3:parser-v3-json-source-aware:"
-    "recursive-v3-source-aware-segment-offsets"
+    "ingestion-v4:parser-v4-liteparse-section-aware:"
+    "recursive-v4-section-aware-exact-offsets"
 )
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 
@@ -111,8 +112,18 @@ async def run_ingestion(
             content = await (store or get_object_store()).download(document.object_key)
             document.status = DocumentStatus.PARSING
             await _stage(db, job, IndexingStage.PARSING)
+            settings = get_settings()
+            pdf_parser = None
+            if settings.pdf_parser == "liteparse":
+                pdf_parser = LiteParsePdfParser(
+                    ocr_mode=settings.liteparse_ocr_mode,
+                    dpi=settings.liteparse_dpi,
+                    max_pages=settings.liteparse_max_pages,
+                    ocr_workers=settings.liteparse_ocr_workers,
+                )
+            registry = default_registry(pdf_parser)
             parsed = await asyncio.to_thread(
-                default_registry().parse, document.mime_type, content, document.filename
+                registry.parse, document.mime_type, content, document.filename
             )
             document.status = DocumentStatus.CHUNKING
             await _stage(db, job, IndexingStage.CHUNKING)
@@ -145,10 +156,9 @@ async def run_ingestion(
                         text=item.text,
                         token_count=item.token_count,
                         metadata_={
-                            "parser": "parser-v3-json-source-aware",
                             "chunker": chunker.version,
-                            **item.metadata,
                             **parsed.metadata,
+                            **item.metadata,
                         },
                     )
                 )

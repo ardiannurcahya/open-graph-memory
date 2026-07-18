@@ -3,7 +3,7 @@ from io import BytesIO
 import pytest
 from app.chunking import RecursiveTextChunker
 from app.ingestion import PIPELINE_VERSION, deterministic_id, sanitized_error
-from app.parsers import default_registry
+from app.parsers import LiteParsePdfParser, ParsedDocument, ParsedSegment, default_registry
 from pypdf import PdfWriter
 
 
@@ -15,9 +15,10 @@ def test_artifact_ids_are_deterministic_and_versioned() -> None:
 
 def test_parser_chunker_orchestration_inputs() -> None:
     parsed = default_registry().parse("text/markdown", b"# Heading\n\nBody")
-    chunks = RecursiveTextChunker(size=20, overlap=2).split("doc_1", parsed.text)
+    chunks = RecursiveTextChunker(size=20, overlap=2).split_document("doc_1", parsed)
     assert chunks
-    assert "Heading" in chunks[0].text
+    assert chunks[0].text == "Body"
+    assert chunks[0].metadata["section_path"] == ["Heading"]
 
 
 def test_default_chunker_accepts_large_tabular_text() -> None:
@@ -127,8 +128,6 @@ def test_csv_parser_rejects_malformed_unmatched_quote() -> None:
 
 
 def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
-    from app.parsers import ParsedDocument, ParsedSegment
-
     document = ParsedDocument(
         "first\n\nthird",
         segments=(
@@ -198,6 +197,28 @@ def test_generic_formats_remain_single_generic_segment(mime: str, content: bytes
     assert chunks[0].metadata["segment_count"] == 1
 
 
+def test_markdown_sections_do_not_mix_and_keep_heading_context_out_of_body() -> None:
+    parsed = default_registry().parse(
+        "text/markdown", b"# First\n\nAlpha body.\n\n# Second\n\nBeta body."
+    )
+    chunks = RecursiveTextChunker(size=100, overlap=1).split_document("doc", parsed)
+
+    assert [chunk.text for chunk in chunks] == ["Alpha body.", "Beta body."]
+    assert [chunk.metadata["section_path"] for chunk in chunks] == [["First"], ["Second"]]
+
+
+def test_chunk_offsets_exactly_select_persisted_text() -> None:
+    segment = ParsedSegment("  alpha beta gamma  ", {"section_title": "Test"})
+    chunks = RecursiveTextChunker(size=12, overlap=2).split_document(
+        "doc", ParsedDocument(segment.text, segments=(segment,))
+    )
+
+    for chunk in chunks:
+        start = chunk.metadata["segment_start_char"]
+        end = chunk.metadata["segment_end_char"]
+        assert segment.text[start:end] == chunk.text
+
+
 def test_plain_text_csv_filename_uses_csv_parser() -> None:
     parsed = default_registry().parse("text/plain", b"name,value\nalpha,1\n", "rows.csv")
 
@@ -219,7 +240,100 @@ def test_pdf_parser_accepts_a_real_large_pdf() -> None:
 
     assert len(content) > 8192
     parsed = default_registry().parse("application/pdf", content, "manual.pdf")
-    assert parsed.metadata == {"pages": 1, "non_empty_pages": 0}
+    assert parsed.metadata == {
+        "parser": "pypdf",
+        "parser_version": "pypdf",
+        "pages": 1,
+        "non_empty_pages": 0,
+    }
+
+
+class _Complexity:
+    def __init__(self, page_number: int, needs_ocr: bool) -> None:
+        self.page_number = page_number
+        self.needs_ocr = needs_ocr
+
+
+class _TextItem:
+    text = "Digital text"
+    x = 10.0
+    y = 20.0
+    width = 30.0
+    height = 12.0
+    font_name = "Helvetica"
+    font_size = 10.0
+    rotation = 0.0
+
+
+class _Page:
+    page_num = 1
+    text = "Digital text"
+    text_items = [_TextItem()]
+
+
+class _Result:
+    text = "Digital text"
+    pages = [_Page()]
+    num_pages = 1
+
+
+class _FakeLiteParse:
+    instances: list["_FakeLiteParse"] = []
+    complex = False
+
+    def __init__(self, **options: object) -> None:
+        self.options = options
+        self.instances.append(self)
+
+    def is_complex(self, content: bytes) -> list[_Complexity]:
+        assert content == b"pdf"
+        return [_Complexity(1, self.complex)]
+
+    def parse(self, content: bytes) -> _Result:
+        assert content == b"pdf"
+        return _Result()
+
+
+def test_liteparse_digital_pdf_avoids_ocr_and_normalizes_spatial_metadata() -> None:
+    _FakeLiteParse.instances.clear()
+    _FakeLiteParse.complex = False
+    parser = LiteParsePdfParser(parser_factory=_FakeLiteParse)  # type: ignore[arg-type]
+
+    parsed = parser.parse(b"pdf")
+
+    assert len(_FakeLiteParse.instances) == 1
+    assert _FakeLiteParse.instances[0].options["ocr_enabled"] is False
+    assert parsed.metadata["ocr_requested"] is False
+    assert parsed.segments[0].metadata["page_number"] == 1
+    assert parsed.segments[0].metadata["bbox"] == [10.0, 20.0, 40.0, 32.0]
+
+
+def test_liteparse_complex_pdf_routes_to_single_worker_ocr() -> None:
+    _FakeLiteParse.instances.clear()
+    _FakeLiteParse.complex = True
+    parser = LiteParsePdfParser(parser_factory=_FakeLiteParse)  # type: ignore[arg-type]
+
+    parsed = parser.parse(b"pdf")
+
+    assert [item.options["ocr_enabled"] for item in _FakeLiteParse.instances] == [False, True]
+    assert _FakeLiteParse.instances[1].options["num_workers"] == 1
+    assert _FakeLiteParse.instances[1].options["dpi"] == 150
+    assert _FakeLiteParse.instances[1].options["max_pages"] == 300
+    assert parsed.metadata["complex_pages"] == [1]
+
+
+def test_liteparse_disabled_ocr_does_not_probe_or_fallback() -> None:
+    class FailingLiteParse(_FakeLiteParse):
+        def is_complex(self, content: bytes) -> list[_Complexity]:
+            raise AssertionError("disabled mode must not probe complexity")
+
+        def parse(self, content: bytes) -> _Result:
+            raise RuntimeError("parse failed")
+
+    with pytest.raises(RuntimeError, match="parse failed"):
+        LiteParsePdfParser(
+            ocr_mode="disabled", parser_factory=FailingLiteParse  # type: ignore[arg-type]
+        ).parse(b"pdf")
 
 
 def test_errors_are_bounded_and_secrets_redacted() -> None:

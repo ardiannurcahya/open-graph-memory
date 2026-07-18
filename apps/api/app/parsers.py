@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from bs4 import BeautifulSoup
+from liteparse import LiteParse, ParseError
 from markdown_it import MarkdownIt
 from pypdf import PdfReader
 
@@ -147,7 +148,7 @@ class MarkdownParser:
 
     def parse(self, content: bytes) -> ParsedDocument:
         html = MarkdownIt().render(content.decode("utf-8"))
-        return ParsedDocument(BeautifulSoup(html, "lxml").get_text("\n", strip=True))
+        return html_to_document(html)
 
 
 class HtmlParser:
@@ -158,7 +159,12 @@ class HtmlParser:
         for node in soup(["script", "style", "noscript"]):
             node.decompose()
         title = soup.title.get_text(strip=True) if soup.title else None
-        return ParsedDocument(soup.get_text("\n", strip=True), {"title": title} if title else {})
+        parsed = html_to_document(str(soup))
+        return ParsedDocument(
+            parsed.text,
+            {**parsed.metadata, **({"title": title} if title else {})},
+            parsed.segments,
+        )
 
 
 class PdfParser:
@@ -174,9 +180,124 @@ class PdfParser:
         )
         return ParsedDocument(
             "\n\n".join(segment.text for segment in segments),
-            {"pages": len(pages), "non_empty_pages": len(segments)},
+            {
+                "parser": "pypdf",
+                "parser_version": "pypdf",
+                "pages": len(pages),
+                "non_empty_pages": len(segments),
+            },
             segments,
         )
+
+
+class LiteParsePdfParser:
+    """PDF-only LiteParse adapter with explicit OCR routing and no fallback."""
+
+    mime_types: tuple[str, ...] = ("application/pdf",)
+
+    def __init__(
+        self,
+        ocr_mode: str = "auto",
+        dpi: int = 150,
+        max_pages: int = 300,
+        ocr_workers: int = 1,
+        parser_factory: type[LiteParse] = LiteParse,
+    ) -> None:
+        self.ocr_mode = ocr_mode
+        self.dpi = dpi
+        self.max_pages = max_pages
+        self.ocr_workers = ocr_workers
+        self.parser_factory = parser_factory
+
+    def _parser(self, ocr_enabled: bool) -> LiteParse:
+        return self.parser_factory(
+            ocr_enabled=ocr_enabled,
+            ocr_failure_fatal=True,
+            quiet=True,
+            max_pages=self.max_pages,
+            dpi=self.dpi,
+            num_workers=self.ocr_workers,
+            image_mode="off",
+        )
+
+    def parse(self, content: bytes) -> ParsedDocument:
+        probe = self._parser(False)
+        try:
+            complexity = probe.is_complex(content) if self.ocr_mode == "auto" else []
+            complex_pages = [item.page_number for item in complexity if item.needs_ocr]
+            ocr_requested = self.ocr_mode == "always" or bool(complex_pages)
+            result = (self._parser(True) if ocr_requested else probe).parse(content)
+        except ParseError as exc:
+            raise ValueError(f"LiteParse PDF parsing failed: {exc}") from exc
+        segments = tuple(
+            ParsedSegment(
+                item.text.strip(),
+                {
+                    "page_number": page.page_num,
+                    "bbox": [item.x, item.y, item.x + item.width, item.y + item.height],
+                    "bbox_coordinate_system": "pdf_points_top_left_xyxy",
+                    "font_name": item.font_name,
+                    "font_size": item.font_size,
+                    "rotation": item.rotation,
+                },
+            )
+            for page in result.pages
+            for item in page.text_items
+            if item.text.strip()
+        )
+        if not segments:
+            segments = tuple(
+                ParsedSegment(page.text.strip(), {"page_number": page.page_num})
+                for page in result.pages
+                if page.text.strip()
+            )
+        return ParsedDocument(
+            result.text,
+            {
+                "parser": "liteparse",
+                "parser_version": "2.6.0",
+                "pages": result.num_pages,
+                "ocr_mode": self.ocr_mode,
+                "ocr_requested": ocr_requested,
+                "complex_pages": complex_pages,
+            },
+            segments,
+        )
+
+
+def html_to_document(html: str) -> ParsedDocument:
+    soup = BeautifulSoup(html, "lxml")
+    body = soup.body or soup
+    section_path: list[str] = []
+    segments: list[ParsedSegment] = []
+    for node in body.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "table"]):
+        text = node.get_text("\n" if node.name in {"pre", "table"} else " ", strip=True)
+        if not text:
+            continue
+        if node.name and node.name.startswith("h"):
+            level = int(node.name[1])
+            section_path[level - 1 :] = [text]
+            continue
+        metadata: dict[str, object] = {"block_type": _html_block_type(node.name or "")}
+        if section_path:
+            metadata["section_title"] = section_path[-1]
+            metadata["section_path"] = list(section_path)
+        segments.append(ParsedSegment(text, metadata))
+    if not segments:
+        return ParsedDocument("")
+    return ParsedDocument(
+        "\n\n".join(segment.text for segment in segments), segments=tuple(segments)
+    )
+
+
+def _html_block_type(name: str) -> str:
+    if name == "li":
+        return "list"
+    if name == "table":
+        return "table"
+    if name == "pre":
+        return "code"
+    return "paragraph"
 
 
 class ParserRegistry:
@@ -208,12 +329,12 @@ class ParserRegistry:
         )
 
 
-def default_registry() -> ParserRegistry:
+def default_registry(pdf_parser: Parser | None = None) -> ParserRegistry:
     registry = ParserRegistry()
     registry.register(TextParser())
     registry.register(CsvParser())
     registry.register(JsonParser())
     registry.register(MarkdownParser())
     registry.register(HtmlParser())
-    registry.register(PdfParser())
+    registry.register(pdf_parser or PdfParser())
     return registry

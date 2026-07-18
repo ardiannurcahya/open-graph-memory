@@ -18,6 +18,7 @@ class Entity(BaseModel):
     name: str
     type: str = "Entity"
     confidence: float = Field(ge=0, le=1)
+    aliases: list[str] = Field(default_factory=list)
 
 
 class Relation(BaseModel):
@@ -26,6 +27,9 @@ class Relation(BaseModel):
     target: str
     type: str
     confidence: float = Field(ge=0, le=1)
+    source_type: str | None = None
+    target_type: str | None = None
+    quote: str | None = None
 
 
 class Extraction(BaseModel):
@@ -36,6 +40,18 @@ class Extraction(BaseModel):
 
 class Extractor(Protocol):
     def extract(self, text: str) -> Extraction: ...
+
+
+@dataclass(frozen=True)
+class ChunkExtractionContext:
+    document_title: str
+    section_path: tuple[str, ...]
+    page_number: int | None
+    chunk_index: int
+    chunk_count: int
+    previous_excerpt: str
+    target_text: str
+    next_excerpt: str
 
 
 def _object_map(value: object) -> dict[str, object]:
@@ -90,6 +106,9 @@ def _normalize_extraction_payload(payload: object) -> dict[str, list[dict[str, o
             "name": name,
             "type": entity_type,
             "confidence": _confidence(item.get("confidence")),
+            "aliases": [
+                alias for alias in _object_list(item.get("aliases")) if isinstance(alias, str)
+            ],
         }
         entities.append(entity)
         entity_id = _string(item.get("id"))
@@ -109,6 +128,9 @@ def _normalize_extraction_payload(payload: object) -> dict[str, list[dict[str, o
                 "target": id_to_name.get(target, target),
                 "type": relation_type,
                 "confidence": _confidence(item.get("confidence")),
+                "source_type": _string(item.get("source_type")),
+                "target_type": _string(item.get("target_type")),
+                "quote": _string(item.get("quote")),
             }
         )
     return {"entities": entities, "relations": relations}
@@ -122,8 +144,10 @@ def _parse_extraction_content(content: str, source_text: str) -> Extraction:
         )
     except (json.JSONDecodeError, ValueError):
         return deterministic
-    if not extracted.entities and not extracted.relations and (
-        deterministic.entities or deterministic.relations
+    if (
+        not extracted.entities
+        and not extracted.relations
+        and (deterministic.entities or deterministic.relations)
     ):
         return deterministic
     return extracted
@@ -313,6 +337,21 @@ class OpenAICompatibleExtractor:
     timeout: float = 30.0
 
     def extract(self, text: str) -> Extraction:
+        return self._extract(text, text)
+
+    def extract_with_context(self, context: ChunkExtractionContext) -> Extraction:
+        user_content = (
+            f"DOCUMENT: {context.document_title}\n"
+            f"SECTION: {' > '.join(context.section_path)}\n"
+            f"PAGE: {context.page_number or 'unknown'}\n"
+            f"CHUNK: {context.chunk_index + 1}/{context.chunk_count}\n"
+            f"PREVIOUS EXCERPT (REFERENCE ONLY):\n{context.previous_excerpt}\n"
+            f"TARGET CHUNK (ONLY FACTUAL SOURCE):\n{context.target_text}\n"
+            f"NEXT EXCERPT (REFERENCE ONLY):\n{context.next_excerpt}"
+        )
+        return self._extract(user_content, context.target_text)
+
+    def _extract(self, user_content: str, source_text: str) -> Extraction:
         schema = Extraction.model_json_schema()
         response = httpx.post(
             f"{self.base_url.rstrip('/')}/chat/completions",
@@ -325,15 +364,19 @@ class OpenAICompatibleExtractor:
                         "role": "system",
                         "content": (
                             "Extract entities and relations. Return only valid JSON with top-level "
-                            "entities and relations arrays. Entity fields: name, type, confidence. "
-                            "Relation fields: source, target, type, confidence. No markdown, "
+                            "entities and relations arrays. Entity fields: name, type, confidence, "
+                            "aliases. Relation fields: source, source_type, target, target_type, "
+                            "type, confidence, quote. TARGET CHUNK is the only factual source. "
+                            "Neighbor excerpts may only resolve references and pronouns. Every "
+                            "entity name, alias, and relation quote must be an exact TARGET CHUNK "
+                            "substring. Do not infer relations from co-occurrence. No markdown, "
                             "prose, or explanations. Emit a typed relation for every explicit "
                             "action, ownership, development, and acquisition relationship. "
                             "Relation source and target exactly match emitted entity names. "
                             f"Prompt version: {self.prompt_version}"
                         ),
                     },
-                    {"role": "user", "content": text},
+                    {"role": "user", "content": user_content},
                 ],
                 "response_format": {
                     "type": "json_schema",
@@ -346,8 +389,8 @@ class OpenAICompatibleExtractor:
         try:
             content = _load_openai_content(response.text)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return DeterministicExtractor().extract(text)
-        return _parse_extraction_content(content, text)
+            return DeterministicExtractor().extract(source_text)
+        return _parse_extraction_content(content, source_text)
 
 
 def _load_openai_response(text: str) -> dict[str, object]:

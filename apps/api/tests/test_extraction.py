@@ -2,6 +2,7 @@ import json
 
 from open_graph_core.extraction import (
     Candidate,
+    ChunkExtractionContext,
     DeterministicExtractor,
     Entity,
     Extraction,
@@ -38,6 +39,9 @@ def test_deterministic_fixture_extraction() -> None:
         "target": "Widget",
         "type": "OWNS",
         "confidence": 1.0,
+        "source_type": None,
+        "target_type": None,
+        "quote": None,
     }
     assert result == DeterministicExtractor().extract(
         "Acme Corp [Company]; Widget [Product]\nAcme Corp -> OWNS -> Widget"
@@ -84,6 +88,9 @@ def test_openai_payload_normalization_accepts_common_aliases() -> None:
         "target": "DNP RX1",
         "type": "DRIVES",
         "confidence": 0.8,
+        "source_type": None,
+        "target_type": None,
+        "quote": None,
     }
 
 
@@ -98,7 +105,7 @@ def test_openai_payload_loader_accepts_fenced_json() -> None:
 
 def test_openai_response_loader_accepts_first_json_object_with_trailing_data() -> None:
     payload = _load_openai_response(
-        '{"choices":[{"message":{"content":"{\\\"entities\\\":[],\\\"relations\\\":[]}"}}]}'
+        '{"choices":[{"message":{"content":"{\\"entities\\":[],\\"relations\\":[]}"}}]}'
         '\n{"extra": true}'
     )
 
@@ -113,24 +120,18 @@ def test_openai_extractor_combines_sse_content_chunks(monkeypatch) -> None:
         second_event = json.dumps(
             {
                 "choices": [
-                    {
-                        "delta": {
-                            "content": '"type":"Company","confidence":0.9}],"relations":[]}'
-                        }
-                    }
+                    {"delta": {"content": '"type":"Company","confidence":0.9}],"relations":[]}'}}
                 ]
             }
         )
-        return _FakeResponse(
-            f"data: {first_event}\n\ndata: {second_event}\n\ndata: [DONE]\n\n"
-        )
+        return _FakeResponse(f"data: {first_event}\n\ndata: {second_event}\n\ndata: [DONE]\n\n")
 
     monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
 
     result = OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
 
     assert [entity.model_dump() for entity in result.entities] == [
-        {"name": "Acme", "type": "Company", "confidence": 0.9}
+        {"name": "Acme", "type": "Company", "confidence": 0.9, "aliases": []}
     ]
     assert result.relations == []
 
@@ -204,11 +205,39 @@ def test_openai_extractor_prompt_requires_complete_named_relations(monkeypatch) 
     assert "source and target exactly match emitted entity names" in system_prompt
 
 
+def test_contextual_extraction_marks_neighbors_reference_only(monkeypatch) -> None:
+    request: dict[str, object] = {}
+
+    def fake_post(*_args, **kwargs) -> _FakeResponse:
+        request.update(kwargs["json"])
+        return _FakeResponse(
+            '{"choices":[{"message":{"content":"{\\"entities\\":[],\\"relations\\":[]}"}}]}'
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    context = ChunkExtractionContext(
+        "manual.pdf",
+        ("Architecture",),
+        2,
+        1,
+        3,
+        "Acme introduced Project Nova.",
+        "It uses PostgreSQL.",
+        "Next section.",
+    )
+
+    OpenAICompatibleExtractor("http://provider", "key", "model").extract_with_context(context)
+
+    user_prompt = request["messages"][1]["content"]
+    assert "PREVIOUS EXCERPT (REFERENCE ONLY)" in user_prompt
+    assert "TARGET CHUNK (ONLY FACTUAL SOURCE):\nIt uses PostgreSQL." in user_prompt
+
+
 def test_openai_extractor_falls_back_for_malformed_or_empty_sse(monkeypatch) -> None:
     responses = iter(
         [
             "data: {not json}\n\ndata: [DONE]\n\n",
-            "data: {\"choices\":[{\"delta\":{}}]}\n\ndata: [DONE]\n\n",
+            'data: {"choices":[{"delta":{}}]}\n\ndata: [DONE]\n\n',
         ]
     )
 
@@ -263,9 +292,33 @@ def test_nlp_extractor_emits_typed_entities_and_explicit_active_relations() -> N
         ("Widget Cloud", "Organization"),
     ]
     assert [relation.model_dump() for relation in result.relations] == [
-        {"source": "Acme Labs", "target": "Widget Cloud", "type": "ACQUIRED", "confidence": 0.85},
-        {"source": "Alice Nguyen", "target": "Atlas Service", "type": "BUILT", "confidence": 0.85},
-        {"source": "Alice Nguyen", "target": "Acme Labs", "type": "WORKS_AT", "confidence": 0.85},
+        {
+            "source": "Acme Labs",
+            "target": "Widget Cloud",
+            "type": "ACQUIRED",
+            "confidence": 0.85,
+            "source_type": None,
+            "target_type": None,
+            "quote": None,
+        },
+        {
+            "source": "Alice Nguyen",
+            "target": "Atlas Service",
+            "type": "BUILT",
+            "confidence": 0.85,
+            "source_type": None,
+            "target_type": None,
+            "quote": None,
+        },
+        {
+            "source": "Alice Nguyen",
+            "target": "Acme Labs",
+            "type": "WORKS_AT",
+            "confidence": 0.85,
+            "source_type": None,
+            "target_type": None,
+            "quote": None,
+        },
     ]
 
 

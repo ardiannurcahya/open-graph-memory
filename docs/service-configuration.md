@@ -61,6 +61,32 @@ Do not enable `local-storage` profile with external storage.
 
 ## Graph Extraction
 
+## PDF Parsing
+
+Default PDF parsing stays on pypdf:
+
+```dotenv
+PDF_PARSER=pypdf
+```
+
+LiteParse 2.6.0 is an explicit PDF-only opt-in. CSV, JSON, HTML, Markdown, and text keep
+their native parsers.
+
+```dotenv
+PDF_PARSER=liteparse
+LITEPARSE_OCR_MODE=auto
+LITEPARSE_DPI=150
+LITEPARSE_MAX_PAGES=300
+LITEPARSE_OCR_WORKERS=1
+LITEPARSE_IMAGE_MODE=off
+```
+
+`auto` probes per-page complexity and enables OCR only when at least one page needs it.
+`always` requests OCR-capable parsing; `disabled` never probes or enables OCR. LiteParse errors
+fail ingestion explicitly; no silent pypdf fallback occurs. Initial implementation stores page
+and spatial text-item bounding boxes. LiteParse does not expose semantic PDF sections in Python
+2.6.0, so section labels are not fabricated.
+
 Offline deterministic mode:
 
 ```dotenv
@@ -86,6 +112,25 @@ GRAPH_EXTRACTOR_PARALLELISM=1
 ```
 
 Extractor calls OpenAI-compatible chat completions and expects JSON matching extraction schema. Test structured output, malformed responses, timeout, retries, and representative documents. Production requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS endpoint, and non-placeholder key.
+
+Contextual extraction uses short previous/next excerpts only for reference resolution. Target
+chunk remains sole evidence source, and extraction calls remain parallel.
+
+Document consolidation is opt-in and initially restricted to OpenAI-compatible extraction:
+
+```dotenv
+GRAPH_DOCUMENT_CONTEXT_EXCERPT_CHARS=500
+GRAPH_DOCUMENT_CONSOLIDATION_ENABLED=false
+GRAPH_DOCUMENT_CONSOLIDATION_VERSION=graph-consolidation-v1
+GRAPH_DOCUMENT_CONSOLIDATION_PROMPT_VERSION=graph-consolidation-prompt-v1
+GRAPH_DOCUMENT_CONSOLIDATION_MAX_CHARS=100000
+GRAPH_DOCUMENT_CONSOLIDATION_BATCH_CHARS=30000
+```
+
+Enable only after setting `GRAPH_EXTRACTOR_PROVIDER=openai` and bumping extractor/consolidation
+versions for semantic changes. PostgreSQL stores raw chunk extraction and snapshot-scoped
+consolidation output. Neo4j remains rebuildable projection. Apply Alembic migration `0018` before
+enabling updated workers.
 
 `OPENAI_GRAPH_EXTRACTOR_BASE_URL` falls back to `OPENAI_BASE_URL` when blank.
 

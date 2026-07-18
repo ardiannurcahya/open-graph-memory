@@ -25,7 +25,7 @@ class Chunker(Protocol):
 
 
 class RecursiveTextChunker:
-    version = "recursive-v3-source-aware-segment-offsets"
+    version = "recursive-v4-section-aware-exact-offsets"
 
     def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 5000) -> None:
         if size <= overlap or overlap < 0:
@@ -58,9 +58,14 @@ class RecursiveTextChunker:
                     )
                     if boundary > start + self.size // 2:
                         end = boundary + 1
-                value = text[start:end].strip()
+                left, right = start, end
+                while left < right and text[left].isspace():
+                    left += 1
+                while right > left and text[right - 1].isspace():
+                    right -= 1
+                value = text[left:right]
                 if value:
-                    segment_drafts.append((value, start, end, segment.metadata))
+                    segment_drafts.append((value, left, right, segment.metadata))
                 if end == len(text):
                     break
                 start = max(start + 1, end - self.overlap)

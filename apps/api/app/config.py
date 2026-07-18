@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     graph_extractor_prompt_version: str = "graph-v1"
     graph_extractor_timeout_seconds: int = 300
     graph_extractor_parallelism: int = 1
+    graph_document_context_excerpt_chars: int = 500
+    graph_document_consolidation_enabled: bool = False
+    graph_document_consolidation_version: str = "graph-consolidation-v1"
+    graph_document_consolidation_prompt_version: str = "graph-consolidation-prompt-v1"
+    graph_document_consolidation_max_chars: int = 100_000
+    graph_document_consolidation_batch_chars: int = 30_000
+    pdf_parser: str = "pypdf"
+    liteparse_ocr_mode: str = "auto"
+    liteparse_dpi: int = 150
+    liteparse_max_pages: int = 300
+    liteparse_ocr_workers: int = 1
+    liteparse_image_mode: str = "off"
     provider_version: str = "v1"
     neo4j_url: str = "http://neo4j:7474"
     neo4j_auth: SecretStr = SecretStr("neo4j/change-me-neo4j")
@@ -53,6 +65,33 @@ class Settings(BaseSettings):
             raise ValueError("outbox polling interval must be positive")
         if self.graph_extractor_timeout_seconds < 1 or self.graph_extractor_parallelism < 1:
             raise ValueError("graph settings must be positive")
+        if self.graph_document_context_excerpt_chars < 1:
+            raise ValueError("graph context excerpt must be positive")
+        if not self.graph_document_consolidation_version.strip() or not (
+            self.graph_document_consolidation_prompt_version.strip()
+        ):
+            raise ValueError("graph consolidation versions must be non-empty")
+        if (
+            self.graph_document_consolidation_max_chars < 1
+            or self.graph_document_consolidation_batch_chars < 1
+            or self.graph_document_consolidation_batch_chars
+            > self.graph_document_consolidation_max_chars
+        ):
+            raise ValueError("graph consolidation character limits are invalid")
+        if self.graph_document_consolidation_enabled and self.graph_extractor_provider != "openai":
+            raise ValueError("document consolidation requires OpenAI graph extraction")
+        if self.pdf_parser not in {"pypdf", "liteparse"}:
+            raise ValueError("PDF parser must be pypdf or liteparse")
+        if self.liteparse_ocr_mode not in {"auto", "always", "disabled"}:
+            raise ValueError("LiteParse OCR mode must be auto, always, or disabled")
+        if (
+            self.liteparse_dpi < 1
+            or self.liteparse_max_pages < 1
+            or self.liteparse_ocr_workers < 1
+        ):
+            raise ValueError("LiteParse DPI, page limit, and worker count must be positive")
+        if self.liteparse_image_mode != "off":
+            raise ValueError("LiteParse image mode must be off")
         if self.graph_extractor_provider == "openai" and not self.openai_api_key.get_secret_value():
             raise ValueError("OPENAI_API_KEY is required for OpenAI graph extraction")
         if self.app_env.lower() not in {"production", "prod"}:
