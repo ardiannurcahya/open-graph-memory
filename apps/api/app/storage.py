@@ -56,12 +56,17 @@ class S3ObjectStore:
         return instance
 
     async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None:
+        position = stream.tell()
+        stream.seek(0, 2)
+        content_length = stream.tell() - position
+        stream.seek(position)
         await asyncio.to_thread(
-            self.client.upload_fileobj,
-            stream,
-            self.bucket,
-            key,
-            ExtraArgs={"ContentType": content_type},
+            self.client.put_object,
+            Bucket=self.bucket,
+            Key=key,
+            Body=stream,
+            ContentType=content_type,
+            ContentLength=content_length,
         )
 
     async def delete(self, key: str) -> None:
