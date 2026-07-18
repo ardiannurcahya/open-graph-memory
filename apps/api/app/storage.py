@@ -39,6 +39,9 @@ class S3ObjectStore:
             isinstance(value, str) for value in (endpoint_url, access_key, region)
         ):
             raise TypeError("S3 config values must be strings")
+        force_path_style = config.get("force_path_style", True)
+        if not isinstance(force_path_style, bool):
+            raise TypeError("force_path_style must be a boolean")
         instance.bucket = bucket
         instance.client = boto3.client(
             "s3",
@@ -46,6 +49,9 @@ class S3ObjectStore:
             aws_access_key_id=access_key,
             aws_secret_access_key=config.require_secret("secret_key").get(),
             region_name=region,
+            config=Config(
+                s3={"addressing_style": "path" if force_path_style else "virtual"}
+            ),
         )
         return instance
 
@@ -77,6 +83,7 @@ def get_object_store() -> ObjectStore:
                 "endpoint_url": settings.s3_endpoint_url,
                 "access_key": settings.s3_access_key,
                 "region": settings.s3_region,
+                "force_path_style": settings.s3_force_path_style,
             },
             {"secret_key": SecretValue(settings.s3_secret_key.get_secret_value())},
         )
