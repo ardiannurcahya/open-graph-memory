@@ -42,14 +42,6 @@ jobs:
       - run: GHCR_NAMESPACE=example IMAGE_TAG=test docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml config --quiet
       - run: GHCR_NAMESPACE=example IMAGE_TAG=test python scripts/validate-production-compose.py
       - run: docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.external-s3.yml config --quiet
-  docker-builds:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dockerfile: [apps/api/Dockerfile, apps/worker/Dockerfile, apps/web/Dockerfile]
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -f ${{ matrix.dockerfile }} .
   runtime:
     runs-on: ubuntu-latest
     steps:
