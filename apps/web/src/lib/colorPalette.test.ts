@@ -21,12 +21,12 @@ describe("colorPalette", () => {
     expect(c.darkColor).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it("produces distinct vivid node colors for dark and light canvases", () => {
+  it("uses stable neon node colors", () => {
     const dark = vividNodeColorForCommunity("c0", true);
     const light = vividNodeColorForCommunity("c0", false);
+    expect(dark).toBe(light);
     expect(dark).toMatch(/^#[0-9a-f]{6}$/);
-    expect(light).toMatch(/^#[0-9a-f]{6}$/);
-    expect(dark).not.toBe(light);
+    expect(vividNodeColorForCommunity("c1", true)).not.toBe(dark);
   });
 
   it("builds palette with spread hues", () => {

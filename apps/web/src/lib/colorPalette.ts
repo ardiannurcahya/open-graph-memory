@@ -1,5 +1,20 @@
 import type { CommunityInfo } from "./graphTypes";
 
+const NEON_NODE_COLORS = [
+  "#00f5ff",
+  "#ff00e5",
+  "#39ff14",
+  "#ffe600",
+  "#8a2bff",
+  "#ff5f1f",
+  "#00ff9d",
+  "#ff1744",
+  "#00b0ff",
+  "#d7ff00",
+  "#ff2d95",
+  "#7cff00",
+] as const;
+
 function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -42,9 +57,8 @@ export function colorForCommunity(communityId: string): CommunityInfo {
   };
 }
 
-export function vividNodeColorForCommunity(communityId: string, darkBackground: boolean): string {
-  const hue = hashString(communityId) % 360;
-  return hslToHex(hue, 88, darkBackground ? 58 : 42);
+export function vividNodeColorForCommunity(communityId: string, _darkBackground: boolean): string {
+  return NEON_NODE_COLORS[hashString(communityId) % NEON_NODE_COLORS.length];
 }
 
 export function buildCommunityPalette(
