@@ -2,6 +2,7 @@ import asyncio
 from typing import IO, Protocol
 
 import boto3
+from botocore.config import Config
 from open_graph_contracts import PluginConfig, SecretValue
 
 from app.config import Settings, get_settings
@@ -22,6 +23,9 @@ class S3ObjectStore:
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
             region_name=settings.s3_region,
+            config=Config(
+                s3={"addressing_style": "path" if settings.s3_force_path_style else "virtual"}
+            ),
         )
 
     @classmethod

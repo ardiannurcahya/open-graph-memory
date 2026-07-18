@@ -2,6 +2,8 @@ name: opengraphmemory
 x-logging: &default-logging
   driver: json-file
   options: {max-size: "10m", max-file: "3"}
+x-host-access: &host-access
+  extra_hosts: ["host.docker.internal:host-gateway"]
 services:
   redis:
     image: redis:7.4.2-alpine
@@ -12,13 +14,16 @@ services:
     logging: *default-logging
     volumes: [redis-data:/data]
   migrate:
+    <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-latest}"
+    command: alembic upgrade head
     env_file: [{path: ../.env, required: false}]
     environment: {APP_ENV: production}
     depends_on: {redis: {condition: service_healthy}}
     restart: "no"
     logging: *default-logging
   api:
+    <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-latest}"
     restart: unless-stopped
     mem_limit: 256m
@@ -30,6 +35,7 @@ services:
     healthcheck: {test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"], interval: 10s, timeout: 5s, retries: 8}
     logging: *default-logging
   worker:
+    <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
     command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}"]
     restart: unless-stopped
@@ -42,6 +48,7 @@ services:
     healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
     logging: *default-logging
   graph-worker:
+    <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
     command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${GRAPH_WORKER_CONCURRENCY:-1}", -Q, graph]
     restart: unless-stopped
@@ -55,6 +62,7 @@ services:
     healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
     logging: *default-logging
   dispatcher:
+    <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
     command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
     restart: unless-stopped

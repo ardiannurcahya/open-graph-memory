@@ -63,7 +63,10 @@ async def checks() -> dict[str, bool]:
                 aws_access_key_id=cfg.s3_access_key,
                 aws_secret_access_key=cfg.s3_secret_key.get_secret_value(),
                 config=Config(
-                    connect_timeout=timeout, read_timeout=timeout, retries={"max_attempts": 1}
+                    connect_timeout=timeout,
+                    read_timeout=timeout,
+                    retries={"max_attempts": 1},
+                    s3={"addressing_style": "path" if cfg.s3_force_path_style else "virtual"},
                 ),
             )
             client.head_bucket(Bucket=cfg.s3_bucket)
