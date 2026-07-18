@@ -14,7 +14,6 @@ trap cleanup EXIT INT TERM
 cp .env.example .env
 export WEB_PORT="${RUNTIME_GATE_PORT:-39091}"
 $compose up -d --build
-$compose run --rm migrate
 $compose run --rm bucket-init
 $compose run --rm bucket-init
 $compose exec -T worker celery -A worker.main.celery_app inspect ping --timeout 10
