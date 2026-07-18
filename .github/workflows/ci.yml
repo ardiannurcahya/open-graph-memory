@@ -3,6 +3,16 @@ on:
   pull_request:
   push:
     branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/worker/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'deployments/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/ci.yml'
 permissions:
   contents: read
 concurrency:
