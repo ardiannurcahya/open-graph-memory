@@ -352,6 +352,81 @@ async def test_run_persists_selected_extractor_metadata() -> None:
     metadata = ExtractorMetadata(
         provider="openai_compatible",
         model="test-model",
+@pytest.mark.asyncio
+async def test_exact_entities_connect_correlated_documents_in_one_dataset() -> None:
+    project_id = uuid4()
+    db = FakeSession()
+    fixtures = (
+        (
+            "cv",
+            "Ada Lovelace developed GraphMem.",
+            [
+                Entity(name="Ada Lovelace", type="Person", confidence=1),
+                Entity(name="GraphMem", type="Project", confidence=1),
+            ],
+            Relation(
+                source="Ada Lovelace",
+                target="GraphMem",
+                type="DEVELOPED",
+                confidence=1,
+            ),
+        ),
+        (
+            "thesis",
+            "GraphMem uses Neo4j.",
+            [
+                Entity(name="GraphMem", type="Project", confidence=1),
+                Entity(name="Neo4j", type="Technology", confidence=1),
+            ],
+            Relation(source="GraphMem", target="Neo4j", type="USES", confidence=1),
+        ),
+        (
+            "paper",
+            "GraphMem evaluates Knowledge Graphs.",
+            [
+                Entity(name="GraphMem", type="Project", confidence=1),
+                Entity(name="Knowledge Graphs", type="Concept", confidence=1),
+            ],
+            Relation(
+                source="GraphMem",
+                target="Knowledge Graphs",
+                type="EVALUATES",
+                confidence=1,
+            ),
+        ),
+    )
+
+    for index, (document_id, text, entities, relation) in enumerate(fixtures):
+        document = Document(id=document_id, project_id=project_id, dataset_id="dataset-a")
+        chunk = Chunk(
+            id=f"chunk-{document_id}",
+            project_id=project_id,
+            dataset_id="dataset-a",
+            document_id=document_id,
+            chunk_index=index,
+            text=text,
+        )
+        await _persist_chunk(
+            db,  # type: ignore[arg-type]
+            document,
+            chunk,
+            Extractor(Extraction(entities=entities, relations=[relation])),
+        )
+
+    persisted_entities = [
+        row for row in db.rows.values() if isinstance(row, CanonicalEntity)
+    ]
+    relations = [row for row in db.rows.values() if isinstance(row, RelationAssertion)]
+    graph_mem = next(row for row in persisted_entities if row.canonical_name == "GraphMem")
+    graph_mem_evidence = [
+        row
+        for row in db.rows.values()
+        if isinstance(row, GraphEvidence) and row.entity_id == graph_mem.id
+    ]
+
+    assert {row.canonical_name for row in persisted_entities} == {
+        "Ada Lovelace",
+        "GraphMem",
         extractor_version="test-extractor-v2",
         prompt_version="test-prompt-v3",
     )
