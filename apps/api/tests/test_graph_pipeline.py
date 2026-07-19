@@ -346,13 +346,6 @@ async def test_duplicate_execution_is_idempotent_and_persists_relation_provenanc
 
 
 @pytest.mark.asyncio
-async def test_run_persists_selected_extractor_metadata() -> None:
-    db = FakeSession()
-    document, chunk = inputs()
-    metadata = ExtractorMetadata(
-        provider="openai_compatible",
-        model="test-model",
-@pytest.mark.asyncio
 async def test_exact_entities_connect_correlated_documents_in_one_dataset() -> None:
     project_id = uuid4()
     db = FakeSession()
@@ -427,6 +420,20 @@ async def test_exact_entities_connect_correlated_documents_in_one_dataset() -> N
     assert {row.canonical_name for row in persisted_entities} == {
         "Ada Lovelace",
         "GraphMem",
+        "Neo4j",
+        "Knowledge Graphs",
+    }
+    assert len(relations) == 3
+    assert {row.document_id for row in graph_mem_evidence} == {"cv", "thesis", "paper"}
+
+
+@pytest.mark.asyncio
+async def test_run_persists_selected_extractor_metadata() -> None:
+    db = FakeSession()
+    document, chunk = inputs()
+    metadata = ExtractorMetadata(
+        provider="openai_compatible",
+        model="test-model",
         extractor_version="test-extractor-v2",
         prompt_version="test-prompt-v3",
     )
