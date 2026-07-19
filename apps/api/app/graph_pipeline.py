@@ -239,9 +239,11 @@ async def extract_document(
             logger.info("graph analytics refreshed dataset=%s", document.dataset_id)
             return document.id
         except BaseException as exc:
+            # Rollback expires ORM attributes. Snapshot primitives before rollback so
+            # failure bookkeeping never performs implicit async IO from sync access.
+            failed_chunks = [(chunk.id, chunk.text) for chunk in active_batch]
             await db.rollback()
-            for chunk in active_batch:
-                chunk_id, chunk_text = chunk.id, chunk.text
+            for chunk_id, chunk_text in failed_chunks:
                 run_id = stable_id("run", chunk_id, metadata.extractor_version, _hash(chunk_text))
                 run = await db.get(GraphExtractionRun, run_id)
                 if run is not None and run.status != RunStatus.SUCCEEDED:
@@ -388,9 +390,13 @@ async def _persist_chunk_result(
     for entity_item in result.entities:
         offset = chunk.text.find(entity_item.name)
         if offset < 0:
-            raise ValueError(
-                f"entity evidence is not an exact target chunk substring: {entity_item.name}"
+            logger.warning(
+                "skipping entity without exact evidence document=%s chunk=%s entity=%r",
+                document.id,
+                chunk.id,
+                entity_item.name,
             )
+            continue
         normalized = normalize_name(entity_item.name)
         entity_id = stable_id(
             "ent",
@@ -466,7 +472,13 @@ async def _persist_chunk_result(
         quote = relation_item.quote or chunk.text
         quote_offset = chunk.text.find(quote)
         if not quote or quote_offset < 0:
-            raise ValueError("relation evidence is not an exact target chunk substring")
+            logger.warning(
+                "skipping relation without exact evidence document=%s chunk=%s type=%r",
+                document.id,
+                chunk.id,
+                relation_item.type,
+            )
+            continue
         relation_id = stable_id(
             "rel",
             document.dataset_id,

@@ -117,6 +117,14 @@ class PipelineSession(FakeSession):
         self.rollbacks += 1
 
 
+class ExpiringRollbackSession(PipelineSession):
+    async def rollback(self) -> None:
+        await super().rollback()
+        for chunk in self.chunks:
+            chunk.__dict__.pop("id", None)
+            chunk.__dict__.pop("text", None)
+
+
 class SessionFactory:
     def __init__(self, session: PipelineSession) -> None:
         self.session = session
@@ -486,6 +494,59 @@ async def test_failed_attempt_is_durable_and_can_be_sanitized_by_caller() -> Non
     run = next(row for row in db.rows.values() if isinstance(row, GraphExtractionRun))
     assert run.status == RunStatus.RUNNING
     assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_failure_snapshots_chunk_before_rollback_expiration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, chunk = inputs()
+    document.status = DocumentStatus.PERSISTING
+    db = ExpiringRollbackSession(document, [chunk])
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+
+    with pytest.raises(RuntimeError, match="provider failed"):
+        await extract_document(document.id, Extractor(RuntimeError("provider failed")), object())
+
+    run = next(row for row in db.rows.values() if isinstance(row, GraphExtractionRun))
+    assert run.status == RunStatus.FAILED
+    assert run.error_message == "provider failed"
+    assert db.rollbacks == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_items_without_exact_evidence_are_skipped() -> None:
+    db = FakeSession()
+    document, chunk = inputs()
+    extractor = Extractor(
+        Extraction(
+            entities=[
+                Entity(name="Acme", type="Org", confidence=1),
+                Entity(name="Capstone Project", type="Project", confidence=1),
+                Entity(name="Bob", type="Person", confidence=1),
+            ],
+            relations=[
+                Relation(
+                    source="Acme",
+                    target="Bob",
+                    type="EMPLOYS",
+                    confidence=1,
+                    quote="invented quote",
+                )
+            ],
+        )
+    )
+
+    await _persist_chunk(db, document, chunk, extractor)  # type: ignore[arg-type]
+
+    entities = [row for row in db.rows.values() if isinstance(row, CanonicalEntity)]
+    assert {row.canonical_name for row in entities} == {"Acme", "Bob"}
+    assert not any(isinstance(row, RelationAssertion) for row in db.rows.values())
+    run = next(row for row in db.rows.values() if isinstance(row, GraphExtractionRun))
+    assert run.status == RunStatus.SUCCEEDED
 
 
 @pytest.mark.asyncio
