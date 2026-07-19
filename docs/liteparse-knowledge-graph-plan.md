@@ -600,7 +600,6 @@ GRAPH_DOCUMENT_CONSOLIDATION_ENABLED=false
 GRAPH_DOCUMENT_CONSOLIDATION_VERSION=graph-consolidation-v1
 GRAPH_DOCUMENT_CONSOLIDATION_PROMPT_VERSION=graph-consolidation-prompt-v1
 GRAPH_DOCUMENT_CONSOLIDATION_MAX_CHARS=100000
-GRAPH_DOCUMENT_CONSOLIDATION_BATCH_CHARS=30000
 GRAPH_DOCUMENT_CONTEXT_EXCERPT_CHARS=500
 ```
 
@@ -612,7 +611,7 @@ OCR mode must be auto, always, or disabled
 DPI, page limit, and worker count must be positive
 Consolidation is initially valid only for OpenAI-compatible extractor
 Consolidation versions and prompt versions must be non-empty
-Batch character limit must not exceed total character limit
+Consolidation character limit must be positive
 ```
 
 Activation example after validation:

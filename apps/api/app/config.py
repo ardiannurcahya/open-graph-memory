@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     graph_document_consolidation_version: str = "graph-consolidation-v1"
     graph_document_consolidation_prompt_version: str = "graph-consolidation-prompt-v1"
     graph_document_consolidation_max_chars: int = 100_000
-    graph_document_consolidation_batch_chars: int = 30_000
     pdf_parser: str = "pypdf"
     liteparse_ocr_mode: str = "auto"
     liteparse_dpi: int = 150
@@ -71,13 +70,8 @@ class Settings(BaseSettings):
             self.graph_document_consolidation_prompt_version.strip()
         ):
             raise ValueError("graph consolidation versions must be non-empty")
-        if (
-            self.graph_document_consolidation_max_chars < 1
-            or self.graph_document_consolidation_batch_chars < 1
-            or self.graph_document_consolidation_batch_chars
-            > self.graph_document_consolidation_max_chars
-        ):
-            raise ValueError("graph consolidation character limits are invalid")
+        if self.graph_document_consolidation_max_chars < 1:
+            raise ValueError("graph consolidation character limit must be positive")
         if self.graph_document_consolidation_enabled and self.graph_extractor_provider != "openai":
             raise ValueError("document consolidation requires OpenAI graph extraction")
         if self.pdf_parser not in {"pypdf", "liteparse"}:
