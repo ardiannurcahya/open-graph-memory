@@ -229,28 +229,13 @@ class LiteParsePdfParser:
             result = (self._parser(True) if ocr_requested else probe).parse(content)
         except ParseError as exc:
             raise ValueError(f"LiteParse PDF parsing failed: {exc}") from exc
+        # Layout items are not semantic boundaries. Preserve page provenance and let
+        # the existing chunker split complete page text at paragraph/sentence boundaries.
         segments = tuple(
-            ParsedSegment(
-                item.text.strip(),
-                {
-                    "page_number": page.page_num,
-                    "bbox": [item.x, item.y, item.x + item.width, item.y + item.height],
-                    "bbox_coordinate_system": "pdf_points_top_left_xyxy",
-                    "font_name": item.font_name,
-                    "font_size": item.font_size,
-                    "rotation": item.rotation,
-                },
-            )
+            ParsedSegment(page.text.strip(), {"page_number": page.page_num})
             for page in result.pages
-            for item in page.text_items
-            if item.text.strip()
+            if page.text.strip()
         )
-        if not segments:
-            segments = tuple(
-                ParsedSegment(page.text.strip(), {"page_number": page.page_num})
-                for page in result.pages
-                if page.text.strip()
-            )
         return ParsedDocument(
             result.text,
             {

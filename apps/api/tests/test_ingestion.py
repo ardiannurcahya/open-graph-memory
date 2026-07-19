@@ -267,8 +267,8 @@ class _TextItem:
 
 class _Page:
     page_num = 1
-    text = "Digital text"
-    text_items = [_TextItem()]
+    text = "Ada Lovelace developed GraphMem using Neo4j."
+    text_items = [_TextItem(), _TextItem()]
 
 
 class _Result:
@@ -294,7 +294,7 @@ class _FakeLiteParse:
         return _Result()
 
 
-def test_liteparse_digital_pdf_avoids_ocr_and_normalizes_spatial_metadata() -> None:
+def test_liteparse_digital_pdf_avoids_ocr_and_coalesces_page_text() -> None:
     _FakeLiteParse.instances.clear()
     _FakeLiteParse.complex = False
     parser = LiteParsePdfParser(parser_factory=_FakeLiteParse)  # type: ignore[arg-type]
@@ -304,8 +304,18 @@ def test_liteparse_digital_pdf_avoids_ocr_and_normalizes_spatial_metadata() -> N
     assert len(_FakeLiteParse.instances) == 1
     assert _FakeLiteParse.instances[0].options["ocr_enabled"] is False
     assert parsed.metadata["ocr_requested"] is False
-    assert parsed.segments[0].metadata["page_number"] == 1
-    assert parsed.segments[0].metadata["bbox"] == [10.0, 20.0, 40.0, 32.0]
+    assert parsed.segments == (
+        ParsedSegment("Ada Lovelace developed GraphMem using Neo4j.", {"page_number": 1}),
+    )
+
+
+def test_liteparse_page_segment_keeps_explicit_relation_in_one_chunk() -> None:
+    parsed = LiteParsePdfParser(parser_factory=_FakeLiteParse).parse(b"pdf")  # type: ignore[arg-type]
+
+    chunks = RecursiveTextChunker(size=100, overlap=1).split_document("doc", parsed)
+
+    assert [chunk.text for chunk in chunks] == ["Ada Lovelace developed GraphMem using Neo4j."]
+    assert [chunk.metadata["page_number"] for chunk in chunks] == [1]
 
 
 def test_liteparse_complex_pdf_routes_to_single_worker_ocr() -> None:
