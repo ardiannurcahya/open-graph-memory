@@ -8,6 +8,10 @@ import httpx
 from open_graph_sdk.config import ClientConfig
 from open_graph_sdk.errors import TransportError, raise_for_response
 from open_graph_sdk.models import (
+    AgentMemoryAttempt,
+    AgentMemoryEpisode,
+    AgentMemoryOutcome,
+    AgentMemorySearchResponse,
     Dataset,
     DatasetCreate,
     DatasetUpdate,
@@ -120,6 +124,135 @@ class AsyncOGMClient:
         ).model_dump(mode="json")
         data = await self._request("POST", "/v1/datasets", json=body)
         return Dataset.model_validate(data)
+
+    async def create_agent_memory_episode(
+        self,
+        domain: str,
+        title: str,
+        goal: str,
+        problem_signature: str,
+        *,
+        scope: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
+    ) -> AgentMemoryEpisode:
+        data = await self._request(
+            "POST",
+            "/v1/agent-memory/episodes",
+            json={
+                "domain": domain,
+                "title": title,
+                "goal": goal,
+                "problem_signature": problem_signature,
+                "scope": scope or {},
+                "tags": tags or [],
+                "metadata": metadata or {},
+                "evidence": evidence or [],
+            },
+        )
+        return AgentMemoryEpisode.model_validate(data)
+
+    async def list_agent_memory_episodes(
+        self, *, status: str | None = None, limit: int = 25
+    ) -> list[AgentMemoryEpisode]:
+        params: dict[str, Any] = {"limit": limit}
+        if status is not None:
+            params["status"] = status
+        data = await self._request("GET", "/v1/agent-memory/episodes", params=params)
+        return [AgentMemoryEpisode.model_validate(item) for item in data]
+
+    async def get_agent_memory_episode(self, episode_id: str) -> AgentMemoryEpisode:
+        data = await self._request("GET", f"/v1/agent-memory/episodes/{episode_id}")
+        return AgentMemoryEpisode.model_validate(data)
+
+    async def append_agent_memory_attempt(
+        self,
+        episode_id: str,
+        hypothesis: str,
+        actions: list[Any],
+        result: str,
+        *,
+        notes: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AgentMemoryAttempt:
+        data = await self._request(
+            "POST",
+            f"/v1/agent-memory/episodes/{episode_id}/attempts",
+            json={
+                "hypothesis": hypothesis,
+                "actions": actions,
+                "result": result,
+                "notes": notes,
+                "metadata": metadata or {},
+            },
+        )
+        return AgentMemoryAttempt.model_validate(data)
+
+    async def record_agent_memory_outcome(
+        self,
+        episode_id: str,
+        status: str,
+        summary: str,
+        *,
+        lesson: str | None = None,
+        verifiers: list[dict[str, Any]] | None = None,
+        metrics: dict[str, Any] | None = None,
+        pattern_key: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AgentMemoryOutcome:
+        data = await self._request(
+            "POST",
+            f"/v1/agent-memory/episodes/{episode_id}/outcomes",
+            json={
+                "status": status,
+                "summary": summary,
+                "lesson": lesson,
+                "verifiers": verifiers or [],
+                "metrics": metrics or {},
+                "pattern_key": pattern_key,
+                "metadata": metadata or {},
+            },
+        )
+        return AgentMemoryOutcome.model_validate(data)
+
+    async def search_agent_memory(
+        self,
+        query: str,
+        *,
+        problem_signature: str | None = None,
+        repository: str | None = None,
+        environment: str | None = None,
+        include_inactive: bool = False,
+        limit: int = 25,
+    ) -> AgentMemorySearchResponse:
+        params: dict[str, Any] = {"q": query, "include_inactive": include_inactive, "limit": limit}
+        if problem_signature is not None:
+            params["problem_signature"] = problem_signature
+        if repository is not None:
+            params["repository"] = repository
+        if environment is not None:
+            params["environment"] = environment
+        data = await self._request("GET", "/v1/agent-memory/search", params=params)
+        return AgentMemorySearchResponse.model_validate(data)
+
+    async def feedback_agent_memory_episode(
+        self, episode_id: str, score: int
+    ) -> AgentMemoryEpisode:
+        data = await self._request(
+            "POST", f"/v1/agent-memory/episodes/{episode_id}/feedback", json={"score": score}
+        )
+        return AgentMemoryEpisode.model_validate(data)
+
+    async def supersede_agent_memory_episode(
+        self, episode_id: str, superseding_episode_id: str
+    ) -> AgentMemoryEpisode:
+        data = await self._request(
+            "POST",
+            f"/v1/agent-memory/episodes/{episode_id}/supersede",
+            json={"superseding_episode_id": superseding_episode_id},
+        )
+        return AgentMemoryEpisode.model_validate(data)
 
     async def list_datasets(self) -> list[Dataset]:
         data = await self._request("GET", "/v1/datasets")

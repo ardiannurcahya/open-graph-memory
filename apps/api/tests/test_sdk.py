@@ -133,9 +133,7 @@ async def test_sdk_upload_and_structured_graph() -> None:
     assert document.id == "doc1"
     search = await client.search_graph("ds1", "alpha", entity_type="concept", limit=3)
     path = await client.find_graph_path("ds1", "alpha", "beta", max_depth=2, relation_limit=20)
-    subgraph = await client.get_subgraph(
-        "ds1", "alpha", depth=2, node_limit=20, relation_limit=30
-    )
+    subgraph = await client.get_subgraph("ds1", "alpha", depth=2, node_limit=20, relation_limit=30)
     await client.aclose()
 
     assert search[0].id == "alpha"
@@ -191,4 +189,82 @@ async def test_sdk_project_admin_header() -> None:
     )
     project = await client.create_project("demo")
     assert project.api_key == "ogm_created"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_sdk_agent_memory_methods() -> None:
+    seen: list[httpx.Request] = []
+    episode = {
+        "id": "ame1",
+        "project_id": "proj1",
+        "domain": "engineering",
+        "title": "Remember",
+        "goal": "ship",
+        "problem_signature": "deploy failure",
+        "scope": {},
+        "tags": [],
+        "metadata": {},
+        "status": "active",
+        "feedback_score": 0,
+        "superseded_by_id": None,
+        "attempts": [],
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/outcomes"):
+            return httpx.Response(
+                201,
+                json={
+                    "id": "amo1",
+                    "status": "success",
+                    "pattern": {
+                        "pattern_key": "retry",
+                        "verified_outcomes": 3,
+                        "weighted_successes": 3.0,
+                        "weighted_total": 3.0,
+                        "confidence": 1.0,
+                        "promoted": True,
+                    },
+                },
+            )
+        if request.url.path.endswith("/attempts"):
+            return httpx.Response(
+                201,
+                json={
+                    "id": "ama1",
+                    "sequence": 1,
+                    "hypothesis": "try",
+                    "actions": [],
+                    "result": "success",
+                    "notes": None,
+                    "metadata": {},
+                },
+            )
+        if request.url.path.endswith("/search") or request.method == "GET":
+            return httpx.Response(200, json={"query": "remember", "results": []})
+        return httpx.Response(201 if request.method == "POST" else 200, json=episode)
+
+    client = AsyncOGMClient(
+        ClientConfig("http://test", "ogm_test", "proj1"), transport=httpx.MockTransport(handler)
+    )
+    assert (
+        await client.create_agent_memory_episode(
+            "engineering", "Remember", "ship", "deploy failure"
+        )
+    ).id == "ame1"
+    assert (await client.append_agent_memory_attempt("ame1", "try", [], "success")).sequence == 1
+    assert (
+        await client.record_agent_memory_outcome(
+            "ame1", "success", "done", verifiers=[{"kind": "ci", "name": "ci", "status": "passed"}]
+        )
+    ).pattern.promoted
+    assert (await client.search_agent_memory("remember")).query == "remember"
+    assert [request.url.path for request in seen] == [
+        "/v1/agent-memory/episodes",
+        "/v1/agent-memory/episodes/ame1/attempts",
+        "/v1/agent-memory/episodes/ame1/outcomes",
+        "/v1/agent-memory/search",
+    ]
     await client.aclose()

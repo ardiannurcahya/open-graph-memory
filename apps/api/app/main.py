@@ -5,6 +5,7 @@ import structlog
 from fastapi import FastAPI
 from open_graph_contracts import PluginConfig, SecretValue
 
+from app.agent_memory import router as agent_memory_router
 from app.config import get_settings
 from app.datasets import router as datasets_router
 from app.documents import router as documents_router
@@ -36,3 +37,4 @@ app.include_router(projects_router)
 app.include_router(datasets_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
+app.include_router(agent_memory_router)

@@ -4,6 +4,8 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
+    Computed,
     DateTime,
     Enum,
     ForeignKey,
@@ -13,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -253,3 +255,152 @@ class GraphAnalyticsCommunity(Base):
     external_edges: Mapped[int] = mapped_column(default=0)
     density: Mapped[float] = mapped_column(default=0.0)
     importance: Mapped[float] = mapped_column(default=0.0)
+
+
+class AgentMemoryEpisode(Base):
+    __tablename__ = "agent_memory_episodes"
+    __table_args__ = (
+        CheckConstraint(
+            "domain IN ('engineering', 'trading', 'research', 'operations', 'custom')",
+            name="ck_agent_memory_episode_domain",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'active', 'degraded', 'superseded', 'rejected')",
+            name="ck_agent_memory_episode_status",
+        ),
+        Index("ix_agent_memory_episodes_scope_created", "project_id", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    domain: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(255))
+    goal: Mapped[str] = mapped_column(Text)
+    problem_signature: Mapped[str] = mapped_column(String(512))
+    scope: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    feedback_score: Mapped[int] = mapped_column(default=0)
+    superseded_by_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="SET NULL")
+    )
+    search_vector: Mapped[object] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('simple', title || ' ' || goal || ' ' || problem_signature)",
+            persisted=True,
+        ),
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentMemoryAttempt(Base):
+    __tablename__ = "agent_memory_attempts"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "sequence", name="uq_agent_memory_attempt_sequence"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="CASCADE")
+    )
+    sequence: Mapped[int]
+    hypothesis: Mapped[str] = mapped_column(Text)
+    actions: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    result: Mapped[str] = mapped_column(String(16))
+    notes: Mapped[str | None] = mapped_column(Text)
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgentMemoryOutcome(Base):
+    __tablename__ = "agent_memory_outcomes"
+    __table_args__ = (
+        UniqueConstraint("episode_id", name="uq_agent_memory_final_outcome_episode"),
+        CheckConstraint(
+            "status IN ('success', 'failed', 'partial', 'cancelled')",
+            name="ck_agent_memory_outcome_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="CASCADE")
+    )
+    status: Mapped[str] = mapped_column(String(16))
+    summary: Mapped[str] = mapped_column(Text)
+    lesson: Mapped[str | None] = mapped_column(Text)
+    metrics: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    pattern_key: Mapped[str] = mapped_column(String(255))
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgentMemoryPattern(Base):
+    __tablename__ = "agent_memory_patterns"
+    __table_args__ = (
+        UniqueConstraint("project_id", "pattern_key", name="uq_agent_memory_pattern_key"),
+        Index("ix_agent_memory_patterns_search", "project_id", "promoted", "confidence"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    pattern_key: Mapped[str] = mapped_column(String(255))
+    verified_outcomes: Mapped[int] = mapped_column(default=0)
+    weighted_successes: Mapped[float] = mapped_column(default=0.0)
+    weighted_total: Mapped[float] = mapped_column(default=0.0)
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    promoted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentMemoryVerifier(Base):
+    __tablename__ = "agent_memory_verifiers"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('ci', 'runtime', 'test', 'build', 'self_report', 'custom')",
+            name="ck_agent_memory_verifier_kind",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    outcome_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_outcomes.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32))
+    command: Mapped[str | None] = mapped_column(Text)
+    artifact_uri: Mapped[str | None] = mapped_column(Text)
+    metrics: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+
+
+class AgentMemoryEvidence(Base):
+    __tablename__ = "agent_memory_evidence"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="CASCADE")
+    )
+    reference: Mapped[str] = mapped_column(Text)
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+
+
+class AgentMemoryPatternMember(Base):
+    __tablename__ = "agent_memory_pattern_members"
+    pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_patterns.id", ondelete="CASCADE"), primary_key=True
+    )
+    outcome_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_outcomes.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class AgentMemoryRetrievalAudit(Base):
+    __tablename__ = "agent_memory_retrieval_audit"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    query: Mapped[str] = mapped_column(Text)
+    results: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,3 +1,13 @@
+from open_graph_sdk.models.agent_memory import (
+    AgentMemoryAttempt,
+    AgentMemoryEpisode,
+    AgentMemoryEvidence,
+    AgentMemoryOutcome,
+    AgentMemoryPattern,
+    AgentMemorySearchResponse,
+    AgentMemorySearchResult,
+    AgentMemoryVerifier,
+)
 from open_graph_sdk.models.common import (
     DatasetStatus,
     DocumentStatus,
@@ -25,6 +35,14 @@ __all__ = [
     "DatasetCreate",
     "DatasetStatus",
     "DatasetUpdate",
+    "AgentMemoryAttempt",
+    "AgentMemoryEvidence",
+    "AgentMemoryEpisode",
+    "AgentMemoryOutcome",
+    "AgentMemoryPattern",
+    "AgentMemorySearchResponse",
+    "AgentMemorySearchResult",
+    "AgentMemoryVerifier",
     "Document",
     "DocumentStatus",
     "Entity",
