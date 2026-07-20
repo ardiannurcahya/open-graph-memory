@@ -404,7 +404,7 @@ class OpenAICompatibleExtractor:
     base_url: str
     api_key: str
     model: str
-    prompt_version: str = "graph-v2"
+    prompt_version: str = "graph-v4"
     timeout: float = 30.0
     max_batch_chars: int = 100_000
 
@@ -447,13 +447,17 @@ class OpenAICompatibleExtractor:
                 content = _load_openai_content(response.text)
                 results.extend(_parse_batch_content(content, request_contexts))
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                results.extend(
-                    BatchExtractionResult(
-                        _context_chunk_id(context),
-                        DeterministicExtractor().extract(context.target_text),
+                if len(request_contexts) > 1:
+                    for context in request_contexts:
+                        results.extend(self.extract_batch([context]))
+                else:
+                    results.extend(
+                        BatchExtractionResult(
+                            _context_chunk_id(context),
+                            DeterministicExtractor().extract(context.target_text),
+                        )
+                        for context in request_contexts
                     )
-                    for context in request_contexts
-                )
             remaining = remaining[len(request_contexts) :]
         return results
 
@@ -490,15 +494,30 @@ class OpenAICompatibleExtractor:
 
     def _system_prompt(self) -> str:
         return (
-            "Extract entities and relations. Return only valid JSON. Entity fields: name, type, "
-            "confidence, aliases. Relation fields: source, source_type, target, target_type, type, "
-            "confidence, quote. Each TARGET CHUNK is its result's only factual source. Previous "
-            "chunks are reference-only and cannot own entities, aliases, relations, or evidence. "
-            "Every entity name, alias, and relation quote must be an exact substring of its TARGET "
-            "CHUNK. Do not infer relations from co-occurrence. Emit a typed relation for every "
-            "explicit action, ownership, development, and acquisition relationship. "
-            "Relation source "
-            "and target exactly match emitted entity names. No markdown, prose, or explanations. "
+            "ROLE: You are a document-to-knowledge-graph extraction engine. Your only job is to "
+            "convert each TARGET CHUNK into evidence-backed entities and typed relations for a "
+            "knowledge graph. Return only JSON matching the supplied schema. "
+            "OBJECTIVE: preserve explicit factual connections, not merely entity mentions. "
+            "PROCEDURE for each target: (1) read the complete target; (2) identify every sentence "
+            "or clause that explicitly connects two concepts; (3) emit both endpoint entities; "
+            "(4) emit one typed relation for each connection; (5) then emit other useful entities. "
+            "RELATION COVERAGE: extract actions, ownership, development, acquisition, use, "
+            "authorship, affiliation, composition, part-whole, measurement, comparison, influence, "
+            "causation, increase/decrease, and positive, negative, direct, inverse, or non-linear "
+            "correlation. Use concise UPPER_SNAKE_CASE relation types such as USES, PART_OF, "
+            "MEASURED_BY, INCREASES, DECREASES, CAUSES, POSITIVELY_CORRELATED_WITH, and "
+            "INVERSELY_CORRELATED_WITH. A target containing an explicit factual connection between "
+            "two concepts must not return an empty relations array. "
+            "EVIDENCE RULES: each TARGET CHUNK is its result's only factual source. Previous "
+            "chunks "
+            "are reference-only and cannot own entities, aliases, relations, or evidence. Every "
+            "entity name, alias, and relation quote must be an exact substring of its TARGET "
+            "CHUNK. "
+            "Do not infer a relation from co-occurrence alone. Relation source and target must "
+            "exactly match names in that result's entities array. Relation quote must contain both "
+            "endpoint names and state the connection. Entity fields: name, type, confidence, "
+            "aliases. Relation fields: source, source_type, target, target_type, type, confidence, "
+            "quote. No markdown, prose, or explanations. "
             f"Prompt version: {self.prompt_version}"
         )
 
@@ -597,6 +616,9 @@ def _parse_batch_content(
     content: str, contexts: list[ChunkExtractionContext]
 ) -> list[BatchExtractionResult]:
     payload = _object_map(_load_json_object(content))
+    if len(contexts) == 1 and "results" not in payload:
+        extraction = Extraction.model_validate(_normalize_extraction_payload(payload))
+        return [BatchExtractionResult(_context_chunk_id(contexts[0]), extraction)]
     requested = {_context_chunk_id(context): context for context in contexts}
     items = _object_list(payload.get("results"))
     parsed: list[BatchExtractionResult] = []

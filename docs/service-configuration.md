@@ -92,8 +92,8 @@ Offline deterministic mode:
 ```dotenv
 GRAPH_EXTRACTOR_PROVIDER=deterministic
 GRAPH_EXTRACTOR_MODEL=deterministic-graph-v1
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v2
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v2
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
 GRAPH_EXTRACTOR_TARGET_BATCH_SIZE=10
@@ -108,8 +108,8 @@ GRAPH_EXTRACTOR_PROVIDER=openai
 OPENAI_GRAPH_EXTRACTOR_BASE_URL=https://provider.example/v1
 OPENAI_API_KEY=replace-with-provider-key
 GRAPH_EXTRACTOR_MODEL=replace-with-exact-model-id
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v2
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v2
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
 GRAPH_EXTRACTOR_TARGET_BATCH_SIZE=10
@@ -124,10 +124,11 @@ OpenAI-compatible extraction sends one request per target batch. Batches hold up
 requests independently. Each target receives its fixed preceding
 `GRAPH_DOCUMENT_CONTEXT_PREVIOUS_CHUNKS` chunks as reference-only context; target text remains
 sole evidence source. Provider output must contain one explicit `chunk_id` result per target.
-Malformed or incomplete batch output falls back to deterministic extraction per target. Legacy
-extract-only plugins also run per target. `GRAPH_EXTRACTOR_MAX_BATCH_CHARS` bounds deterministic
-request payload construction: oldest references trim first, then target count reduces; no target
-chunk is dropped. Retries retain fixed document windows and skip successful chunk runs.
+Malformed or incomplete multi-target output retries each target through the provider separately;
+malformed single-target output falls back to deterministic extraction. Legacy extract-only plugins
+also run per target. `GRAPH_EXTRACTOR_MAX_BATCH_CHARS` bounds deterministic request payload
+construction: oldest references trim first, then target count reduces; no target chunk is dropped.
+Retries retain fixed document windows and skip successful chunk runs.
 
 Document consolidation is opt-in and initially restricted to OpenAI-compatible extraction:
 
@@ -150,8 +151,8 @@ Local NLP extraction:
 ```dotenv
 GRAPH_EXTRACTOR_PROVIDER=nlp
 GRAPH_EXTRACTOR_MODEL=nlp-graph-v1
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v2
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v2
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
 ```

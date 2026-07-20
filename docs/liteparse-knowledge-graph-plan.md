@@ -619,7 +619,7 @@ Activation example after validation:
 ```env
 PDF_PARSER=liteparse
 GRAPH_EXTRACTOR_PROVIDER=openai
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v2
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
 GRAPH_DOCUMENT_CONSOLIDATION_ENABLED=true
 GRAPH_DOCUMENT_CONSOLIDATION_VERSION=graph-consolidation-v1
 ```

@@ -219,11 +219,12 @@ def test_openai_extractor_prompt_requires_complete_named_relations(monkeypatch) 
     OpenAICompatibleExtractor("http://provider", "key", "model").extract("input")
 
     system_prompt = request["messages"][0]["content"]
-    required_relation_instruction = (
-        "every explicit action, ownership, development, and acquisition relationship"
+    assert "document-to-knowledge-graph extraction engine" in system_prompt
+    assert (
+        "identify every sentence or clause that explicitly connects two concepts" in system_prompt
     )
-    assert required_relation_instruction in system_prompt
-    assert "source and target exactly match emitted entity names" in system_prompt
+    assert "must not return an empty relations array" in system_prompt
+    assert "Relation source and target must exactly match names" in system_prompt
 
 
 def test_contextual_extraction_marks_neighbors_reference_only(monkeypatch) -> None:
@@ -350,6 +351,82 @@ def test_openai_batch_malformed_response_falls_back_per_target(monkeypatch) -> N
         ("one", "Acme"),
         ("two", "Bob"),
     ]
+
+
+def test_openai_single_target_batch_accepts_unwrapped_provider_payload(monkeypatch) -> None:
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        content = json.dumps(
+            {
+                "entities": [
+                    {"name": "effective porosity", "type": "Property", "confidence": 1},
+                    {"name": "tortuosity", "type": "Property", "confidence": 1},
+                ],
+                "relations": [
+                    {
+                        "source": "effective porosity",
+                        "source_type": "Property",
+                        "target": "tortuosity",
+                        "target_type": "Property",
+                        "type": "INVERSELY_CORRELATED_WITH",
+                        "confidence": 1,
+                        "quote": "effective porosity and tortuosity",
+                    }
+                ],
+            }
+        )
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": content}}]}))
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    context = ChunkExtractionContext(
+        "paper.pdf",
+        (),
+        10,
+        28,
+        53,
+        "",
+        "effective porosity and tortuosity",
+        "",
+        (),
+        "correlation-chunk",
+    )
+
+    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch(
+        [context]
+    )[0]
+
+    assert result.chunk_id == "correlation-chunk"
+    assert result.extraction.relations[0].type == "INVERSELY_CORRELATED_WITH"
+
+
+def test_openai_multi_target_unwrapped_payload_retries_each_target(monkeypatch) -> None:
+    requests: list[dict[str, object]] = []
+
+    def fake_post(*_args, **kwargs) -> _FakeResponse:
+        payload = json.loads(kwargs["json"]["messages"][1]["content"])
+        requests.append(payload)
+        targets = payload["targets"]
+        if len(targets) > 1:
+            content = {"entities": [], "relations": []}
+        else:
+            text = targets[0]["target_chunk_only_factual_source"]
+            content = {
+                "entities": [{"name": text, "type": "Concept", "confidence": 1}],
+                "relations": [],
+            }
+        return _FakeResponse(
+            json.dumps({"choices": [{"message": {"content": json.dumps(content)}}]})
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    contexts = [
+        ChunkExtractionContext("paper", (), None, 0, 2, "", "Alpha", "", (), "one"),
+        ChunkExtractionContext("paper", (), None, 1, 2, "", "Beta", "", (), "two"),
+    ]
+
+    results = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch(contexts)
+
+    assert [result.extraction.entities[0].name for result in results] == ["Alpha", "Beta"]
+    assert [len(request["targets"]) for request in requests] == [2, 1, 1]
 
 
 def test_openai_batch_guard_trims_oldest_references_then_reduces_targets(monkeypatch) -> None:

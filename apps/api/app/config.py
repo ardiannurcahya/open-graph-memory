@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     graph_extractor_provider: str = "deterministic"
     graph_extractor_model: str = "deterministic-graph-v1"
-    graph_extractor_version: str = "graph-extractor-v2"
-    graph_extractor_prompt_version: str = "graph-v2"
+    graph_extractor_version: str = "graph-extractor-v5"
+    graph_extractor_prompt_version: str = "graph-v4"
     graph_extractor_timeout_seconds: int = 300
     graph_extractor_parallelism: int = 1
     graph_extractor_target_batch_size: int = 10
