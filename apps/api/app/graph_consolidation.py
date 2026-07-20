@@ -89,9 +89,9 @@ def validate_output(output: ConsolidationOutput, chunks: dict[str, Chunk]) -> No
             raise ValueError("consolidation evidence quote is not an exact chunk substring")
         if (
             relation_item.source not in relation_item.quote
-            and relation_item.target not in relation_item.quote
+            or relation_item.target not in relation_item.quote
         ):
-            raise ValueError("relation evidence must directly mention at least one endpoint")
+            raise ValueError("relation evidence must directly mention both endpoints")
         key = (
             relation_item.evidence_chunk_id,
             relation_item.quote,
@@ -141,6 +141,7 @@ def consolidate_openai(
                         "Consolidate only explicit extraction summaries. Return JSON matching "
                         "schema. Never infer from co-occurrence or fuzzy similarity. Every alias "
                         "and relation needs one exact evidence quote and source chunk ID. "
+                        "Both endpoints must appear in every relation evidence quote. "
                         "Endpoints require exact names and types. "
                         f"Prompt version: {prompt_version}"
                     ),

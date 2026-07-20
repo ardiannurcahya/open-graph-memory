@@ -244,7 +244,6 @@ async def extract_document(
                         item.chunk,
                         item.extraction,
                         metadata,
-                        persist_relations=not settings.graph_document_consolidation_enabled,
                     )
                     completed += 1
                     logger.info(
@@ -458,7 +457,6 @@ async def _persist_chunk_result(
     result: Extraction,
     metadata: ExtractorMetadata,
     run: GraphExtractionRun | None = None,
-    persist_relations: bool = True,
 ) -> None:
     input_hash = _hash(chunk.text)
     run_id = stable_id("run", chunk.id, metadata.extractor_version, input_hash)
@@ -528,13 +526,6 @@ async def _persist_chunk_result(
                 )
             )
     await db.flush()
-    if not persist_relations:
-        run.status, run.error_message, run.completed_at = (
-            RunStatus.SUCCEEDED,
-            None,
-            datetime.now(UTC),
-        )
-        return
     for relation_item in result.relations:
         source_matches = entities.get(normalize_name(relation_item.source), [])
         target_matches = entities.get(normalize_name(relation_item.target), [])
