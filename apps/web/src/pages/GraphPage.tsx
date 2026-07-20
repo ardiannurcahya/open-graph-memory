@@ -122,15 +122,12 @@ export default function GraphPage() {
       if (tool === "search") {
         const response = await graphApi.searchEntities(datasetId, query.trim());
         setSearchResults(response);
-        setSummary({
-          dataset_id: datasetId,
-          entity_count: response.length,
-          relation_count: 0,
-          nodes: response,
-          relations: [],
-        });
         setPayload(response);
-        setActiveFilters(new Set());
+        setSelectedNode(
+          response.length === 1
+            ? graphState?.nodes.find((node) => node.id === response[0].id) ?? null
+            : null,
+        );
       } else if (tool === "neighbors") {
         const [entity, neighbors] = await Promise.all([
           graphApi.getEntity(entityId.trim()),
@@ -229,6 +226,7 @@ export default function GraphPage() {
           physicsEnabled={physicsEnabled}
           showLabels={showLabels}
           activeFilters={activeFilters}
+          selectedNodeId={selectedNode?.id ?? null}
           onNodeSelect={setSelectedNode}
           onCameraChange={setZoom}
         />
@@ -276,7 +274,7 @@ export default function GraphPage() {
         >
           Visible search <kbd className="ml-1 rounded bg-stone-100 px-1">Ctrl+K</kbd>
         </button>
-        <ToolbarButton active={showFilters} onClick={() => setShowFilters((value) => !value)}>Filters</ToolbarButton>
+        <ToolbarButton active={showFilters || activeFilters.size > 0} onClick={() => setShowFilters((value) => !value)}>Filters{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}</ToolbarButton>
         <ToolbarButton active={showLegend} onClick={() => setShowLegend((value) => !value)}>Legend</ToolbarButton>
         <button
           type="button"
@@ -389,9 +387,10 @@ export default function GraphPage() {
         </div>
       )}
 
-      {showFilters && graphState && (
-        <div className="absolute right-3 top-16 z-10 flex flex-col gap-1">
-          {[...graphState.communities.values()].map((community) => (
+       {showFilters && graphState && (
+         <div className="absolute right-3 top-16 z-10 flex flex-col gap-1">
+           <button type="button" onClick={() => setActiveFilters(new Set())} disabled={activeFilters.size === 0} className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600 disabled:opacity-40">Clear filters</button>
+           {[...graphState.communities.values()].map((community) => (
             <button
               key={community.id}
               type="button"

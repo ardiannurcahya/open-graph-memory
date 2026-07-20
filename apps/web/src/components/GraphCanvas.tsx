@@ -9,6 +9,7 @@ interface GraphCanvasProps {
   physicsEnabled: boolean;
   showLabels: boolean;
   activeFilters: Set<string>;
+  selectedNodeId: string | null;
   onNodeSelect: (node: GraphNode | null) => void;
   onCameraChange?: (zoom: number) => void;
   onLayoutProgress?: (pct: number) => void;
