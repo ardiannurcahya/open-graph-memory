@@ -137,19 +137,10 @@ def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
     )
     chunks = RecursiveTextChunker(size=30, overlap=5).split_document("doc", document)
 
-    assert {chunk.metadata["page_number"] for chunk in chunks} == {1, 3}
-    assert all("first" in chunk.text or "third" in chunk.text for chunk in chunks)
-    assert all(chunk.metadata["segment_count"] > 1 for chunk in chunks)
-    first_page_parts = {
-        chunk.metadata["segment_part"] for chunk in chunks if chunk.metadata["page_number"] == 1
-    }
-    assert first_page_parts == {
-        1,
-        2,
-        3,
-        4,
-        5,
-    }
+    assert [chunk.metadata["page_number"] for chunk in chunks] == [1, 3]
+    assert [chunk.text for chunk in chunks] == [("first " * 20).strip(), ("third " * 20).strip()]
+    assert all(chunk.metadata["segment_count"] == 1 for chunk in chunks)
+    assert all(chunk.metadata["segment_part"] == 1 for chunk in chunks)
 
 
 def test_csv_chunks_never_merge_records_and_long_record_keeps_location() -> None:
