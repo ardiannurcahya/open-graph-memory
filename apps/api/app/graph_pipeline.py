@@ -201,6 +201,7 @@ async def extract_document(
                 .order_by(Chunk.chunk_index)
             )
         )
+        active_batch: list[Chunk] = []
         try:
             settings = get_settings()
             pending_chunks = [
@@ -223,7 +224,6 @@ async def extract_document(
                 parallelism,
             )
             completed = 0
-            active_batch: list[Chunk] = []
             pending_ids = {chunk.id for chunk in pending_chunks}
             request_batches = [
                 [chunk for chunk in window if chunk.id in pending_ids]

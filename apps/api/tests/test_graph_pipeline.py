@@ -521,6 +521,31 @@ async def test_extract_failure_snapshots_chunk_before_rollback_expiration(
 
 
 @pytest.mark.asyncio
+async def test_extract_failure_before_batch_preserves_original_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, chunk = inputs()
+    document.status = DocumentStatus.PERSISTING
+    db = PipelineSession(document, [chunk])
+
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+
+    async def fail_before_batch(*args: object, **kwargs: object) -> bool:
+        raise RuntimeError("missing raw_extraction column")
+
+    monkeypatch.setattr("app.graph_pipeline._chunk_run_succeeded", fail_before_batch)
+
+    with pytest.raises(RuntimeError, match="missing raw_extraction column"):
+        await extract_document(
+            document.id, Extractor(Extraction(entities=[], relations=[])), object()
+        )
+
+    assert db.rollbacks == 1
+
+
+@pytest.mark.asyncio
 async def test_provider_items_without_exact_evidence_are_skipped() -> None:
     db = FakeSession()
     document, chunk = inputs()
