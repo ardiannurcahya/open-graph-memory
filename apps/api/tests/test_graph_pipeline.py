@@ -553,6 +553,24 @@ async def test_provider_items_without_exact_evidence_are_skipped() -> None:
 
 
 @pytest.mark.asyncio
+async def test_persistence_logs_artifact_loss(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.graph_pipeline")
+    db = FakeSession()
+    document, chunk = inputs()
+    extractor = Extractor(
+        Extraction(
+            entities=[Entity(name="Missing", type="Org", confidence=1)],
+            relations=[],
+        )
+    )
+
+    await _persist_chunk(db, document, chunk, extractor)  # type: ignore[arg-type]
+
+    assert "skipped_entities=1" in caplog.text
+    assert "raw_relations=0" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_extract_document_refreshes_analytics_only_after_projection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

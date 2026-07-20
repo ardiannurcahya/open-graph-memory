@@ -472,10 +472,19 @@ async def _persist_chunk_result(
         run.error_message = None
         run.completed_at = None
     run.raw_extraction = result.model_dump(mode="json")
+    persisted_entities = 0
+    skipped_entities = 0
+    persisted_relations = 0
+    skipped_relations: dict[str, int] = {}
+
+    def skip_relation(reason: str) -> None:
+        skipped_relations[reason] = skipped_relations.get(reason, 0) + 1
+
     entities: dict[str, list[CanonicalEntity]] = {}
     for entity_item in result.entities:
         evidence = find_evidence(chunk.text, entity_item.name)
         if evidence is None:
+            skipped_entities += 1
             logger.warning(
                 "skipping entity without exact evidence document=%s chunk=%s entity=%r",
                 document.id,
@@ -484,6 +493,7 @@ async def _persist_chunk_result(
             )
             continue
         offset, quote = evidence
+        persisted_entities += 1
         normalized = normalize_name(entity_item.name)
         entity_id = stable_id(
             "ent",
@@ -548,9 +558,11 @@ async def _persist_chunk_result(
         source = source_matches[0] if len(source_matches) == 1 else None
         target = target_matches[0] if len(target_matches) == 1 else None
         if source is None or target is None or source.id == target.id:
+            skip_relation("missing_or_ambiguous_endpoint")
             continue
         evidence = find_evidence(chunk.text, relation_item.quote or chunk.text)
         if evidence is None:
+            skip_relation("missing_relation_evidence")
             logger.warning(
                 "skipping relation without exact evidence document=%s chunk=%s type=%r",
                 document.id,
@@ -559,6 +571,7 @@ async def _persist_chunk_result(
             )
             continue
         quote_offset, quote = evidence
+        persisted_relations += 1
         relation_id = stable_id(
             "rel",
             document.dataset_id,
@@ -601,6 +614,19 @@ async def _persist_chunk_result(
                     confidence=relation_item.confidence,
                 )
             )
+    logger.info(
+        "graph extraction persistence document=%s chunk=%s raw_entities=%d "
+        "persisted_entities=%d skipped_entities=%d raw_relations=%d "
+        "persisted_relations=%d skipped_relations=%s",
+        document.id,
+        chunk.id,
+        len(result.entities),
+        persisted_entities,
+        skipped_entities,
+        len(result.relations),
+        persisted_relations,
+        skipped_relations,
+    )
     run.status, run.error_message, run.completed_at = RunStatus.SUCCEEDED, None, datetime.now(UTC)
 
 
