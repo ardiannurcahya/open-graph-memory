@@ -32,7 +32,6 @@ services:
     image: opengraphrag-api:latest
     command: alembic upgrade head
     env_file: [{path: ../.env, required: false}]
-    environment: {DATABASE_URL: "${COMPOSE_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-opengraphrag}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-opengraphrag}}"}
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"
   api:
