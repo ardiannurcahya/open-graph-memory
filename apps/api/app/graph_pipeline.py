@@ -16,6 +16,7 @@ from open_graph_core.extraction import (
     ChunkReference,
     Extraction,
     Extractor,
+    find_evidence,
     normalize_name,
     stable_id,
 )
@@ -473,8 +474,8 @@ async def _persist_chunk_result(
     run.raw_extraction = result.model_dump(mode="json")
     entities: dict[str, list[CanonicalEntity]] = {}
     for entity_item in result.entities:
-        offset = chunk.text.find(entity_item.name)
-        if offset < 0:
+        evidence = find_evidence(chunk.text, entity_item.name)
+        if evidence is None:
             logger.warning(
                 "skipping entity without exact evidence document=%s chunk=%s entity=%r",
                 document.id,
@@ -482,6 +483,7 @@ async def _persist_chunk_result(
                 entity_item.name,
             )
             continue
+        offset, quote = evidence
         normalized = normalize_name(entity_item.name)
         entity_id = stable_id(
             "ent",
@@ -519,9 +521,9 @@ async def _persist_chunk_result(
                     run_id=run_id,
                     entity_id=entity_id,
                     relation_id=None,
-                    quote=entity_item.name,
+                    quote=quote,
                     start_offset=offset,
-                    end_offset=offset + len(entity_item.name),
+                    end_offset=offset + len(quote),
                     confidence=entity_item.confidence,
                 )
             )
@@ -547,9 +549,8 @@ async def _persist_chunk_result(
         target = target_matches[0] if len(target_matches) == 1 else None
         if source is None or target is None or source.id == target.id:
             continue
-        quote = relation_item.quote or chunk.text
-        quote_offset = chunk.text.find(quote)
-        if not quote or quote_offset < 0:
+        evidence = find_evidence(chunk.text, relation_item.quote or chunk.text)
+        if evidence is None:
             logger.warning(
                 "skipping relation without exact evidence document=%s chunk=%s type=%r",
                 document.id,
@@ -557,6 +558,7 @@ async def _persist_chunk_result(
                 relation_item.type,
             )
             continue
+        quote_offset, quote = evidence
         relation_id = stable_id(
             "rel",
             document.dataset_id,
@@ -823,15 +825,17 @@ async def _add_consolidation_evidence(
     relation_id: str | None = None,
 ) -> str:
     chunk = await db.get(Chunk, chunk_id)
+    evidence = find_evidence(chunk.text, quote) if chunk is not None else None
     if (
         chunk is None
         or chunk.project_id != document.project_id
         or chunk.dataset_id != document.dataset_id
         or chunk.document_id != document.id
-        or quote not in chunk.text
+        or evidence is None
     ):
         raise ValueError("consolidation evidence is invalid")
-    evidence_id = stable_id("ev", run_id, entity_id or relation_id or "", chunk_id, quote)
+    start, source_quote = evidence
+    evidence_id = stable_id("ev", run_id, entity_id or relation_id or "", chunk_id, source_quote)
     extraction_run_id = await db.scalar(
         select(GraphExtractionRun.id).where(
             GraphExtractionRun.document_id == document.id,
@@ -842,7 +846,6 @@ async def _add_consolidation_evidence(
     if extraction_run_id is None:
         raise ValueError("consolidation evidence has no successful extraction run")
     if await db.get(GraphEvidence, evidence_id) is None:
-        start = chunk.text.find(quote)
         db.add(
             GraphEvidence(
                 id=evidence_id,
@@ -853,9 +856,9 @@ async def _add_consolidation_evidence(
                 run_id=extraction_run_id,
                 entity_id=entity_id,
                 relation_id=relation_id,
-                quote=quote,
+                quote=source_quote,
                 start_offset=start,
-                end_offset=start + len(quote),
+                end_offset=start + len(source_quote),
                 confidence=confidence,
             )
         )

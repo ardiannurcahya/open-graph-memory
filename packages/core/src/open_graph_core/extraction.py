@@ -185,6 +185,50 @@ def normalize_name(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
+def find_evidence(text: str, mention: str) -> tuple[int, str] | None:
+    """Find a PDF mention while preserving a source-exact evidence quote."""
+    offset = text.find(mention)
+    if offset >= 0:
+        return offset, mention
+    normalized_text, starts, ends = _normalize_evidence(text)
+    normalized_mention, _, _ = _normalize_evidence(mention)
+    if not normalized_mention:
+        return None
+    offset = normalized_text.find(normalized_mention)
+    if offset < 0:
+        return None
+    end = offset + len(normalized_mention) - 1
+    return starts[offset], text[starts[offset] : ends[end]]
+
+
+def _normalize_evidence(value: str) -> tuple[str, list[int], list[int]]:
+    normalized: list[str] = []
+    starts: list[int] = []
+    ends: list[int] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char == "\u00ad":
+            index += 1
+            continue
+        if char == "-" and index + 1 < len(value) and value[index + 1] in "\r\n":
+            index += 1
+            while index < len(value) and value[index] in "\r\n":
+                index += 1
+            continue
+        converted = unicodedata.normalize("NFKC", char)
+        if converted.isspace():
+            while index + 1 < len(value) and value[index + 1].isspace():
+                index += 1
+            converted = " "
+        for item in converted:
+            normalized.append(item)
+            starts.append(index)
+            ends.append(index + 1)
+        index += 1
+    return "".join(normalized), starts, ends
+
+
 def stable_id(prefix: str, *parts: str) -> str:
     payload = "\x1f".join(parts).encode()
     return f"{prefix}_{hashlib.sha256(payload).hexdigest()[:32]}"

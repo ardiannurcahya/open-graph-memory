@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 
 import httpx
+from open_graph_core.extraction import find_evidence
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import Chunk
@@ -85,7 +86,7 @@ def validate_output(output: ConsolidationOutput, chunks: dict[str, Chunk]) -> No
         chunk = chunks.get(relation_item.evidence_chunk_id)
         if chunk is None:
             raise ValueError("consolidation evidence references an unknown chunk")
-        if not relation_item.quote or relation_item.quote not in chunk.text:
+        if not relation_item.quote or find_evidence(chunk.text, relation_item.quote) is None:
             raise ValueError("consolidation evidence quote is not an exact chunk substring")
         if (
             relation_item.source not in relation_item.quote
@@ -104,7 +105,7 @@ def validate_output(output: ConsolidationOutput, chunks: dict[str, Chunk]) -> No
         chunk = chunks.get(alias_item.evidence_chunk_id)
         if chunk is None:
             raise ValueError("consolidation evidence references an unknown chunk")
-        if not alias_item.quote or alias_item.quote not in chunk.text:
+        if not alias_item.quote or find_evidence(chunk.text, alias_item.quote) is None:
             raise ValueError("consolidation evidence quote is not an exact chunk substring")
         if (
             alias_item.alias not in alias_item.quote

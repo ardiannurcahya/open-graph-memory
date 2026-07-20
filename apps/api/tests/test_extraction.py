@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from open_graph_core.extraction import (
     Candidate,
     ChunkExtractionContext,
@@ -13,6 +14,7 @@ from open_graph_core.extraction import (
     _load_openai_response,
     _normalize_extraction_payload,
     _parse_extraction_content,
+    find_evidence,
     normalize_name,
     resolve_candidate,
     stable_id,
@@ -25,6 +27,24 @@ class _FakeResponse:
 
     def raise_for_status(self) -> None:
         return None
+
+
+@pytest.mark.parametrize(
+    ("text", "mention", "expected"),
+    [
+        ("Ada  Lovelace", "Ada Lovelace", (0, "Ada  Lovelace")),
+        ("Open-\nGraph Memory", "OpenGraph Memory", (0, "Open-\nGraph Memory")),
+        ("proﬁle", "profile", (0, "proﬁle")),
+    ],
+)
+def test_find_evidence_preserves_pdf_source_text(
+    text: str, mention: str, expected: tuple[int, str]
+) -> None:
+    assert find_evidence(text, mention) == expected
+
+
+def test_find_evidence_does_not_fuzzy_match() -> None:
+    assert find_evidence("Ada Lovelace", "Adrian Lovelace") is None
 
 
 def test_deterministic_fixture_extraction() -> None:
