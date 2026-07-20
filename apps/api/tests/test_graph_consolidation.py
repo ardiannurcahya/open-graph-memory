@@ -120,3 +120,24 @@ def test_relation_quote_must_support_both_endpoints() -> None:
 
     with pytest.raises(ValueError, match="mention both endpoints"):
         validate_output(output, {chunk.id: chunk for chunk in chunks()})
+
+
+def test_consolidation_accepts_pdf_normalized_evidence() -> None:
+    source = chunks()
+    source[1].text = "Project Nova uses Postgre-\nSQL."
+    output = ConsolidationOutput(
+        relations=[
+            ConsolidationRelation(
+                source="Project Nova",
+                source_type="Project",
+                target="PostgreSQL",
+                target_type="Technology",
+                type="USES",
+                evidence_chunk_id="second",
+                quote="Project Nova uses PostgreSQL.",
+                confidence=1,
+            )
+        ]
+    )
+
+    validate_output(output, {chunk.id: chunk for chunk in source})

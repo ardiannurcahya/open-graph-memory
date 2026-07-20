@@ -318,6 +318,31 @@ def test_liteparse_page_segment_keeps_explicit_relation_in_one_chunk() -> None:
     assert [chunk.metadata["page_number"] for chunk in chunks] == [1]
 
 
+def test_liteparse_uses_page_reading_order_not_layout_item_order() -> None:
+    class Item:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class Page:
+        page_num = 1
+        text = "Ada Lovelace developed GraphMem using Neo4j."
+        text_items = [Item("Neo4j."), Item("Ada Lovelace developed"), Item("GraphMem using")]
+
+    class Result:
+        text = Page.text
+        pages = [Page()]
+        num_pages = 1
+
+    class Parser(_FakeLiteParse):
+        def parse(self, content: bytes) -> Result:
+            assert content == b"pdf"
+            return Result()
+
+    parsed = LiteParsePdfParser(parser_factory=Parser).parse(b"pdf")  # type: ignore[arg-type]
+
+    assert parsed.segments[0].text == "Ada Lovelace developed GraphMem using Neo4j."
+
+
 def test_liteparse_complex_pdf_routes_to_single_worker_ocr() -> None:
     _FakeLiteParse.instances.clear()
     _FakeLiteParse.complex = True
