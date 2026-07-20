@@ -662,6 +662,7 @@ async def consolidate_document(
         settings.graph_document_consolidation_version,
     )
     run = await db.get(GraphConsolidationRun, run_id)
+    output_persisted = False
     if run is not None and run.status == RunStatus.SUCCEEDED and run.output is not None:
         output = ConsolidationOutput.model_validate(run.output)
     else:
@@ -701,6 +702,8 @@ async def consolidate_document(
             raise
         try:
             validate_output(output, {chunk.id: chunk for chunk in chunks})
+            await _persist_consolidation_output(db, document, output, run_id, metadata)
+            output_persisted = True
         except BaseException as exc:
             run.status, run.error_message, run.completed_at = (
                 RunStatus.FAILED,
@@ -714,9 +717,9 @@ async def consolidate_document(
             None,
             datetime.now(UTC),
         )
-        # Checkpoint provider output before graph persistence and external projection.
         await db.commit()
-    await _persist_consolidation_output(db, document, output, run_id, metadata)
+    if not output_persisted:
+        await _persist_consolidation_output(db, document, output, run_id, metadata)
 
 
 async def _persist_consolidation_output(
@@ -757,7 +760,7 @@ async def _persist_consolidation_output(
             (normalize_name(relation_item.target), normalize_name(relation_item.target_type))
         )
         if source is None or target is None or source.id == target.id:
-            continue
+            raise ValueError("consolidation relation endpoints do not resolve uniquely")
         relation_id = stable_id(
             "rel",
             document.dataset_id,
@@ -793,9 +796,9 @@ async def _persist_consolidation_output(
         entity = by_key.get(
             (normalize_name(alias_item.canonical_name), normalize_name(alias_item.entity_type))
         )
-        if entity is None or normalize_name(alias_item.alias) == normalize_name(
-            entity.canonical_name
-        ):
+        if entity is None:
+            raise ValueError("consolidation alias canonical entity does not resolve")
+        if normalize_name(alias_item.alias) == normalize_name(entity.canonical_name):
             continue
         alias_id = stable_id(
             "alias",
