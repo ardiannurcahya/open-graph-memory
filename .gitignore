@@ -1,6 +1,7 @@
 # Local planning documents
 /docs/opengraphrag-plan.md
 /docs/implementation-strategy.md
+/docs/runbooks/private-multihost-deployment.md
 
 .env
 .venv/

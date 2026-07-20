@@ -1,0 +1,17 @@
+name: opengraphmemory-dispatcher
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  dispatcher:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
+    command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
+    restart: unless-stopped
+    mem_limit: 256m
+    pids_limit: 128
+    stop_grace_period: 30s
+    env_file: [{path: .env, required: false}]
+    environment: {APP_ENV: production}
+    logging: *logging

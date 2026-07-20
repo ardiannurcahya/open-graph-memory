@@ -81,6 +81,7 @@ def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
         model=_string(config, "model"),
         prompt_version=_string(config, "prompt_version"),
         timeout=_number(config, "timeout", 30.0),
+        max_batch_chars=int(_number(config, "max_batch_chars", 100_000)),
     )
 
 

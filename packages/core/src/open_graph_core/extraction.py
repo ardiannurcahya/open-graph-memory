@@ -38,6 +38,18 @@ class Extraction(BaseModel):
     relations: list[Relation]
 
 
+class _BatchExtractionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chunk_id: str
+    entities: list[Entity]
+    relations: list[Relation]
+
+
+class _BatchExtractionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    results: list[_BatchExtractionItem]
+
+
 class Extractor(Protocol):
     def extract(self, text: str) -> Extraction: ...
 
@@ -52,6 +64,21 @@ class ChunkExtractionContext:
     previous_excerpt: str
     target_text: str
     next_excerpt: str
+    previous_chunks: tuple[ChunkReference, ...] = ()
+    chunk_id: str = ""
+
+
+@dataclass(frozen=True)
+class ChunkReference:
+    chunk_id: str
+    chunk_index: int
+    text: str
+
+
+@dataclass(frozen=True)
+class BatchExtractionResult:
+    chunk_id: str
+    extraction: Extraction
 
 
 def _object_map(value: object) -> dict[str, object]:
@@ -333,23 +360,58 @@ class OpenAICompatibleExtractor:
     base_url: str
     api_key: str
     model: str
-    prompt_version: str = "graph-v1"
+    prompt_version: str = "graph-v2"
     timeout: float = 30.0
+    max_batch_chars: int = 100_000
 
     def extract(self, text: str) -> Extraction:
         return self._extract(text, text)
 
     def extract_with_context(self, context: ChunkExtractionContext) -> Extraction:
-        user_content = (
-            f"DOCUMENT: {context.document_title}\n"
-            f"SECTION: {' > '.join(context.section_path)}\n"
-            f"PAGE: {context.page_number or 'unknown'}\n"
-            f"CHUNK: {context.chunk_index + 1}/{context.chunk_count}\n"
-            f"PREVIOUS EXCERPT (REFERENCE ONLY):\n{context.previous_excerpt}\n"
-            f"TARGET CHUNK (ONLY FACTUAL SOURCE):\n{context.target_text}\n"
-            f"NEXT EXCERPT (REFERENCE ONLY):\n{context.next_excerpt}"
-        )
-        return self._extract(user_content, context.target_text)
+        return self.extract_batch([context])[0].extraction
+
+    def extract_batch(
+        self, contexts: list[ChunkExtractionContext]
+    ) -> list[BatchExtractionResult]:
+        results: list[BatchExtractionResult] = []
+        remaining = list(contexts)
+        while remaining:
+            request_contexts = _fit_batch_contexts(remaining, self.max_batch_chars)
+            response = httpx.post(
+                f"{self.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "temperature": 0,
+                    "messages": [
+                        {"role": "system", "content": self._system_prompt()},
+                        {"role": "user", "content": json.dumps(_batch_payload(request_contexts))},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "graph_extraction_batch",
+                            "strict": True,
+                            "schema": _batch_schema(),
+                        },
+                    },
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            try:
+                content = _load_openai_content(response.text)
+                results.extend(_parse_batch_content(content, request_contexts))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                results.extend(
+                    BatchExtractionResult(
+                        _context_chunk_id(context),
+                        DeterministicExtractor().extract(context.target_text),
+                    )
+                    for context in request_contexts
+                )
+            remaining = remaining[len(request_contexts) :]
+        return results
 
     def _extract(self, user_content: str, source_text: str) -> Extraction:
         schema = Extraction.model_json_schema()
@@ -363,17 +425,7 @@ class OpenAICompatibleExtractor:
                     {
                         "role": "system",
                         "content": (
-                            "Extract entities and relations. Return only valid JSON with top-level "
-                            "entities and relations arrays. Entity fields: name, type, confidence, "
-                            "aliases. Relation fields: source, source_type, target, target_type, "
-                            "type, confidence, quote. TARGET CHUNK is the only factual source. "
-                            "Neighbor excerpts may only resolve references and pronouns. Every "
-                            "entity name, alias, and relation quote must be an exact TARGET CHUNK "
-                            "substring. Do not infer relations from co-occurrence. No markdown, "
-                            "prose, or explanations. Emit a typed relation for every explicit "
-                            "action, ownership, development, and acquisition relationship. "
-                            "Relation source and target exactly match emitted entity names. "
-                            f"Prompt version: {self.prompt_version}"
+                            self._system_prompt()
                         ),
                     },
                     {"role": "user", "content": user_content},
@@ -391,6 +443,135 @@ class OpenAICompatibleExtractor:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return DeterministicExtractor().extract(source_text)
         return _parse_extraction_content(content, source_text)
+
+    def _system_prompt(self) -> str:
+        return (
+            "Extract entities and relations. Return only valid JSON. Entity fields: name, type, "
+            "confidence, aliases. Relation fields: source, source_type, target, target_type, type, "
+            "confidence, quote. Each TARGET CHUNK is its result's only factual source. Previous "
+            "chunks are reference-only and cannot own entities, aliases, relations, or evidence. "
+            "Every entity name, alias, and relation quote must be an exact substring of its TARGET "
+            "CHUNK. Do not infer relations from co-occurrence. Emit a typed relation for every "
+            "explicit action, ownership, development, and acquisition relationship. "
+            "Relation source "
+            "and target exactly match emitted entity names. No markdown, prose, or explanations. "
+            f"Prompt version: {self.prompt_version}"
+        )
+
+
+def _context_chunk_id(context: ChunkExtractionContext) -> str:
+    return context.chunk_id or f"chunk-{context.chunk_index}"
+
+
+def _batch_schema() -> dict[str, object]:
+    schema = cast(dict[str, object], _BatchExtractionResponse.model_json_schema())
+    _require_all_properties(schema)
+    return schema
+
+
+def _require_all_properties(schema: object) -> None:
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            schema["required"] = list(properties)
+            schema["additionalProperties"] = False
+        for value in schema.values():
+            _require_all_properties(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            _require_all_properties(value)
+
+
+def _batch_payload(contexts: list[ChunkExtractionContext]) -> dict[str, object]:
+    references = {
+        reference.chunk_id: reference
+        for context in contexts
+        for reference in context.previous_chunks
+    }
+    return {
+        "previous_chunks_reference_only": [
+            {"chunk_id": reference.chunk_id, "text": reference.text}
+            for reference in sorted(
+                references.values(), key=lambda item: (item.chunk_index, item.chunk_id)
+            )
+        ],
+        "targets": [
+            {
+                "chunk_id": _context_chunk_id(context),
+                "document": context.document_title,
+                "section": list(context.section_path),
+                "page": context.page_number,
+                "chunk": f"{context.chunk_index + 1}/{context.chunk_count}",
+                "target_chunk_only_factual_source": context.target_text,
+            }
+            for context in contexts
+        ]
+    }
+
+
+def _payload_chars(contexts: list[ChunkExtractionContext]) -> int:
+    return len(json.dumps(_batch_payload(contexts), separators=(",", ":"), ensure_ascii=False))
+
+
+def _fit_batch_contexts(
+    contexts: list[ChunkExtractionContext], max_batch_chars: int
+) -> list[ChunkExtractionContext]:
+    selected = list(contexts)
+    while _payload_chars(selected) > max_batch_chars:
+        references = [
+            reference for context in selected for reference in context.previous_chunks
+        ]
+        if not references:
+            if len(selected) == 1:
+                return selected
+            selected.pop()
+            continue
+        oldest = min(references, key=lambda item: (item.chunk_index, item.chunk_id)).chunk_id
+        selected = [
+            ChunkExtractionContext(
+                context.document_title,
+                context.section_path,
+                context.page_number,
+                context.chunk_index,
+                context.chunk_count,
+                context.previous_excerpt,
+                context.target_text,
+                context.next_excerpt,
+                tuple(
+                    reference
+                    for reference in context.previous_chunks
+                    if reference.chunk_id != oldest
+                ),
+                context.chunk_id,
+            )
+            for context in selected
+        ]
+    return selected
+
+
+def _parse_batch_content(
+    content: str, contexts: list[ChunkExtractionContext]
+) -> list[BatchExtractionResult]:
+    payload = _object_map(_load_json_object(content))
+    requested = {_context_chunk_id(context): context for context in contexts}
+    items = _object_list(payload.get("results"))
+    parsed: list[BatchExtractionResult] = []
+    seen: set[str] = set()
+    for raw_item in items:
+        item = _object_map(raw_item)
+        chunk_id = _string(item.get("chunk_id"))
+        if chunk_id is None or chunk_id not in requested or chunk_id in seen:
+            raise ValueError("batch response contains invalid chunk IDs")
+        parsed.append(
+            BatchExtractionResult(
+                chunk_id,
+                Extraction.model_validate(_normalize_extraction_payload(item)),
+            )
+        )
+        seen.add(chunk_id)
+    if seen != set(requested):
+        raise ValueError("batch response does not include every target chunk")
+    return parsed
 
 
 def _load_openai_response(text: str) -> dict[str, object]:

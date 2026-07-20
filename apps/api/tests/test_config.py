@@ -115,6 +115,19 @@ def test_graph_extractor_parallelism_must_be_positive() -> None:
         Settings(graph_extractor_parallelism=0)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "graph_extractor_target_batch_size",
+        "graph_extractor_max_batch_chars",
+        "graph_document_context_previous_chunks",
+    ],
+)
+def test_graph_batch_settings_are_bounded(field: str) -> None:
+    with pytest.raises(ValidationError, match="graph settings"):
+        Settings(**{field: -1})
+
+
 def test_nlp_graph_extractor_requires_no_openai_key() -> None:
     settings = Settings(graph_extractor_provider="nlp", openai_api_key="")
 

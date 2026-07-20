@@ -1,0 +1,25 @@
+name: opengraphmemory-edge
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  edge:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    mem_limit: 192m
+    pids_limit: 128
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./edge.Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

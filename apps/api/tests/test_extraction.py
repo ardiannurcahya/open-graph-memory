@@ -3,6 +3,7 @@ import json
 from open_graph_core.extraction import (
     Candidate,
     ChunkExtractionContext,
+    ChunkReference,
     DeterministicExtractor,
     Entity,
     Extraction,
@@ -228,9 +229,148 @@ def test_contextual_extraction_marks_neighbors_reference_only(monkeypatch) -> No
 
     OpenAICompatibleExtractor("http://provider", "key", "model").extract_with_context(context)
 
-    user_prompt = request["messages"][1]["content"]
-    assert "PREVIOUS EXCERPT (REFERENCE ONLY)" in user_prompt
-    assert "TARGET CHUNK (ONLY FACTUAL SOURCE):\nIt uses PostgreSQL." in user_prompt
+    user_payload = json.loads(request["messages"][1]["content"])
+    target = user_payload["targets"][0]
+    assert target["target_chunk_only_factual_source"] == "It uses PostgreSQL."
+    assert user_payload["previous_chunks_reference_only"] == []
+
+
+def test_openai_extractor_batches_target_results_with_fixed_previous_references(
+    monkeypatch,
+) -> None:
+    request: dict[str, object] = {}
+
+    def fake_post(*_args, **kwargs) -> _FakeResponse:
+        request.update(kwargs["json"])
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "results": [
+                                            {
+                                                "chunk_id": "two",
+                                                "entities": [
+                                                    {
+                                                        "name": "Bob",
+                                                        "type": "Person",
+                                                        "confidence": 1,
+                                                    }
+                                                ],
+                                                "relations": [],
+                                            },
+                                            {
+                                                "chunk_id": "three",
+                                                "entities": [],
+                                                "relations": [],
+                                            },
+                                        ]
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    contexts = [
+        ChunkExtractionContext("doc", (), None, 1, 3, "", "Bob", "", (), "two"),
+        ChunkExtractionContext(
+            "doc", (), None, 2, 3, "", "Carol", "", (ChunkReference("two", 1, "Bob"),), "three"
+        ),
+    ]
+
+    results = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch(contexts)
+
+    assert [result.chunk_id for result in results] == ["two", "three"]
+    assert results[0].extraction.entities[0].name == "Bob"
+    payload = json.loads(request["messages"][1]["content"])
+    assert payload["previous_chunks_reference_only"] == [
+        {"chunk_id": "two", "text": "Bob"}
+    ]
+    assert "cannot own entities" in request["messages"][0]["content"]
+    schema = request["response_format"]["json_schema"]["schema"]
+    assert "$defs" in schema
+    assert schema["properties"]["results"]["items"]["$ref"].startswith("#/$defs/")
+    assert set(schema["$defs"]["Entity"]["required"]) == {
+        "name",
+        "type",
+        "confidence",
+        "aliases",
+    }
+    assert set(schema["$defs"]["Relation"]["required"]) == {
+        "source",
+        "target",
+        "type",
+        "confidence",
+        "source_type",
+        "target_type",
+        "quote",
+    }
+
+
+def test_openai_batch_malformed_response_falls_back_per_target(monkeypatch) -> None:
+    def fake_post(*_args, **_kwargs) -> _FakeResponse:
+        return _FakeResponse('{"choices":[{"message":{"content":"{\\"results\\":[]}"}}]}')
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    contexts = [
+        ChunkExtractionContext("doc", (), None, 0, 2, "", "Acme [Org]", "", (), "one"),
+        ChunkExtractionContext("doc", (), None, 1, 2, "", "Bob [Person]", "", (), "two"),
+    ]
+
+    results = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch(contexts)
+
+    assert [(result.chunk_id, result.extraction.entities[0].name) for result in results] == [
+        ("one", "Acme"),
+        ("two", "Bob"),
+    ]
+
+
+def test_openai_batch_guard_trims_oldest_references_then_reduces_targets(monkeypatch) -> None:
+    requests: list[dict[str, object]] = []
+
+    def fake_post(*_args, **kwargs) -> _FakeResponse:
+        requests.append(json.loads(kwargs["json"]["messages"][1]["content"]))
+        results = [
+            {"chunk_id": target["chunk_id"], "entities": [], "relations": []}
+            for target in requests[-1]["targets"]
+        ]
+        return _FakeResponse(
+            json.dumps({"choices": [{"message": {"content": json.dumps({"results": results})}}]})
+        )
+
+    monkeypatch.setattr("open_graph_core.extraction.httpx.post", fake_post)
+    contexts = [
+        ChunkExtractionContext(
+            "d",
+            (),
+            None,
+            2,
+            4,
+            "",
+            "target-one",
+            "",
+            (ChunkReference("old", 0, "x" * 80),),
+            "one",
+        ),
+        ChunkExtractionContext("d", (), None, 3, 4, "", "target-two", "", (), "two"),
+    ]
+
+    results = OpenAICompatibleExtractor(
+        "http://provider", "key", "model", max_batch_chars=180
+    ).extract_batch(contexts)
+
+    assert [result.chunk_id for result in results] == ["one", "two"]
+    assert requests[0]["previous_chunks_reference_only"] == []
+    assert [
+        target["chunk_id"] for request in requests for target in request["targets"]
+    ] == ["one", "two"]
 
 
 def test_openai_extractor_falls_back_for_malformed_or_empty_sse(monkeypatch) -> None:

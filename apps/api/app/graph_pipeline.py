@@ -11,7 +11,9 @@ from typing import Protocol, cast
 
 from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.extraction import (
+    BatchExtractionResult,
     ChunkExtractionContext,
+    ChunkReference,
     Extraction,
     Extractor,
     normalize_name,
@@ -59,6 +61,12 @@ class _ContextualExtractor(Protocol):
     def extract_with_context(self, context: ChunkExtractionContext) -> Extraction: ...
 
 
+class _BatchExtractor(Protocol):
+    def extract_batch(
+        self, contexts: list[ChunkExtractionContext]
+    ) -> list[BatchExtractionResult]: ...
+
+
 @dataclass(frozen=True)
 class ExtractorMetadata:
     provider: str
@@ -74,24 +82,36 @@ class ChunkExtractionResult:
 
 
 def _chunk_contexts(
-    document: Document, chunks: list[Chunk], excerpt_chars: int
+    document: Document,
+    chunks: list[Chunk],
+    previous_chunks: int,
+    target_batch_size: int,
 ) -> dict[str, ChunkExtractionContext]:
     contexts: dict[str, ChunkExtractionContext] = {}
-    for index, chunk in enumerate(chunks):
-        metadata = chunk.metadata_ or {}
-        raw_path = metadata.get("section_path", [])
-        section_path = tuple(str(item) for item in raw_path) if isinstance(raw_path, list) else ()
-        page = metadata.get("page_number")
-        contexts[chunk.id] = ChunkExtractionContext(
-            document_title=document.filename or document.id,
-            section_path=section_path,
-            page_number=page if isinstance(page, int) else None,
-            chunk_index=chunk.chunk_index,
-            chunk_count=len(chunks),
-            previous_excerpt=chunks[index - 1].text[-excerpt_chars:] if index else "",
-            target_text=chunk.text,
-            next_excerpt=chunks[index + 1].text[:excerpt_chars] if index + 1 < len(chunks) else "",
+    for start in range(0, len(chunks), target_batch_size):
+        references = tuple(
+            ChunkReference(previous.id, previous.chunk_index, previous.text)
+            for previous in chunks[max(0, start - previous_chunks) : start]
         )
+        for chunk in chunks[start : start + target_batch_size]:
+            metadata = chunk.metadata_ or {}
+            raw_path = metadata.get("section_path", [])
+            section_path = (
+                tuple(str(item) for item in raw_path) if isinstance(raw_path, list) else ()
+            )
+            page = metadata.get("page_number")
+            contexts[chunk.id] = ChunkExtractionContext(
+                document_title=document.filename or document.id,
+                section_path=section_path,
+                page_number=page if isinstance(page, int) else None,
+                chunk_index=chunk.chunk_index,
+                chunk_count=len(chunks),
+                previous_excerpt="",
+                target_text=chunk.text,
+                next_excerpt="",
+                previous_chunks=references,
+                chunk_id=chunk.id,
+            )
     return contexts
 
 
@@ -128,6 +148,7 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
                     "model": settings.graph_extractor_model,
                     "prompt_version": settings.graph_extractor_prompt_version,
                     "timeout": settings.graph_extractor_timeout_seconds,
+                    "max_batch_chars": settings.graph_extractor_max_batch_chars,
                 },
                 {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
             ),
@@ -186,23 +207,35 @@ async def extract_document(
             ]
             parallelism = settings.graph_extractor_parallelism
             contexts = _chunk_contexts(
-                document, chunks, settings.graph_document_context_excerpt_chars
+                document,
+                chunks,
+                settings.graph_document_context_previous_chunks,
+                settings.graph_extractor_target_batch_size,
             )
             logger.info(
-                "graph extraction started document=%s chunks=%d pending=%d parallelism=%d",
+                "graph extraction started document=%s chunks=%d pending=%d "
+                "target_batch_size=%d parallelism=%d",
                 document.id,
                 len(chunks),
                 len(pending_chunks),
+                settings.graph_extractor_target_batch_size,
                 parallelism,
             )
             completed = 0
             active_batch: list[Chunk] = []
-            for active_batch in _batches(pending_chunks, parallelism):
+            pending_ids = {chunk.id for chunk in pending_chunks}
+            request_batches = [
+                [chunk for chunk in window if chunk.id in pending_ids]
+                for window in _batches(chunks, settings.graph_extractor_target_batch_size)
+            ]
+            request_batches = [batch for batch in request_batches if batch]
+            for request_group in _request_batches(request_batches, parallelism):
+                active_batch = [chunk for request in request_group for chunk in request]
                 for chunk in active_batch:
                     await _ensure_running_run(db, document, chunk, metadata)
                 await db.commit()
-                extracted, extraction_error = await _extract_batch(
-                    active_batch, selected_extractor, parallelism, contexts
+                extracted, extraction_error = await _extract_request_batches(
+                    request_group, selected_extractor, contexts, parallelism
                 )
                 for item in extracted:
                     await _persist_chunk_result(
@@ -264,6 +297,13 @@ def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
         yield chunks[start : start + size]
 
 
+def _request_batches(
+    batches: list[list[Chunk]], size: int
+) -> Iterator[list[list[Chunk]]]:
+    for start in range(0, len(batches), size):
+        yield batches[start : start + size]
+
+
 async def _chunk_run_succeeded(db: AsyncSession, chunk: Chunk, metadata: ExtractorMetadata) -> bool:
     run_id = stable_id("run", chunk.id, metadata.extractor_version, _hash(chunk.text))
     run = await db.get(GraphExtractionRun, run_id)
@@ -321,6 +361,21 @@ async def _extract_batch(
         )
         for chunk in chunks
     }
+    batched = getattr(extractor, "extract_batch", None)
+    if callable(batched):
+        try:
+            outputs = await to_thread(cast(_BatchExtractor, extractor).extract_batch, [
+                selected_contexts[chunk.id] for chunk in chunks
+            ])
+            by_chunk_id = {item.chunk_id: item for item in outputs}
+            if set(by_chunk_id) != {chunk.id for chunk in chunks}:
+                raise ValueError("batch extractor returned incomplete chunk results")
+            return [
+                ChunkExtractionResult(chunk, by_chunk_id[chunk.id].extraction)
+                for chunk in chunks
+            ], None
+        except BaseException as exc:
+            return [], exc
     if parallelism <= 1:
         results: list[ChunkExtractionResult] = []
         for chunk in chunks:
@@ -344,6 +399,38 @@ async def _extract_batch(
     outcomes = await gather(*(run(chunk) for chunk in chunks), return_exceptions=True)
     results = [outcome for outcome in outcomes if isinstance(outcome, ChunkExtractionResult)]
     error = next((outcome for outcome in outcomes if isinstance(outcome, BaseException)), None)
+    return results, error
+
+
+async def _extract_request_batches(
+    request_batches: list[list[Chunk]],
+    extractor: Extractor,
+    contexts: dict[str, ChunkExtractionContext],
+    target_parallelism: int,
+) -> tuple[list[ChunkExtractionResult], BaseException | None]:
+    if not callable(getattr(extractor, "extract_batch", None)):
+        return await _extract_batch(
+            [chunk for batch in request_batches for chunk in batch],
+            extractor,
+            target_parallelism,
+            contexts,
+        )
+    outcomes = await gather(
+        *(
+            _extract_batch(batch, extractor, target_parallelism, contexts)
+            for batch in request_batches
+        ),
+        return_exceptions=True,
+    )
+    results: list[ChunkExtractionResult] = []
+    error: BaseException | None = None
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            error = error or outcome
+            continue
+        extracted, batch_error = outcome
+        results.extend(extracted)
+        error = error or batch_error
     return results, error
 
 

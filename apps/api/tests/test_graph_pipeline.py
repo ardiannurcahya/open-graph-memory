@@ -16,6 +16,7 @@ from app.graph_models import (
 )
 from app.graph_pipeline import (
     ExtractorMetadata,
+    _chunk_contexts,
     _extract_chunks,
     _persist_chunk,
     build_extractor,
@@ -31,6 +32,8 @@ from app.graph_store import (
 )
 from app.models import Chunk, Document, DocumentStatus
 from open_graph_core.extraction import (
+    BatchExtractionResult,
+    ChunkExtractionContext,
     DeterministicExtractor,
     Entity,
     Extraction,
@@ -680,7 +683,8 @@ async def test_extract_document_commits_batches_and_renews_lease(
         "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings", lambda: Settings(graph_extractor_parallelism=2)
+        "app.graph_pipeline.get_settings",
+        lambda: Settings(graph_extractor_parallelism=2, graph_extractor_target_batch_size=2),
     )
 
     async def no_op(*args: object) -> None:
@@ -696,8 +700,8 @@ async def test_extract_document_commits_batches_and_renews_lease(
         renew,
     )
 
-    assert db.commits == 5
-    assert renewals == 2
+    assert db.commits == 3
+    assert renewals == 1
     assert all(
         row.status == RunStatus.SUCCEEDED
         for row in db.rows.values()
@@ -752,7 +756,8 @@ async def test_extract_document_retries_only_unfinished_batch(
         "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings", lambda: Settings(graph_extractor_parallelism=2)
+        "app.graph_pipeline.get_settings",
+        lambda: Settings(graph_extractor_parallelism=2, graph_extractor_target_batch_size=2),
     )
 
     async def no_op(*args: object) -> None:
@@ -777,6 +782,111 @@ async def test_extract_document_retries_only_unfinished_batch(
         for row in db.rows.values()
         if isinstance(row, GraphExtractionRun)
     )
+
+
+@pytest.mark.asyncio
+async def test_batch_retry_keeps_fixed_references_and_only_unfinished_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, first = inputs()
+    document.status = DocumentStatus.PERSISTING
+    chunks = [
+        first,
+        *[
+            Chunk(
+                id=f"chunk-{index}",
+                project_id=document.project_id,
+                dataset_id=document.dataset_id,
+                document_id=document.id,
+                chunk_index=index,
+                text=f"Chunk {index}",
+            )
+            for index in range(1, 4)
+        ],
+    ]
+    db = PipelineSession(document, chunks)
+
+    class BatchFailsOnce:
+        def __init__(self) -> None:
+            self.failed = False
+            self.calls: list[tuple[list[str], list[str]]] = []
+
+        def extract(self, text: str) -> Extraction:
+            raise AssertionError(f"batch extractor must not use extract: {text}")
+
+        def extract_batch(
+            self, contexts: list[ChunkExtractionContext]
+        ) -> list[BatchExtractionResult]:
+            self.calls.append(
+                (
+                    [context.chunk_id for context in contexts],
+                    [item.chunk_id for item in contexts[0].previous_chunks],
+                )
+            )
+            if contexts[0].chunk_id == "chunk-2" and not self.failed:
+                self.failed = True
+                raise RuntimeError("provider unavailable")
+            return [
+                BatchExtractionResult(context.chunk_id, Extraction(entities=[], relations=[]))
+                for context in contexts
+            ]
+
+    extractor = BatchFailsOnce()
+    monkeypatch.setattr(
+        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+    )
+    monkeypatch.setattr(
+        "app.graph_pipeline.get_settings",
+        lambda: Settings(graph_extractor_parallelism=1, graph_extractor_target_batch_size=2),
+    )
+
+    async def no_op(*args: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await extract_document(document.id, extractor, object())  # type: ignore[arg-type]
+    await extract_document(document.id, extractor, object())  # type: ignore[arg-type]
+
+    assert extractor.calls == [
+        ([first.id, "chunk-1"], []),
+        (["chunk-2", "chunk-3"], [first.id, "chunk-1"]),
+        (["chunk-2", "chunk-3"], [first.id, "chunk-1"]),
+    ]
+
+
+def test_chunk_contexts_use_fixed_previous_window_for_each_target() -> None:
+    document, first = inputs()
+    chunks = [
+        first,
+        *[
+            Chunk(
+                id=f"chunk-{index}",
+                project_id=document.project_id,
+                dataset_id=document.dataset_id,
+                document_id=document.id,
+                chunk_index=index,
+                text=f"Chunk {index}",
+            )
+            for index in range(1, 6)
+        ],
+    ]
+
+    contexts = _chunk_contexts(document, chunks, 3, 2)
+
+    assert [item.chunk_id for item in contexts["chunk-2"].previous_chunks] == [
+        first.id,
+        "chunk-1",
+    ]
+    assert contexts["chunk-2"].previous_chunks == contexts["chunk-3"].previous_chunks
+    assert [item.chunk_id for item in contexts["chunk-4"].previous_chunks] == [
+        "chunk-1",
+        "chunk-2",
+        "chunk-3",
+    ]
+    assert contexts["chunk-4"].previous_chunks == contexts["chunk-5"].previous_chunks
 
 
 def projection(

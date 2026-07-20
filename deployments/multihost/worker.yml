@@ -1,0 +1,22 @@
+name: "opengraphmemory-${WORKER_NODE:?set WORKER_NODE}"
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  worker:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
+    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}", --hostname, "${WORKER_NODE}@%h"]
+    restart: unless-stopped
+    mem_limit: 768m
+    pids_limit: 256
+    stop_grace_period: 60s
+    env_file: [{path: .env, required: false}]
+    environment: {APP_ENV: production}
+    healthcheck:
+      test: [CMD-SHELL, "celery -A worker.main.celery_app inspect ping --destination '$${WORKER_NODE}@$$(hostname)' --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging: *logging
