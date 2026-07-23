@@ -17,7 +17,11 @@ export default function DatasetsPage() {
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
 
   const loadDatasets = useCallback(async () => {
     setLoading(true);
@@ -78,23 +82,28 @@ export default function DatasetsPage() {
 
   const handleDeleteDataset = async (datasetId: string) => {
     if (!confirm("Delete this dataset and all its documents?")) return;
+    setDeletingId(datasetId);
+    setError(null);
     try {
       await datasetsApi.delete(datasetId);
       setDatasets((prev) => prev.filter((d) => d.id !== datasetId));
       if (selectedId === datasetId) setSelectedId(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "failed to delete dataset");
+    } finally {
+      setDeletingId(null);
     }
   };
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedId) return;
+    const datasetId = selectedIdRef.current;
+    if (!file || !datasetId) return;
     setUploading(true);
     setError(null);
     try {
-      await documentsApi.upload(selectedId, file);
-      await loadDocuments(selectedId);
+      await documentsApi.upload(datasetId, file);
+      await loadDocuments(datasetId);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "upload failed");
     } finally {
@@ -105,11 +114,16 @@ export default function DatasetsPage() {
 
   const handleDeleteDocument = async (documentId: string) => {
     if (!confirm("Delete this document?")) return;
+    const datasetId = selectedIdRef.current;
+    setDeletingDocId(documentId);
+    setError(null);
     try {
       await documentsApi.delete(documentId);
-      if (selectedId) await loadDocuments(selectedId);
+      if (datasetId) await loadDocuments(datasetId);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "failed to delete document");
+    } finally {
+      setDeletingDocId(null);
     }
   };
 
@@ -157,7 +171,8 @@ export default function DatasetsPage() {
                   <button
                     type="button"
                     onClick={() => setSelectedId(d.id)}
-                    className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm hover:bg-stone-50 ${
+                    disabled={deletingId === d.id}
+                    className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm hover:bg-stone-50 disabled:opacity-50 ${
                       selectedId === d.id ? "bg-stone-100" : ""
                     }`}
                   >
@@ -166,7 +181,10 @@ export default function DatasetsPage() {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") void handleDeleteDataset(d.id);
+                        if (e.key === "Enter") {
+                          e.stopPropagation();
+                          void handleDeleteDataset(d.id);
+                        }
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -174,7 +192,7 @@ export default function DatasetsPage() {
                       }}
                       className="ml-2 text-xs text-red-600 hover:underline"
                     >
-                      delete
+                      {deletingId === d.id ? "deleting…" : "delete"}
                     </span>
                   </button>
                 </li>
@@ -237,9 +255,10 @@ export default function DatasetsPage() {
                         <button
                           type="button"
                           onClick={() => void handleDeleteDocument(doc.id)}
-                          className="text-xs text-red-600 hover:underline"
+                          disabled={deletingDocId === doc.id}
+                          className="text-xs text-red-600 hover:underline disabled:opacity-50"
                         >
-                          delete
+                          {deletingDocId === doc.id ? "deleting…" : "delete"}
                         </button>
                       </div>
                     </div>

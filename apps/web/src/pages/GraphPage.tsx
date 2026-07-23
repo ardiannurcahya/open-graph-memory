@@ -55,6 +55,17 @@ export default function GraphPage() {
     void datasetsApi.list().then(setDatasets).catch(() => undefined);
   }, []);
 
+  // Re-fetch datasets when the page becomes visible (e.g., after creating/deleting on DatasetsPage)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void datasetsApi.list().then(setDatasets).catch(() => undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
   const graphState: GraphState | null = useMemo(() => {
     if (summary) return graphSummaryToGraphState(summary);
     if (view) return explorerToGraphState(view);

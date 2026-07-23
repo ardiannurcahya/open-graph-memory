@@ -143,8 +143,9 @@ async def upload(
     if not dataset_id.startswith("ds_"):
         dataset_id = f"ds_{dataset_id}"
     await owned(db, project, dataset_id)
-    stream, size, digest, head, tail = await spool(file)
+    stream = None
     try:
+        stream, size, digest, head, tail = await spool(file)
         filename = validate(file, head, tail)
         if Path(filename).suffix.lower() == ".json":
             validate_json_stream(stream)
@@ -209,7 +210,8 @@ async def upload(
         await db.commit()
         return result
     finally:
-        stream.close()
+        if stream is not None:
+            stream.close()
 
 
 async def owned_document(db: AsyncSession, project: ProjectContext, document_id: str) -> Document:
