@@ -91,10 +91,13 @@ Offline deterministic mode:
 ```dotenv
 GRAPH_EXTRACTOR_PROVIDER=deterministic
 GRAPH_EXTRACTOR_MODEL=deterministic-graph-v1
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v1
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v1
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
+GRAPH_EXTRACTOR_TARGET_BATCH_SIZE=10
+GRAPH_EXTRACTOR_MAX_BATCH_CHARS=100000
+GRAPH_DOCUMENT_CONTEXT_PREVIOUS_CHUNKS=10
 ```
 
 OpenAI-compatible extraction:
@@ -104,21 +107,31 @@ GRAPH_EXTRACTOR_PROVIDER=openai
 OPENAI_GRAPH_EXTRACTOR_BASE_URL=https://provider.example/v1
 OPENAI_API_KEY=replace-with-provider-key
 GRAPH_EXTRACTOR_MODEL=replace-with-exact-model-id
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v1
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v1
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
+GRAPH_EXTRACTOR_TARGET_BATCH_SIZE=10
+GRAPH_EXTRACTOR_MAX_BATCH_CHARS=100000
+GRAPH_DOCUMENT_CONTEXT_PREVIOUS_CHUNKS=10
 ```
 
 Extractor calls OpenAI-compatible chat completions and expects JSON matching extraction schema. Test structured output, malformed responses, timeout, retries, and representative documents. Production requires `GRAPH_EXTRACTOR_PROVIDER=openai`, HTTPS endpoint, and non-placeholder key.
 
-Contextual extraction uses short previous/next excerpts only for reference resolution. Target
-chunk remains sole evidence source, and extraction calls remain parallel.
+OpenAI-compatible extraction sends one request per target batch. Batches hold up to
+`GRAPH_EXTRACTOR_TARGET_BATCH_SIZE` targets. `GRAPH_EXTRACTOR_PARALLELISM` limits concurrent
+requests independently. Each target receives its fixed preceding
+`GRAPH_DOCUMENT_CONTEXT_PREVIOUS_CHUNKS` chunks as reference-only context; target text remains
+sole evidence source. Provider output must contain one explicit `chunk_id` result per target.
+Malformed or incomplete multi-target output retries each target through the provider separately;
+malformed single-target output falls back to deterministic extraction. Legacy extract-only plugins
+also run per target. `GRAPH_EXTRACTOR_MAX_BATCH_CHARS` bounds deterministic request payload
+construction: oldest references trim first, then target count reduces; no target chunk is dropped.
+Retries retain fixed document windows and skip successful chunk runs.
 
 Document consolidation is opt-in and initially restricted to OpenAI-compatible extraction:
 
 ```dotenv
-GRAPH_DOCUMENT_CONTEXT_EXCERPT_CHARS=500
 GRAPH_DOCUMENT_CONSOLIDATION_ENABLED=false
 GRAPH_DOCUMENT_CONSOLIDATION_VERSION=graph-consolidation-v1
 GRAPH_DOCUMENT_CONSOLIDATION_PROMPT_VERSION=graph-consolidation-prompt-v1
@@ -136,8 +149,8 @@ Local NLP extraction:
 ```dotenv
 GRAPH_EXTRACTOR_PROVIDER=nlp
 GRAPH_EXTRACTOR_MODEL=nlp-graph-v1
-GRAPH_EXTRACTOR_VERSION=graph-extractor-v1
-GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v1
+GRAPH_EXTRACTOR_VERSION=graph-extractor-v5
+GRAPH_EXTRACTOR_PROMPT_VERSION=graph-v4
 GRAPH_EXTRACTOR_TIMEOUT_SECONDS=300
 GRAPH_EXTRACTOR_PARALLELISM=1
 ```

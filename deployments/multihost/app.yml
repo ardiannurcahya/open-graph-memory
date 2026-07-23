@@ -1,0 +1,45 @@
+name: opengraphmemory-app
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-app: &app
+  env_file: [{path: .env, required: false}]
+  environment: {APP_ENV: production}
+  logging: *logging
+
+services:
+  migrate:
+    <<: *app
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
+    command: [alembic, upgrade, head]
+    restart: "no"
+
+  api:
+    <<: *app
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-api:${IMAGE_TAG:?set IMAGE_TAG}"
+    restart: unless-stopped
+    mem_limit: 512m
+    pids_limit: 256
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-web:${IMAGE_TAG:?set IMAGE_TAG}"
+    restart: unless-stopped
+    mem_limit: 192m
+    pids_limit: 128
+    environment: {CADDY_SITE_ADDRESS: ":80"}
+    ports: ["${WEB_BIND_IP:-10.77.0.9}:${WEB_PORT:-3000}:80"]
+    depends_on: {api: {condition: service_healthy}}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost/]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging

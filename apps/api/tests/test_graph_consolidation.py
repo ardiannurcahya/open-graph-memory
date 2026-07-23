@@ -69,6 +69,10 @@ def test_cross_chunk_relation_evidence_is_valid() -> None:
     validate_output(output, {chunk.id: chunk for chunk in source})
 
 
+def test_empty_consolidation_output_is_valid_and_additive() -> None:
+    validate_output(ConsolidationOutput(), {chunk.id: chunk for chunk in chunks()})
+
+
 @pytest.mark.parametrize(
     ("chunk_id", "quote", "message"),
     [
@@ -98,7 +102,7 @@ def test_invalid_consolidation_evidence_is_rejected(
         validate_output(output, {chunk.id: chunk for chunk in chunks()})
 
 
-def test_relation_quote_must_support_at_least_one_endpoint() -> None:
+def test_relation_quote_must_support_both_endpoints() -> None:
     output = ConsolidationOutput(
         relations=[
             ConsolidationRelation(
@@ -114,5 +118,26 @@ def test_relation_quote_must_support_at_least_one_endpoint() -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="mention at least one endpoint"):
+    with pytest.raises(ValueError, match="mention both endpoints"):
         validate_output(output, {chunk.id: chunk for chunk in chunks()})
+
+
+def test_consolidation_accepts_pdf_normalized_evidence() -> None:
+    source = chunks()
+    source[1].text = "Project Nova uses Postgre-\nSQL."
+    output = ConsolidationOutput(
+        relations=[
+            ConsolidationRelation(
+                source="Project Nova",
+                source_type="Project",
+                target="PostgreSQL",
+                target_type="Technology",
+                type="USES",
+                evidence_chunk_id="second",
+                quote="Project Nova uses PostgreSQL.",
+                confidence=1,
+            )
+        ]
+    )
+
+    validate_output(output, {chunk.id: chunk for chunk in source})

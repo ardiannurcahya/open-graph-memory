@@ -25,7 +25,7 @@ class Chunker(Protocol):
 
 
 class RecursiveTextChunker:
-    version = "recursive-v4-section-aware-exact-offsets"
+    version = "recursive-v5-page-aware-exact-offsets"
 
     def __init__(self, size: int = 1200, overlap: int = 200, maximum: int = 5000) -> None:
         if size <= overlap or overlap < 0:
@@ -46,6 +46,32 @@ class RecursiveTextChunker:
         drafts: list[tuple[str, int, int, dict[str, object]]] = []
         for segment in segments:
             text = segment.text
+            if isinstance(segment.metadata.get("page_number"), int):
+                if len(drafts) >= self.maximum:
+                    raise ValueError("document exceeds maximum chunk count")
+                left, right = 0, len(text)
+                while left < right and text[left].isspace():
+                    left += 1
+                while right > left and text[right - 1].isspace():
+                    right -= 1
+                if left < right:
+                    drafts.append(
+                        (
+                            text[left:right],
+                            left,
+                            right,
+                            {
+                                **segment.metadata,
+                                "segment_start_char": left,
+                                "segment_end_char": right,
+                                "start_char": left,
+                                "end_char": right,
+                                "segment_part": 1,
+                                "segment_count": 1,
+                            },
+                        )
+                    )
+                continue
             start = 0
             segment_drafts: list[tuple[str, int, int, dict[str, object]]] = []
             while start < len(text):

@@ -12,6 +12,7 @@ export interface SigmaGraphCanvasProps {
   physicsEnabled: boolean;
   showLabels: boolean;
   activeFilters: Set<string>;
+  selectedNodeId: string | null;
   onNodeSelect: (node: GraphNode | null) => void;
   onCameraChange?: (zoom: number) => void;
   onLayoutProgress?: (pct: number) => void;
@@ -125,6 +126,7 @@ export default function SigmaGraphCanvas({
   physicsEnabled,
   showLabels,
   activeFilters,
+  selectedNodeId,
   onNodeSelect,
   onCameraChange,
   onLayoutProgress,
@@ -157,6 +159,8 @@ export default function SigmaGraphCanvas({
   const selectedNodeRef = useRef<string | null>(null);
   const highlightedRef = useRef<Set<string>>(new Set());
   const layoutFramesRef = useRef<Set<number>>(new Set());
+
+  selectedNodeRef.current = selectedNodeId;
 
   const cancelLayoutFrames = () => {
     for (const frame of layoutFramesRef.current) cancelAnimationFrame(frame);
@@ -268,7 +272,7 @@ export default function SigmaGraphCanvas({
         const isExpired = edgeData.isExpired as boolean | undefined;
         if (sel) {
           if (src !== sel && tgt !== sel) {
-            return { color: dark ? "#15151f" : "#e0ded8", hidden: true };
+            return { color: dark ? "#292936" : "#d2d0ca", size: 0.15 };
           }
           return { hidden: false };
         }
@@ -470,6 +474,14 @@ export default function SigmaGraphCanvas({
     filtersRef.current = activeFilters;
     sigmaRef.current?.refresh();
   }, [activeFilters]);
+
+  useEffect(() => {
+    selectedNodeRef.current = selectedNodeId;
+    highlightedRef.current = selectedNodeId
+      ? new Set(highlightConnected(state, selectedNodeId).nodes)
+      : new Set();
+    sigmaRef.current?.refresh();
+  }, [selectedNodeId, state]);
 
   // Label toggle
   useEffect(() => {

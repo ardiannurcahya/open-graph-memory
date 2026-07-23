@@ -14,6 +14,14 @@ from open_graph_sdk.errors import (
     ValidationError,
 )
 from open_graph_sdk.models import (
+    AgentMemoryAttempt,
+    AgentMemoryEpisode,
+    AgentMemoryEvidence,
+    AgentMemoryOutcome,
+    AgentMemoryPattern,
+    AgentMemorySearchResponse,
+    AgentMemorySearchResult,
+    AgentMemoryVerifier,
     Dataset,
     DatasetCreate,
     DatasetStatus,
@@ -39,6 +47,14 @@ __version__ = "0.1.0"
 
 __all__ = [
     "AsyncOGMClient",
+    "AgentMemoryAttempt",
+    "AgentMemoryEvidence",
+    "AgentMemoryEpisode",
+    "AgentMemoryOutcome",
+    "AgentMemoryPattern",
+    "AgentMemorySearchResponse",
+    "AgentMemorySearchResult",
+    "AgentMemoryVerifier",
     "AuthenticationError",
     "BadGatewayError",
     "ClientConfig",

@@ -78,6 +78,7 @@ function renderCanvas(state = makeState()) {
           physicsEnabled={true}
           showLabels={true}
           activeFilters={new Set()}
+          selectedNodeId={null}
           onNodeSelect={() => undefined}
         />
       </MemoryRouter>

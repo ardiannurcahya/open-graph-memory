@@ -1,4 +1,4 @@
-"""Authoritative extraction persistence with temporal tracking."""
+"""Authoritative extraction persistence followed by rebuildable Neo4j projection."""
 
 import hashlib
 import json
@@ -11,9 +11,12 @@ from typing import Protocol, cast
 
 from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.extraction import (
+    BatchExtractionResult,
     ChunkExtractionContext,
+    ChunkReference,
     Extraction,
     Extractor,
+    find_evidence,
     normalize_name,
     stable_id,
 )
@@ -40,15 +43,29 @@ from app.graph_models import (
     ReviewState,
     RunStatus,
 )
+from app.graph_store import (
+    ChunkProjection,
+    DocumentProjection,
+    EvidenceProjection,
+    GraphProjection,
+    GraphStore,
+    RelationProjection,
+)
 from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
-from app.plugin_registry import create_extractor
+from app.plugin_registry import create_extractor, create_graph_store
 
 logger = logging.getLogger(__name__)
 
 
 class _ContextualExtractor(Protocol):
     def extract_with_context(self, context: ChunkExtractionContext) -> Extraction: ...
+
+
+class _BatchExtractor(Protocol):
+    def extract_batch(
+        self, contexts: list[ChunkExtractionContext]
+    ) -> list[BatchExtractionResult]: ...
 
 
 @dataclass(frozen=True)
@@ -66,24 +83,36 @@ class ChunkExtractionResult:
 
 
 def _chunk_contexts(
-    document: Document, chunks: list[Chunk], excerpt_chars: int
+    document: Document,
+    chunks: list[Chunk],
+    previous_chunks: int,
+    target_batch_size: int,
 ) -> dict[str, ChunkExtractionContext]:
     contexts: dict[str, ChunkExtractionContext] = {}
-    for index, chunk in enumerate(chunks):
-        metadata = chunk.metadata_ or {}
-        raw_path = metadata.get("section_path", [])
-        section_path = tuple(str(item) for item in raw_path) if isinstance(raw_path, list) else ()
-        page = metadata.get("page_number")
-        contexts[chunk.id] = ChunkExtractionContext(
-            document_title=document.filename or document.id,
-            section_path=section_path,
-            page_number=page if isinstance(page, int) else None,
-            chunk_index=chunk.chunk_index,
-            chunk_count=len(chunks),
-            previous_excerpt=chunks[index - 1].text[-excerpt_chars:] if index else "",
-            target_text=chunk.text,
-            next_excerpt=chunks[index + 1].text[:excerpt_chars] if index + 1 < len(chunks) else "",
+    for start in range(0, len(chunks), target_batch_size):
+        references = tuple(
+            ChunkReference(previous.id, previous.chunk_index, previous.text)
+            for previous in chunks[max(0, start - previous_chunks) : start]
         )
+        for chunk in chunks[start : start + target_batch_size]:
+            metadata = chunk.metadata_ or {}
+            raw_path = metadata.get("section_path", [])
+            section_path = (
+                tuple(str(item) for item in raw_path) if isinstance(raw_path, list) else ()
+            )
+            page = metadata.get("page_number")
+            contexts[chunk.id] = ChunkExtractionContext(
+                document_title=document.filename or document.id,
+                section_path=section_path,
+                page_number=page if isinstance(page, int) else None,
+                chunk_index=chunk.chunk_index,
+                chunk_count=len(chunks),
+                previous_excerpt="",
+                target_text=chunk.text,
+                next_excerpt="",
+                previous_chunks=references,
+                chunk_id=chunk.id,
+            )
     return contexts
 
 
@@ -120,6 +149,7 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
                     "model": settings.graph_extractor_model,
                     "prompt_version": settings.graph_extractor_prompt_version,
                     "timeout": settings.graph_extractor_timeout_seconds,
+                    "max_batch_chars": settings.graph_extractor_max_batch_chars,
                 },
                 {"api_key": SecretValue(settings.openai_api_key.get_secret_value())},
             ),
@@ -128,10 +158,20 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
     )
 
 
+def _store() -> GraphStore:
+    settings = get_settings()
+    return create_graph_store(
+        PluginConfig(
+            {"url": settings.neo4j_url},
+            {"auth": SecretValue(settings.neo4j_auth.get_secret_value())},
+        )
+    )
+
 
 async def extract_document(
     document_id: str,
     extractor: Extractor | None = None,
+    graph: GraphStore | None = None,
     on_batch_committed: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     selected_extractor, metadata = (
@@ -161,6 +201,7 @@ async def extract_document(
                 .order_by(Chunk.chunk_index)
             )
         )
+        active_batch: list[Chunk] = []
         try:
             settings = get_settings()
             pending_chunks = [
@@ -168,25 +209,34 @@ async def extract_document(
             ]
             parallelism = settings.graph_extractor_parallelism
             contexts = _chunk_contexts(
-                document, chunks, settings.graph_document_context_excerpt_chars
+                document,
+                chunks,
+                settings.graph_document_context_previous_chunks,
+                settings.graph_extractor_target_batch_size,
             )
             logger.info(
-                "graph extraction started document=%s chunks=%d pending=%d parallelism=%d",
+                "graph extraction started document=%s chunks=%d pending=%d "
+                "target_batch_size=%d parallelism=%d",
                 document.id,
                 len(chunks),
                 len(pending_chunks),
+                settings.graph_extractor_target_batch_size,
                 parallelism,
             )
             completed = 0
-            active_batch: list[Chunk] = []
-            in_flight_chunks: list[Chunk] = []
-            for active_batch in _batches(pending_chunks, parallelism):
-                in_flight_chunks = list(active_batch)
+            pending_ids = {chunk.id for chunk in pending_chunks}
+            request_batches = [
+                [chunk for chunk in window if chunk.id in pending_ids]
+                for window in _batches(chunks, settings.graph_extractor_target_batch_size)
+            ]
+            request_batches = [batch for batch in request_batches if batch]
+            for request_group in _request_batches(request_batches, parallelism):
+                active_batch = [chunk for request in request_group for chunk in request]
                 for chunk in active_batch:
                     await _ensure_running_run(db, document, chunk, metadata)
                 await db.commit()
-                extracted, extraction_error = await _extract_batch(
-                    active_batch, selected_extractor, parallelism, contexts
+                extracted, extraction_error = await _extract_request_batches(
+                    request_group, selected_extractor, contexts, parallelism
                 )
                 for item in extracted:
                     await _persist_chunk_result(
@@ -195,11 +245,8 @@ async def extract_document(
                         item.chunk,
                         item.extraction,
                         metadata,
-                        persist_relations=not settings.graph_document_consolidation_enabled,
                     )
                     completed += 1
-                    # Successfully persisted; remove from in-flight tracking.
-                    in_flight_chunks = [c for c in in_flight_chunks if c.id != item.chunk.id]
                     logger.info(
                         "graph extraction chunk persisted document=%s progress=%d/%d",
                         document.id,
@@ -211,7 +258,6 @@ async def extract_document(
                     await on_batch_committed()
                 if extraction_error is not None:
                     raise extraction_error
-                in_flight_chunks = []
             if settings.graph_document_consolidation_enabled:
                 if on_batch_committed is not None:
                     await on_batch_committed()
@@ -219,14 +265,16 @@ async def extract_document(
                 await db.commit()
                 if on_batch_committed is not None:
                     await on_batch_committed()
+            await project_document(db, document, graph or _store())
+            logger.info("graph projection completed document=%s", document.id)
             await refresh_dataset_analytics(db, document.project_id, document.dataset_id)
             await db.commit()
             logger.info("graph analytics refreshed dataset=%s", document.dataset_id)
             return document.id
-        except Exception as exc:
+        except BaseException as exc:
             # Rollback expires ORM attributes. Snapshot primitives before rollback so
             # failure bookkeeping never performs implicit async IO from sync access.
-            failed_chunks = [(chunk.id, chunk.text) for chunk in in_flight_chunks]
+            failed_chunks = [(chunk.id, chunk.text) for chunk in active_batch]
             await db.rollback()
             for chunk_id, chunk_text in failed_chunks:
                 run_id = stable_id("run", chunk_id, metadata.extractor_version, _hash(chunk_text))
@@ -247,6 +295,13 @@ def _hash(text: str) -> str:
 def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
     for start in range(0, len(chunks), size):
         yield chunks[start : start + size]
+
+
+def _request_batches(
+    batches: list[list[Chunk]], size: int
+) -> Iterator[list[list[Chunk]]]:
+    for start in range(0, len(batches), size):
+        yield batches[start : start + size]
 
 
 async def _chunk_run_succeeded(db: AsyncSession, chunk: Chunk, metadata: ExtractorMetadata) -> bool:
@@ -306,6 +361,21 @@ async def _extract_batch(
         )
         for chunk in chunks
     }
+    batched = getattr(extractor, "extract_batch", None)
+    if callable(batched):
+        try:
+            outputs = await to_thread(cast(_BatchExtractor, extractor).extract_batch, [
+                selected_contexts[chunk.id] for chunk in chunks
+            ])
+            by_chunk_id = {item.chunk_id: item for item in outputs}
+            if set(by_chunk_id) != {chunk.id for chunk in chunks}:
+                raise ValueError("batch extractor returned incomplete chunk results")
+            return [
+                ChunkExtractionResult(chunk, by_chunk_id[chunk.id].extraction)
+                for chunk in chunks
+            ], None
+        except BaseException as exc:
+            return [], exc
     if parallelism <= 1:
         results: list[ChunkExtractionResult] = []
         for chunk in chunks:
@@ -329,6 +399,38 @@ async def _extract_batch(
     outcomes = await gather(*(run(chunk) for chunk in chunks), return_exceptions=True)
     results = [outcome for outcome in outcomes if isinstance(outcome, ChunkExtractionResult)]
     error = next((outcome for outcome in outcomes if isinstance(outcome, BaseException)), None)
+    return results, error
+
+
+async def _extract_request_batches(
+    request_batches: list[list[Chunk]],
+    extractor: Extractor,
+    contexts: dict[str, ChunkExtractionContext],
+    target_parallelism: int,
+) -> tuple[list[ChunkExtractionResult], BaseException | None]:
+    if not callable(getattr(extractor, "extract_batch", None)):
+        return await _extract_batch(
+            [chunk for batch in request_batches for chunk in batch],
+            extractor,
+            target_parallelism,
+            contexts,
+        )
+    outcomes = await gather(
+        *(
+            _extract_batch(batch, extractor, target_parallelism, contexts)
+            for batch in request_batches
+        ),
+        return_exceptions=True,
+    )
+    results: list[ChunkExtractionResult] = []
+    error: BaseException | None = None
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            error = error or outcome
+            continue
+        extracted, batch_error = outcome
+        results.extend(extracted)
+        error = error or batch_error
     return results, error
 
 
@@ -356,7 +458,6 @@ async def _persist_chunk_result(
     result: Extraction,
     metadata: ExtractorMetadata,
     run: GraphExtractionRun | None = None,
-    persist_relations: bool = True,
 ) -> None:
     input_hash = _hash(chunk.text)
     run_id = stable_id("run", chunk.id, metadata.extractor_version, input_hash)
@@ -371,11 +472,19 @@ async def _persist_chunk_result(
         run.error_message = None
         run.completed_at = None
     run.raw_extraction = result.model_dump(mode="json")
-    now = datetime.now(UTC)
+    persisted_entities = 0
+    skipped_entities = 0
+    persisted_relations = 0
+    skipped_relations: dict[str, int] = {}
+
+    def skip_relation(reason: str) -> None:
+        skipped_relations[reason] = skipped_relations.get(reason, 0) + 1
+
     entities: dict[str, list[CanonicalEntity]] = {}
     for entity_item in result.entities:
-        offset = chunk.text.find(entity_item.name)
-        if offset < 0:
+        evidence = find_evidence(chunk.text, entity_item.name)
+        if evidence is None:
+            skipped_entities += 1
             logger.warning(
                 "skipping entity without exact evidence document=%s chunk=%s entity=%r",
                 document.id,
@@ -383,6 +492,8 @@ async def _persist_chunk_result(
                 entity_item.name,
             )
             continue
+        offset, quote = evidence
+        persisted_entities += 1
         normalized = normalize_name(entity_item.name)
         entity_id = stable_id(
             "ent",
@@ -405,14 +516,8 @@ async def _persist_chunk_result(
                 review_state=ReviewState.UNREVIEWED
                 if entity_item.confidence == 1
                 else ReviewState.NEEDS_REVIEW,
-                valid_from=now,
-                valid_until=None,
             )
             db.add(entity)
-        elif entity.valid_until is not None:
-            entity.valid_until = None
-            entity.valid_from = now
-            entity.superseded_by = None
         entities.setdefault(normalized, []).append(entity)
         evidence_id = stable_id("ev", run_id, entity_id)
         if await db.get(GraphEvidence, evidence_id) is None:
@@ -426,20 +531,13 @@ async def _persist_chunk_result(
                     run_id=run_id,
                     entity_id=entity_id,
                     relation_id=None,
-                    quote=entity_item.name,
+                    quote=quote,
                     start_offset=offset,
-                    end_offset=offset + len(entity_item.name),
+                    end_offset=offset + len(quote),
                     confidence=entity_item.confidence,
                 )
             )
     await db.flush()
-    if not persist_relations:
-        run.status, run.error_message, run.completed_at = (
-            RunStatus.SUCCEEDED,
-            None,
-            datetime.now(UTC),
-        )
-        return
     for relation_item in result.relations:
         source_matches = entities.get(normalize_name(relation_item.source), [])
         target_matches = entities.get(normalize_name(relation_item.target), [])
@@ -460,10 +558,11 @@ async def _persist_chunk_result(
         source = source_matches[0] if len(source_matches) == 1 else None
         target = target_matches[0] if len(target_matches) == 1 else None
         if source is None or target is None or source.id == target.id:
+            skip_relation("missing_or_ambiguous_endpoint")
             continue
-        quote = relation_item.quote or chunk.text
-        quote_offset = chunk.text.find(quote)
-        if not quote or quote_offset < 0:
+        evidence = find_evidence(chunk.text, relation_item.quote or chunk.text)
+        if evidence is None:
+            skip_relation("missing_relation_evidence")
             logger.warning(
                 "skipping relation without exact evidence document=%s chunk=%s type=%r",
                 document.id,
@@ -471,6 +570,8 @@ async def _persist_chunk_result(
                 relation_item.type,
             )
             continue
+        quote_offset, quote = evidence
+        persisted_relations += 1
         relation_id = stable_id(
             "rel",
             document.dataset_id,
@@ -493,14 +594,8 @@ async def _persist_chunk_result(
                 review_state=ReviewState.UNREVIEWED
                 if relation_item.confidence == 1
                 else ReviewState.NEEDS_REVIEW,
-                valid_from=now,
-                valid_until=None,
             )
             db.add(relation)
-        elif relation.valid_until is not None:
-            relation.valid_until = None
-            relation.valid_from = now
-            relation.superseded_by = None
         evidence_id = stable_id("ev", run_id, relation_id)
         if await db.get(GraphEvidence, evidence_id) is None:
             db.add(
@@ -519,6 +614,19 @@ async def _persist_chunk_result(
                     confidence=relation_item.confidence,
                 )
             )
+    logger.info(
+        "graph extraction persistence document=%s chunk=%s raw_entities=%d "
+        "persisted_entities=%d skipped_entities=%d raw_relations=%d "
+        "persisted_relations=%d skipped_relations=%s",
+        document.id,
+        chunk.id,
+        len(result.entities),
+        persisted_entities,
+        skipped_entities,
+        len(result.relations),
+        persisted_relations,
+        skipped_relations,
+    )
     run.status, run.error_message, run.completed_at = RunStatus.SUCCEEDED, None, datetime.now(UTC)
 
 
@@ -554,6 +662,7 @@ async def consolidate_document(
         settings.graph_document_consolidation_version,
     )
     run = await db.get(GraphConsolidationRun, run_id)
+    output_persisted = False
     if run is not None and run.status == RunStatus.SUCCEEDED and run.output is not None:
         output = ConsolidationOutput.model_validate(run.output)
     else:
@@ -574,8 +683,7 @@ async def consolidate_document(
             run.status, run.error_message, run.completed_at = RunStatus.RUNNING, None, None
         await db.flush()
         try:
-            output = await to_thread(
-                consolidate_openai,
+            output = consolidate_openai(
                 settings.graph_extractor_base_url,
                 settings.openai_api_key.get_secret_value(),
                 settings.graph_extractor_model,
@@ -584,7 +692,7 @@ async def consolidate_document(
                 settings.graph_extractor_timeout_seconds,
             )
             run.output = output.model_dump(mode="json")
-        except Exception as exc:
+        except BaseException as exc:
             run.status, run.error_message, run.completed_at = (
                 RunStatus.FAILED,
                 sanitized_error(exc),
@@ -594,7 +702,9 @@ async def consolidate_document(
             raise
         try:
             validate_output(output, {chunk.id: chunk for chunk in chunks})
-        except Exception as exc:
+            await _persist_consolidation_output(db, document, output, run_id, metadata)
+            output_persisted = True
+        except BaseException as exc:
             run.status, run.error_message, run.completed_at = (
                 RunStatus.FAILED,
                 sanitized_error(exc),
@@ -607,9 +717,9 @@ async def consolidate_document(
             None,
             datetime.now(UTC),
         )
-        # Checkpoint provider output before graph persistence and external projection.
         await db.commit()
-    await _persist_consolidation_output(db, document, output, run_id, metadata)
+    if not output_persisted:
+        await _persist_consolidation_output(db, document, output, run_id, metadata)
 
 
 async def _persist_consolidation_output(
@@ -650,7 +760,7 @@ async def _persist_consolidation_output(
             (normalize_name(relation_item.target), normalize_name(relation_item.target_type))
         )
         if source is None or target is None or source.id == target.id:
-            continue
+            raise ValueError("consolidation relation endpoints do not resolve uniquely")
         relation_id = stable_id(
             "rel",
             document.dataset_id,
@@ -671,14 +781,8 @@ async def _persist_consolidation_output(
                 confidence=relation_item.confidence,
                 extractor_version=metadata.extractor_version,
                 review_state=ReviewState.NEEDS_REVIEW,
-                valid_from=datetime.now(UTC),
-                valid_until=None,
             )
             db.add(relation)
-        elif relation.valid_until is not None:
-            relation.valid_until = None
-            relation.valid_from = datetime.now(UTC)
-            relation.superseded_by = None
         await _add_consolidation_evidence(
             db,
             document,
@@ -692,9 +796,9 @@ async def _persist_consolidation_output(
         entity = by_key.get(
             (normalize_name(alias_item.canonical_name), normalize_name(alias_item.entity_type))
         )
-        if entity is None or normalize_name(alias_item.alias) == normalize_name(
-            entity.canonical_name
-        ):
+        if entity is None:
+            raise ValueError("consolidation alias canonical entity does not resolve")
+        if normalize_name(alias_item.alias) == normalize_name(entity.canonical_name):
             continue
         alias_id = stable_id(
             "alias",
@@ -750,15 +854,17 @@ async def _add_consolidation_evidence(
     relation_id: str | None = None,
 ) -> str:
     chunk = await db.get(Chunk, chunk_id)
+    evidence = find_evidence(chunk.text, quote) if chunk is not None else None
     if (
         chunk is None
         or chunk.project_id != document.project_id
         or chunk.dataset_id != document.dataset_id
         or chunk.document_id != document.id
-        or quote not in chunk.text
+        or evidence is None
     ):
         raise ValueError("consolidation evidence is invalid")
-    evidence_id = stable_id("ev", run_id, entity_id or relation_id or "", chunk_id, quote)
+    start, source_quote = evidence
+    evidence_id = stable_id("ev", run_id, entity_id or relation_id or "", chunk_id, source_quote)
     extraction_run_id = await db.scalar(
         select(GraphExtractionRun.id).where(
             GraphExtractionRun.document_id == document.id,
@@ -769,7 +875,6 @@ async def _add_consolidation_evidence(
     if extraction_run_id is None:
         raise ValueError("consolidation evidence has no successful extraction run")
     if await db.get(GraphEvidence, evidence_id) is None:
-        start = chunk.text.find(quote)
         db.add(
             GraphEvidence(
                 id=evidence_id,
@@ -780,10 +885,147 @@ async def _add_consolidation_evidence(
                 run_id=extraction_run_id,
                 entity_id=entity_id,
                 relation_id=relation_id,
-                quote=quote,
+                quote=source_quote,
                 start_offset=start,
-                end_offset=start + len(quote),
+                end_offset=start + len(source_quote),
                 confidence=confidence,
             )
         )
     return evidence_id
+
+
+async def project_document(db: AsyncSession, document: Document, graph: GraphStore) -> None:
+    chunks = list(
+        await db.scalars(
+            select(Chunk).where(
+                Chunk.project_id == document.project_id,
+                Chunk.dataset_id == document.dataset_id,
+                Chunk.document_id == document.id,
+            )
+        )
+    )
+    entities = list(
+        await db.scalars(
+            select(CanonicalEntity).where(
+                CanonicalEntity.project_id == document.project_id,
+                CanonicalEntity.dataset_id == document.dataset_id,
+            )
+        )
+    )
+    relations = list(
+        await db.scalars(
+            select(RelationAssertion).where(
+                RelationAssertion.project_id == document.project_id,
+                RelationAssertion.dataset_id == document.dataset_id,
+            )
+        )
+    )
+    evidence = list(
+        await db.scalars(
+            select(GraphEvidence).where(
+                GraphEvidence.project_id == document.project_id,
+                GraphEvidence.dataset_id == document.dataset_id,
+                GraphEvidence.document_id == document.id,
+            )
+        )
+    )
+    runs = {
+        run.id: run
+        for run in await db.scalars(
+            select(GraphExtractionRun).where(
+                GraphExtractionRun.project_id == document.project_id,
+                GraphExtractionRun.dataset_id == document.dataset_id,
+                GraphExtractionRun.document_id == document.id,
+            )
+        )
+    }
+    await graph.bootstrap()
+    await graph.project_document(
+        DocumentProjection(
+            project_id=str(document.project_id),
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            document_created_at=document.created_at.isoformat(),
+            document_updated_at=document.updated_at.isoformat(),
+            chunks=tuple(
+                ChunkProjection(
+                    str(chunk.project_id),
+                    chunk.dataset_id,
+                    chunk.document_id,
+                    chunk.id,
+                    chunk.pipeline_version,
+                    chunk.created_at.isoformat(),
+                )
+                for chunk in chunks
+            ),
+            entities=tuple(
+                GraphProjection(
+                    str(e.project_id),
+                    e.dataset_id,
+                    e.id,
+                    e.canonical_name,
+                    e.entity_type,
+                    e.version,
+                    e.created_at.isoformat(),
+                    e.updated_at.isoformat(),
+                )
+                for e in entities
+            ),
+            relations=tuple(
+                RelationProjection(
+                    str(r.project_id),
+                    r.dataset_id,
+                    r.id,
+                    r.source_entity_id,
+                    r.target_entity_id,
+                    r.relation_type,
+                    r.extractor_version,
+                    r.confidence,
+                    r.review_state.value,
+                    r.created_at.isoformat(),
+                    r.updated_at.isoformat(),
+                )
+                for r in relations
+            ),
+            evidence=tuple(
+                EvidenceProjection(
+                    str(item.project_id),
+                    item.dataset_id,
+                    item.id,
+                    item.document_id,
+                    item.chunk_id,
+                    item.entity_id,
+                    item.relation_id,
+                    item.run_id,
+                    item.quote,
+                    item.confidence,
+                    runs[item.run_id].provider,
+                    runs[item.run_id].model,
+                    runs[item.run_id].extractor_version,
+                    runs[item.run_id].prompt_version,
+                    item.created_at.isoformat(),
+                    item.updated_at.isoformat(),
+                )
+                for item in evidence
+            ),
+        )
+    )
+
+
+async def rebuild_dataset(project_id: str, dataset_id: str, graph: GraphStore | None = None) -> int:
+    target = graph or _store()
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        documents = list(
+            await db.scalars(
+                select(Document).where(
+                    Document.project_id == project_id,
+                    Document.dataset_id == dataset_id,
+                    Document.status == DocumentStatus.INDEXED,
+                )
+            )
+        )
+        await target.reconcile_dataset(project_id, dataset_id)
+        for document in documents:
+            await project_document(db, document, target)
+        return len(documents)

@@ -1,0 +1,16 @@
+graph.servicelabs.biz.id {
+    encode gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    @metrics path /api/metrics
+    respond @metrics 404
+
+    reverse_proxy 10.77.0.9:3000
+}

@@ -137,19 +137,10 @@ def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
     )
     chunks = RecursiveTextChunker(size=30, overlap=5).split_document("doc", document)
 
-    assert {chunk.metadata["page_number"] for chunk in chunks} == {1, 3}
-    assert all("first" in chunk.text or "third" in chunk.text for chunk in chunks)
-    assert all(chunk.metadata["segment_count"] > 1 for chunk in chunks)
-    first_page_parts = {
-        chunk.metadata["segment_part"] for chunk in chunks if chunk.metadata["page_number"] == 1
-    }
-    assert first_page_parts == {
-        1,
-        2,
-        3,
-        4,
-        5,
-    }
+    assert [chunk.metadata["page_number"] for chunk in chunks] == [1, 3]
+    assert [chunk.text for chunk in chunks] == [("first " * 20).strip(), ("third " * 20).strip()]
+    assert all(chunk.metadata["segment_count"] == 1 for chunk in chunks)
+    assert all(chunk.metadata["segment_part"] == 1 for chunk in chunks)
 
 
 def test_csv_chunks_never_merge_records_and_long_record_keeps_location() -> None:
@@ -316,6 +307,31 @@ def test_liteparse_page_segment_keeps_explicit_relation_in_one_chunk() -> None:
 
     assert [chunk.text for chunk in chunks] == ["Ada Lovelace developed GraphMem using Neo4j."]
     assert [chunk.metadata["page_number"] for chunk in chunks] == [1]
+
+
+def test_liteparse_uses_page_reading_order_not_layout_item_order() -> None:
+    class Item:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class Page:
+        page_num = 1
+        text = "Ada Lovelace developed GraphMem using Neo4j."
+        text_items = [Item("Neo4j."), Item("Ada Lovelace developed"), Item("GraphMem using")]
+
+    class Result:
+        text = Page.text
+        pages = [Page()]
+        num_pages = 1
+
+    class Parser(_FakeLiteParse):
+        def parse(self, content: bytes) -> Result:
+            assert content == b"pdf"
+            return Result()
+
+    parsed = LiteParsePdfParser(parser_factory=Parser).parse(b"pdf")  # type: ignore[arg-type]
+
+    assert parsed.segments[0].text == "Ada Lovelace developed GraphMem using Neo4j."
 
 
 def test_liteparse_complex_pdf_routes_to_single_worker_ocr() -> None:

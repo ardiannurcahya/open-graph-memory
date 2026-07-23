@@ -24,8 +24,8 @@ from app.parsers import LiteParsePdfParser, default_registry
 from app.storage import ObjectStore, get_object_store
 
 PIPELINE_VERSION = (
-    "ingestion-v5:parser-v5-liteparse-page-segments:"
-    "recursive-v4-section-aware-exact-offsets"
+    "ingestion-v6:parser-v5-liteparse-page-segments:"
+    "recursive-v5-page-aware-exact-offsets"
 )
 _TRANSIENT = (TimeoutError, ConnectionError, OSError)
 

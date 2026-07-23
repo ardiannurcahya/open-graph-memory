@@ -119,6 +119,19 @@ async def test_spool_hashes_stream() -> None:
         stream.close()
 
 
+async def test_spool_accepts_file_larger_than_spool_threshold() -> None:
+    data = b"x" * (2 * 1024 * 1024)
+    stream, size, digest, head, tail = await spool(upload("large.txt", "text/plain", data))
+    try:
+        assert size == len(data)
+        assert digest
+        assert head == b"x" * 8192
+        assert tail == b"x" * 8192
+        assert stream.read() == data
+    finally:
+        stream.close()
+
+
 def test_serialize_hides_indexed_until_graph_complete() -> None:
     document = Document(
         id="doc_1",

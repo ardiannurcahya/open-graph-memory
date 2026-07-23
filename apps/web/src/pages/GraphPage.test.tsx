@@ -300,6 +300,8 @@ describe("GraphPage", () => {
     await userEvent.type(screen.getByLabelText("Entity name"), "Alice");
     await userEvent.click(screen.getByRole("button", { name: "Run Entity search" }));
     await waitFor(() => expect(screen.getByText("person · ent_a")).toBeInTheDocument());
+    expect(screen.getByText("2 nodes")).toBeInTheDocument();
+    expect(screen.getByText("1 edges")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25&include_history=false",
       expect.objectContaining({ method: "GET" }),

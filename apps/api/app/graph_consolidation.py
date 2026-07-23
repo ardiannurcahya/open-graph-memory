@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 
 import httpx
+from open_graph_core.extraction import find_evidence
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import Chunk
@@ -85,13 +86,13 @@ def validate_output(output: ConsolidationOutput, chunks: dict[str, Chunk]) -> No
         chunk = chunks.get(relation_item.evidence_chunk_id)
         if chunk is None:
             raise ValueError("consolidation evidence references an unknown chunk")
-        if not relation_item.quote or relation_item.quote not in chunk.text:
+        if not relation_item.quote or find_evidence(chunk.text, relation_item.quote) is None:
             raise ValueError("consolidation evidence quote is not an exact chunk substring")
         if (
             relation_item.source not in relation_item.quote
-            and relation_item.target not in relation_item.quote
+            or relation_item.target not in relation_item.quote
         ):
-            raise ValueError("relation evidence must directly mention at least one endpoint")
+            raise ValueError("relation evidence must directly mention both endpoints")
         key = (
             relation_item.evidence_chunk_id,
             relation_item.quote,
@@ -104,7 +105,7 @@ def validate_output(output: ConsolidationOutput, chunks: dict[str, Chunk]) -> No
         chunk = chunks.get(alias_item.evidence_chunk_id)
         if chunk is None:
             raise ValueError("consolidation evidence references an unknown chunk")
-        if not alias_item.quote or alias_item.quote not in chunk.text:
+        if not alias_item.quote or find_evidence(chunk.text, alias_item.quote) is None:
             raise ValueError("consolidation evidence quote is not an exact chunk substring")
         if (
             alias_item.alias not in alias_item.quote
@@ -141,6 +142,7 @@ def consolidate_openai(
                         "Consolidate only explicit extraction summaries. Return JSON matching "
                         "schema. Never infer from co-occurrence or fuzzy similarity. Every alias "
                         "and relation needs one exact evidence quote and source chunk ID. "
+                        "Both endpoints must appear in every relation evidence quote. "
                         "Endpoints require exact names and types. "
                         f"Prompt version: {prompt_version}"
                     ),

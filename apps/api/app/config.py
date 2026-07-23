@@ -26,11 +26,13 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     graph_extractor_provider: str = "deterministic"
     graph_extractor_model: str = "deterministic-graph-v1"
-    graph_extractor_version: str = "graph-extractor-v1"
-    graph_extractor_prompt_version: str = "graph-v1"
+    graph_extractor_version: str = "graph-extractor-v5"
+    graph_extractor_prompt_version: str = "graph-v4"
     graph_extractor_timeout_seconds: int = 300
     graph_extractor_parallelism: int = 1
-    graph_document_context_excerpt_chars: int = 500
+    graph_extractor_target_batch_size: int = 10
+    graph_extractor_max_batch_chars: int = 100_000
+    graph_document_context_previous_chunks: int = 10
     graph_document_consolidation_enabled: bool = False
     graph_document_consolidation_version: str = "graph-consolidation-v1"
     graph_document_consolidation_prompt_version: str = "graph-consolidation-prompt-v1"
@@ -60,10 +62,14 @@ class Settings(BaseSettings):
             raise ValueError("graph extractor provider must be deterministic, nlp, or openai")
         if self.outbox_poll_seconds <= 0 or self.indexing_stale_seconds <= 0:
             raise ValueError("outbox polling interval must be positive")
-        if self.graph_extractor_timeout_seconds < 1 or self.graph_extractor_parallelism < 1:
+        if (
+            self.graph_extractor_timeout_seconds < 1
+            or self.graph_extractor_parallelism < 1
+            or self.graph_extractor_target_batch_size < 1
+            or self.graph_extractor_max_batch_chars < 1
+            or self.graph_document_context_previous_chunks < 0
+        ):
             raise ValueError("graph settings must be positive")
-        if self.graph_document_context_excerpt_chars < 1:
-            raise ValueError("graph context excerpt must be positive")
         if not self.graph_document_consolidation_version.strip() or not (
             self.graph_document_consolidation_prompt_version.strip()
         ):
