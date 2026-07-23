@@ -1,5 +1,7 @@
 import { api } from "./client";
 import type {
+  AgentMemoryEpisode,
+  AgentMemorySearchResponse,
   AnalyticsRunView,
   Dataset,
   DatasetInput,
@@ -16,6 +18,7 @@ import type {
   GraphSummary,
   GraphSubgraphView,
   HealthStatus,
+  MemoryGraphView,
   NeighborView,
   ProjectCreated,
   RelationView,
@@ -100,4 +103,15 @@ export const graphApi = {
 export const healthApi = {
   health: () => api.get<HealthStatus>("/health"),
   ready: () => api.get<HealthStatus>("/ready"),
+};
+
+export const agentMemoryApi = {
+  listEpisodes: (params?: { status?: string; limit?: number }) =>
+    api.get<AgentMemoryEpisode[]>("/v1/agent-memory/episodes", { params }),
+  getEpisode: (id: string) =>
+    api.get<AgentMemoryEpisode>(`/v1/agent-memory/episodes/${id}`),
+  search: (q: string, params?: { problem_signature?: string; limit?: number }) =>
+    api.get<AgentMemorySearchResponse>("/v1/agent-memory/search", { params: { q, ...params } }),
+  getGraph: (params?: { status?: string; domain?: string; limit?: number }) =>
+    api.get<MemoryGraphView>("/v1/agent-memory/graph", { params }),
 };

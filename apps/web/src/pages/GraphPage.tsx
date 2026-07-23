@@ -45,7 +45,7 @@ export default function GraphPage() {
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
   const explorerRequestRef = useRef(0);

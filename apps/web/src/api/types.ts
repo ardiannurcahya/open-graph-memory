@@ -261,3 +261,81 @@ export interface HealthStatus {
   status: string;
   checks?: Record<string, boolean>;
 }
+
+export interface AgentMemoryAttempt {
+  id: string;
+  sequence: number;
+  hypothesis: string;
+  actions: unknown[];
+  result: "success" | "failed" | "partial";
+  notes: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AgentMemoryEpisode {
+  id: string;
+  project_id: string;
+  domain: "engineering" | "trading" | "research" | "operations" | "custom";
+  title: string;
+  goal: string;
+  problem_signature: string;
+  scope: Record<string, unknown>;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  status: "open" | "active" | "degraded" | "superseded" | "rejected";
+  feedback_score: number;
+  superseded_by_id: string | null;
+  attempts: AgentMemoryAttempt[];
+}
+
+export interface AgentMemorySearchResult {
+  episode: AgentMemoryEpisode;
+  pattern: {
+    pattern_key: string;
+    verified_outcomes: number;
+    weighted_successes: number;
+    weighted_total: number;
+    confidence: number;
+    promoted: boolean;
+  } | null;
+  recommended_actions: unknown[];
+  lesson: string | null;
+  scope_match: boolean;
+}
+
+export interface AgentMemorySearchResponse {
+  query: string;
+  results: AgentMemorySearchResult[];
+}
+
+export type MemoryNodeType = "episode" | "attempt" | "outcome" | "pattern" | "verifier" | "evidence";
+export type MemoryEdgeType = "has_attempt" | "has_outcome" | "matches_pattern" | "verified_by" | "has_evidence" | "supersedes";
+
+export interface MemoryGraphNode {
+  id: string;
+  type: MemoryNodeType;
+  label: string;
+  status: string | null;
+  domain: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface MemoryGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: MemoryEdgeType;
+}
+
+export interface MemoryGraphView {
+  nodes: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+  stats: {
+    episodes: number;
+    attempts: number;
+    outcomes: number;
+    patterns: number;
+    verifiers: number;
+    evidence: number;
+  };
+}

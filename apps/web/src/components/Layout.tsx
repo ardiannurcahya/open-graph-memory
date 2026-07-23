@@ -6,6 +6,7 @@ const navItems = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/datasets", label: "Datasets" },
   { to: "/graph", label: "Graph Playground" },
+  { to: "/memory", label: "Agent Memory" },
 ];
 
 export default function Layout() {

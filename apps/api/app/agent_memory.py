@@ -566,3 +566,244 @@ async def supersede_pattern(
     pattern.promoted = False
     await db.commit()
     return pattern_view(replacement)
+
+
+# --- Graph visualization endpoint ---
+
+
+class MemoryGraphNode(BaseModel):
+    id: str
+    type: Literal["episode", "attempt", "outcome", "pattern", "verifier", "evidence"]
+    label: str
+    status: str | None = None
+    domain: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class MemoryGraphEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    type: Literal["has_attempt", "has_outcome", "matches_pattern", "verified_by", "has_evidence", "supersedes"]
+
+
+class MemoryGraphView(BaseModel):
+    nodes: list[MemoryGraphNode]
+    edges: list[MemoryGraphEdge]
+    stats: dict[str, int]
+
+
+@router.get("/graph", response_model=MemoryGraphView)
+async def memory_graph(
+    project: Project,
+    db: Db,
+    status: str | None = Query(None, description="Filter episodes by status"),
+    domain: str | None = Query(None, description="Filter episodes by domain"),
+    limit: int = Query(50, ge=1, le=200, description="Max episodes to include"),
+) -> MemoryGraphView:
+    statement = (
+        select(AgentMemoryEpisode)
+        .where(AgentMemoryEpisode.project_id == project.project_id)
+        .order_by(desc(AgentMemoryEpisode.updated_at))
+        .limit(limit)
+    )
+    if status:
+        statement = statement.where(AgentMemoryEpisode.status == status)
+    if domain:
+        statement = statement.where(AgentMemoryEpisode.domain == domain)
+    episodes = (await db.scalars(statement)).all()
+    episode_ids = [e.id for e in episodes]
+
+    nodes: list[MemoryGraphNode] = []
+    edges: list[MemoryGraphEdge] = []
+    stats = {"episodes": 0, "attempts": 0, "outcomes": 0, "patterns": 0, "verifiers": 0, "evidence": 0}
+
+    seen_episodes: set[str] = set()
+    seen_patterns: set[str] = set()
+    seen_verifiers: set[str] = set()
+    seen_evidence: set[str] = set()
+
+    for ep in episodes:
+        if ep.id in seen_episodes:
+            continue
+        seen_episodes.add(ep.id)
+        nodes.append(MemoryGraphNode(
+            id=ep.id,
+            type="episode",
+            label=ep.title,
+            status=ep.status,
+            domain=ep.domain,
+            metadata={
+                "goal": ep.goal,
+                "problem_signature": ep.problem_signature,
+                "feedback_score": ep.feedback_score,
+                "tags": ep.tags,
+                "created_at": ep.created_at.isoformat() if ep.created_at else None,
+            },
+        ))
+        stats["episodes"] += 1
+
+        if ep.superseded_by_id and ep.superseded_by_id in set(episode_ids):
+            edges.append(MemoryGraphEdge(
+                id=f"sup-{ep.id}-{ep.superseded_by_id}",
+                source=ep.id,
+                target=ep.superseded_by_id,
+                type="supersedes",
+            ))
+
+    if not episode_ids:
+        return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
+
+    attempts = (
+        await db.scalars(
+            select(AgentMemoryAttempt)
+            .where(AgentMemoryAttempt.episode_id.in_(episode_ids))
+            .order_by(AgentMemoryAttempt.episode_id, AgentMemoryAttempt.sequence)
+        )
+    ).all()
+    for att in attempts:
+        nodes.append(MemoryGraphNode(
+            id=att.id,
+            type="attempt",
+            label=f"#{att.sequence}: {att.hypothesis[:60]}",
+            status=att.result,
+            metadata={
+                "hypothesis": att.hypothesis,
+                "result": att.result,
+                "notes": att.notes,
+                "sequence": att.sequence,
+            },
+        ))
+        edges.append(MemoryGraphEdge(
+            id=f"eat-{att.episode_id}-{att.id}",
+            source=att.episode_id,
+            target=att.id,
+            type="has_attempt",
+        ))
+        stats["attempts"] += 1
+
+    outcomes = (
+        await db.scalars(
+            select(AgentMemoryOutcome)
+            .where(AgentMemoryOutcome.episode_id.in_(episode_ids))
+        )
+    ).all()
+    pattern_keys: set[str] = set()
+    outcome_ids = [o.id for o in outcomes]
+    for out in outcomes:
+        nodes.append(MemoryGraphNode(
+            id=out.id,
+            type="outcome",
+            label=f"{out.status}: {out.summary[:60]}",
+            status=out.status,
+            metadata={
+                "summary": out.summary,
+                "lesson": out.lesson,
+                "pattern_key": out.pattern_key,
+                "created_at": out.created_at.isoformat() if out.created_at else None,
+            },
+        ))
+        edges.append(MemoryGraphEdge(
+            id=f"eou-{out.episode_id}-{out.id}",
+            source=out.episode_id,
+            target=out.id,
+            type="has_outcome",
+        ))
+        stats["outcomes"] += 1
+        if out.pattern_key:
+            pattern_keys.add(out.pattern_key)
+
+    if pattern_keys:
+        patterns = (
+            await db.scalars(
+                select(AgentMemoryPattern)
+                .where(
+                    AgentMemoryPattern.project_id == project.project_id,
+                    AgentMemoryPattern.pattern_key.in_(list(pattern_keys)),
+                )
+            )
+        ).all()
+        pattern_map = {p.pattern_key: p for p in patterns}
+        for pat in patterns:
+            if pat.id in seen_patterns:
+                continue
+            seen_patterns.add(pat.id)
+            nodes.append(MemoryGraphNode(
+                id=pat.id,
+                type="pattern",
+                label=pat.pattern_key,
+                metadata={
+                    "pattern_key": pat.pattern_key,
+                    "confidence": pat.confidence,
+                    "verified_outcomes": pat.verified_outcomes,
+                    "promoted": pat.promoted,
+                },
+            ))
+            stats["patterns"] += 1
+
+        for out in outcomes:
+            if out.pattern_key and out.pattern_key in pattern_map:
+                pat = pattern_map[out.pattern_key]
+                edges.append(MemoryGraphEdge(
+                    id=f"omp-{out.id}-{pat.id}",
+                    source=out.id,
+                    target=pat.id,
+                    type="matches_pattern",
+                ))
+
+    if outcome_ids:
+        verifiers = (
+            await db.scalars(
+                select(AgentMemoryVerifier)
+                .where(AgentMemoryVerifier.outcome_id.in_(outcome_ids))
+            )
+        ).all()
+        for ver in verifiers:
+            if ver.id in seen_verifiers:
+                continue
+            seen_verifiers.add(ver.id)
+            nodes.append(MemoryGraphNode(
+                id=ver.id,
+                type="verifier",
+                label=f"{ver.kind}: {ver.name}",
+                status=ver.status,
+                metadata={
+                    "kind": ver.kind,
+                    "name": ver.name,
+                    "command": ver.command,
+                    "artifact_uri": ver.artifact_uri,
+                },
+            ))
+            edges.append(MemoryGraphEdge(
+                id=f"ovr-{ver.outcome_id}-{ver.id}",
+                source=ver.outcome_id,
+                target=ver.id,
+                type="verified_by",
+            ))
+            stats["verifiers"] += 1
+
+    evidence = (
+        await db.scalars(
+            select(AgentMemoryEvidence)
+            .where(AgentMemoryEvidence.episode_id.in_(episode_ids))
+        )
+    ).all()
+    for ev in evidence:
+        if ev.id in seen_evidence:
+            continue
+        seen_evidence.add(ev.id)
+        nodes.append(MemoryGraphNode(
+            id=ev.id,
+            type="evidence",
+            label=ev.reference[:80],
+            metadata={**ev.metadata_, "reference": ev.reference},
+        ))
+        edges.append(MemoryGraphEdge(
+            id=f"eev-{ev.episode_id}-{ev.id}",
+            source=ev.episode_id,
+            target=ev.id,
+            type="has_evidence",
+        ))
+        stats["evidence"] += 1
+
+    return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)

@@ -5,6 +5,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import DatasetsPage from "./pages/DatasetsPage";
 import GraphPage from "./pages/GraphPage";
+import AgentMemoryPage from "./pages/AgentMemoryPage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/datasets" element={<DatasetsPage />} />
           <Route path="/graph" element={<GraphPage />} />
+          <Route path="/memory" element={<AgentMemoryPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
