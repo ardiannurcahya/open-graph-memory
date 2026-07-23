@@ -139,6 +139,9 @@ async def upload(
     db: Annotated[AsyncSession, Depends(get_session)],
     store: Annotated[ObjectStore, Depends(get_object_store)],
 ) -> dict[str, object]:
+    # Normalize dataset_id to include ds_ prefix if missing
+    if not dataset_id.startswith("ds_"):
+        dataset_id = f"ds_{dataset_id}"
     await owned(db, project, dataset_id)
     stream, size, digest, head, tail = await spool(file)
     try:
@@ -226,6 +229,9 @@ async def list_documents(
     project: Annotated[ProjectContext, Depends(require_project)],
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
+    # Normalize dataset_id to include ds_ prefix if missing
+    if not dataset_id.startswith("ds_"):
+        dataset_id = f"ds_{dataset_id}"
     await owned(db, project, dataset_id)
     rows = await db.scalars(
         select(Document).where(
