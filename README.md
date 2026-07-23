@@ -10,6 +10,7 @@ OpenGraphMemory is a self-hosted platform for ingesting documents, extracting ev
 - PostgreSQL-authoritative entities, relations, evidence, extraction runs, reviews, and community analytics.
 - Temporal PostgreSQL graph records with current and historical fact queries.
 - Bounded entity search, neighbors, paths, subgraphs, evidence, and graph inspection APIs.
+- **Agent Memory:** project-scoped episode, attempt, outcome, and pattern storage with temporal supersession, feedback scoring, and verified operational experience retrieval.
 - Interactive Graph Playground with community levels, filters, relation evidence, and raw JSON.
 - Async Python SDK for dataset, document, and structured graph operations.
 - Explicit extractor, parser, chunker, and object-store plugin contracts.
@@ -26,12 +27,16 @@ Browser -> Caddy -> FastAPI -> PostgreSQL
 Upload -> parse -> chunk -> extract entities/relations/evidence
        -> persist authoritative temporal graph records
        -> refresh hierarchical community analytics
+
+Agent Memory -> episodes, attempts, outcomes, patterns
+            -> temporal supersession and feedback scoring
+            -> verified experience search and retrieval
 ```
 
-- **PostgreSQL:** authoritative projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, and analytics.
+- **PostgreSQL:** authoritative projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, analytics, and agent memory.
 - **S3-compatible object storage:** authoritative uploaded source documents.
 - **Redis:** transient ARQ queue.
-- **FastAPI:** authenticated dataset, document, and structured graph API.
+- **FastAPI:** authenticated dataset, document, structured graph, and agent memory API.
 - **React/Vite:** dataset management and Graph Playground.
 
 ## Requirements
@@ -132,6 +137,91 @@ GET  /v1/datasets/{dataset_id}/graph/explorer
 
 Use OpenAPI at `/api/docs` for complete schemas, bounds, and parameters. See [Graph extraction](docs/graph-extraction.md) and [Hierarchical community analytics](docs/community-graphrag.md).
 
+## Agent Memory API
+
+Agent Memory provides project-scoped persistent memory for AI agents to record, retrieve, and curate operational experience.
+
+### Concepts
+
+- **Episodes:** individual problem-solving sessions with domain, title, goal, and problem signature.
+- **Attempts:** hypothesis-driven actions within an episode, with success/failed/partial outcomes.
+- **Outcomes:** final verified results with optional verifiers (CI, runtime, test, build) and metrics.
+- **Patterns:** aggregated experience keys derived from problem signatures, with confidence scoring and promotion.
+- **Temporal supersession:** episodes and patterns can be superseded by newer versions while preserving history.
+
+### Endpoints
+
+```text
+POST   /v1/agent-memory/episodes                          # Create episode
+GET    /v1/agent-memory/episodes                          # List episodes
+GET    /v1/agent-memory/episodes/{episode_id}             # Get episode with attempts
+POST   /v1/agent-memory/episodes/{episode_id}/attempts    # Append attempt
+POST   /v1/agent-memory/episodes/{episode_id}/outcomes    # Record outcome
+GET    /v1/agent-memory/search?q={query}                  # Search episodes
+POST   /v1/agent-memory/episodes/{episode_id}/feedback    # Score episode
+POST   /v1/agent-memory/episodes/{episode_id}/supersede   # Supersede episode
+POST   /v1/agent-memory/patterns/{pattern_key}/feedback   # Score pattern
+POST   /v1/agent-memory/patterns/{pattern_key}/supersede  # Supersede pattern
+```
+
+### MCP Integration
+
+OpenGraphMemory exposes Agent Memory through the [OGM Agent Bridge](https://github.com/ardiannurcahya/ogm-agent-bridge) MCP server for Claude Code, OpenCode, and Hermes:
+
+```json
+{
+  "mcp": {
+    "ogm": {
+      "type": "local",
+      "command": ["uvx", "ogm-agent-bridge"],
+      "environment": {
+        "OGM_BASE_URL": "https://your-instance.example.com",
+        "OGM_API_KEY": "<project-api-key>",
+        "OGM_PROJECT_ID": "<project-uuid>",
+        "OGM_PERMISSION_PROFILE": "personal-safe"
+      }
+    }
+  }
+}
+```
+
+Permission profiles:
+- `read-only`: graph and agent memory retrieval.
+- `personal-safe`: reviewed document uploads and additive agent memory records.
+- `memory-curator`: memory feedback and supersession governance.
+
+### Example: Record Experience
+
+```bash
+# Create episode
+curl -X POST https://your-instance.example.com/v1/agent-memory/episodes \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"domain":"engineering","title":"Fix deployment","goal":"Resolve API startup failure","problem_signature":"api-deploy-failure"}'
+
+# Append attempt
+curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode_id>/attempts \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"hypothesis":"Missing S3 credentials","result":"success","notes":"Added S3_ENDPOINT_URL env var"}'
+
+# Record outcome
+curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode_id>/outcomes \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"success","summary":"Fixed by configuring S3_ENDPOINT_URL","lesson":"Always check env var names match config model"}'
+
+# Search experience
+curl "https://your-instance.example.com/v1/agent-memory/search?q=deployment+S3" \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>"
+```
+
+See [OGM Agent Bridge documentation](https://github.com/ardiannurcahya/ogm-agent-bridge) for MCP tool reference.
+
 ## Graph Playground
 
 Open `http://localhost:3000`, enter project credentials, and select dataset. Playground provides:
@@ -149,7 +239,7 @@ See [Dashboard and Graph Playground](docs/dashboard.md).
 
 SDK source lives in `packages/sdk`. Install development dependencies with `uv sync --frozen --group dev`.
 
-SDK covers project, dataset, document, and structured graph operations. See [Python SDK](docs/sdk-python.md).
+SDK covers project, dataset, document, structured graph, and agent memory operations. See [Python SDK](docs/sdk-python.md).
 
 ## Provider Plugins
 
@@ -215,6 +305,7 @@ Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Ex
 - [Dataset upload](docs/dataset-upload.md)
 - [Graph extraction](docs/graph-extraction.md)
 - [Hierarchical community analytics](docs/community-graphrag.md)
+- [Agent Memory](#agent-memory-api) (see above)
 - [Dashboard and Graph Playground](docs/dashboard.md)
 - [Structured Graph Python SDK](docs/sdk-python.md)
 - [Plugin system](docs/plugin-system.md)
