@@ -525,10 +525,12 @@ async def feedback_pattern(
     pattern_key: str, body: FeedbackInput, project: Project, db: Db
 ) -> PatternView:
     pattern = await db.scalar(
-        select(AgentMemoryPattern).where(
+        select(AgentMemoryPattern)
+        .where(
             AgentMemoryPattern.project_id == project.project_id,
             AgentMemoryPattern.pattern_key == pattern_key,
         )
+        .with_for_update()
     )
     if pattern is None:
         raise HTTPException(404, "agent memory pattern not found")
@@ -543,11 +545,15 @@ async def feedback_pattern(
 async def supersede_pattern(
     pattern_key: str, body: PatternSupersedeInput, project: Project, db: Db
 ) -> PatternView:
+    if pattern_key == body.superseding_pattern_key:
+        raise HTTPException(422, "a pattern cannot supersede itself")
     pattern = await db.scalar(
-        select(AgentMemoryPattern).where(
+        select(AgentMemoryPattern)
+        .where(
             AgentMemoryPattern.project_id == project.project_id,
             AgentMemoryPattern.pattern_key == pattern_key,
         )
+        .with_for_update()
     )
     replacement = await db.scalar(
         select(AgentMemoryPattern).where(
