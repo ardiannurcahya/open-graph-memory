@@ -1,4 +1,4 @@
-"""Authoritative extraction persistence followed by rebuildable Neo4j projection."""
+"""Authoritative extraction persistence followed by rebuildable PostgreSQL graph projection."""
 
 import hashlib
 import json
@@ -53,7 +53,7 @@ from app.graph_store import (
 )
 from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
-from app.plugin_registry import create_extractor, create_graph_store
+from app.plugin_registry import create_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -159,13 +159,7 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
 
 
 def _store() -> GraphStore:
-    settings = get_settings()
-    return create_graph_store(
-        PluginConfig(
-            {"url": settings.neo4j_url},
-            {"auth": SecretValue(settings.neo4j_auth.get_secret_value())},
-        )
-    )
+    return GraphStore()
 
 
 async def extract_document(
