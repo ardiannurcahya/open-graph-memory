@@ -4,7 +4,7 @@ Hierarchical analytics provides deterministic community snapshots and semantic z
 
 ## Authority and hierarchy
 
-PostgreSQL is authority for entities, non-rejected relations, analytics snapshots, and memberships. Neo4j is rebuildable graph projection.
+PostgreSQL is authoritative for entities, non-rejected relations, analytics snapshots, and memberships.
 
 Analytics uses deterministic Louvain partitioning. Level 0 runs on entity graph. Levels 1 and 2 run Louvain over quotient graphs from prior partition, so parent groups cannot split child groups. Levels mean:
 

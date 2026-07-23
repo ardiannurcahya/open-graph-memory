@@ -4,6 +4,10 @@ import { classifyEntityType } from "./graphTypes";
 import { buildCommunityPalette } from "./colorPalette";
 import { buildGraphState } from "./graphPhysics";
 
+function isExpired(validUntil: string | null | undefined): boolean {
+  return validUntil != null;
+}
+
 export function explorerToGraphState(view: ExplorerView): GraphState {
   const communityIds = view.communities.map((c) => c.id);
   const communityNames = new Map<string, string>();
@@ -32,7 +36,6 @@ export function explorerToGraphState(view: ExplorerView): GraphState {
 
   const state = buildGraphState(rawNodes, rawEdges, palette);
 
-  // If no communities from API, assign all to "default"
   if (communityIds.length === 0 && !state.communities.has("default")) {
     state.communities.set("default", {
       id: "default",
@@ -56,8 +59,11 @@ export function graphSummaryToGraphState(view: GraphSummary): GraphState {
       label: node.canonical_name,
       type: classifyEntityType(node.entity_type),
       community: node.entity_type || "unknown",
-      description: `${node.entity_type} · confidence ${node.confidence.toFixed(2)} · ${node.review_state}`,
+      description: `${node.entity_type} · confidence ${node.confidence.toFixed(2)} · ${node.review_state}${isExpired(node.valid_until) ? " · expired" : ""}`,
       degree: relationDegree(node, view.relations),
+      validFrom: node.valid_from,
+      validUntil: node.valid_until,
+      isExpired: isExpired(node.valid_until),
     })),
     view.relations.map((relation) => ({
       id: relation.id,
@@ -65,6 +71,9 @@ export function graphSummaryToGraphState(view: GraphSummary): GraphState {
       target: relation.target_entity_id,
       label: relation.relation_type,
       weight: relation.confidence,
+      validFrom: relation.valid_from,
+      validUntil: relation.valid_until,
+      isExpired: isExpired(relation.valid_until),
     })),
     palette,
   );

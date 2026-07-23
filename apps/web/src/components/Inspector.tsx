@@ -7,6 +7,21 @@ interface InspectorProps {
   onClose: () => void;
 }
 
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function Inspector({ node, state, onSelectNode, onClose }: InspectorProps) {
   if (!node) return null;
 
@@ -33,6 +48,29 @@ export function Inspector({ node, state, onSelectNode, onClose }: InspectorProps
         <div className="text-lg font-semibold leading-tight text-ui-text">{node.label}</div>
         <div className="mt-2 text-sm leading-relaxed text-ui-subdued">
           {node.description || "No description available."}
+        </div>
+        {node.isExpired && (
+          <div className="mt-2 inline-block rounded bg-amber-100 px-2 py-0.5 font-mono text-[10px] text-amber-700">
+            EXPIRED
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-ui-border bg-ui-muted p-4">
+        <div className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-stone-400">
+          Temporal
+        </div>
+        <div className="space-y-1 text-[11px]">
+          <div className="flex justify-between">
+            <span className="text-stone-400">Valid from</span>
+            <span className="font-mono text-stone-600">{formatDate(node.validFrom)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-stone-400">Valid until</span>
+            <span className="font-mono text-stone-600">
+              {node.validUntil ? formatDate(node.validUntil) : "current"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -85,6 +123,9 @@ export function Inspector({ node, state, onSelectNode, onClose }: InspectorProps
                     style={{ color: oCol }}
                   >
                     {o.label}
+                    {e.isExpired && (
+                      <span className="ml-1 text-[9px] text-amber-500">(expired)</span>
+                    )}
                   </div>
                   <div className="font-mono text-[9px] text-stone-400">
                     {e.label.replace(/_/g, " ")}

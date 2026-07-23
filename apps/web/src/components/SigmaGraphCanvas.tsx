@@ -205,6 +205,7 @@ export default function SigmaGraphCanvas({
         color: vividNodeColorForCommunity(node.community, dark),
         label: node.label,
         community: node.community,
+        isExpired: node.isExpired === true,
       });
     }
 
@@ -216,6 +217,7 @@ export default function SigmaGraphCanvas({
       graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
         color: info?.color ?? "#78716c",
         size: 0.5,
+        isExpired: edge.isExpired === true,
       });
     }
 
@@ -241,6 +243,7 @@ export default function SigmaGraphCanvas({
         const filters = filtersRef.current;
         const sel = selectedNodeRef.current;
         const highlighted = highlightedRef.current;
+        const isExpired = graph.getNodeAttribute(node, "isExpired") as boolean | undefined;
         if (sel) {
           if (node === sel) return { ...data, highlighted: true };
           if (highlighted.has(node)) return { ...data, highlighted: true };
@@ -248,6 +251,9 @@ export default function SigmaGraphCanvas({
         }
         if (filters.size > 0 && !filters.has(data.community as string)) {
           return { ...data, color: dark ? "#1a1a2a" : "#d8d6d0", hidden: true, zIndex: 0 };
+        }
+        if (isExpired) {
+          return { ...data, color: dark ? "#2a2a3a" : "#b8b6b0", zIndex: 0 };
         }
         return data;
       },
@@ -258,6 +264,8 @@ export default function SigmaGraphCanvas({
         const tgt = graph.target(edge);
         const srcComm = graph.getNodeAttribute(src, "community") as string;
         const tgtComm = graph.getNodeAttribute(tgt, "community") as string;
+        const edgeData = graph.getEdgeAttributes(edge);
+        const isExpired = edgeData.isExpired as boolean | undefined;
         if (sel) {
           if (src !== sel && tgt !== sel) {
             return { color: dark ? "#15151f" : "#e0ded8", hidden: true };
@@ -266,6 +274,9 @@ export default function SigmaGraphCanvas({
         }
         if (filters.size > 0 && !filters.has(srcComm) && !filters.has(tgtComm)) {
           return { color: dark ? "#15151f" : "#e0ded8", hidden: true };
+        }
+        if (isExpired) {
+          return { color: dark ? "#1a1a2a" : "#d0cec8", hidden: false };
         }
         return {};
       },

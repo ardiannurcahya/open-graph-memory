@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-        with: {version: "0.6.3", enable-cache: true}
+        with: {version: "0.11.31", enable-cache: true}
       - run: uv sync --frozen --group dev
       - run: uv run ruff check .
       - run: uv run mypy
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: ./scripts/security-gate.sh
       - uses: astral-sh/setup-uv@v5
-        with: {version: "0.6.3", enable-cache: true}
+        with: {version: "0.11.31", enable-cache: true}
       - run: uv sync --frozen --group dev
       - run: uv export --frozen --all-groups --no-emit-project --format requirements-txt --output-file /tmp/requirements-audit.txt
       - run: uvx --from pip-audit==2.7.3 pip-audit --requirement /tmp/requirements-audit.txt

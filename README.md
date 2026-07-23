@@ -6,13 +6,13 @@ OpenGraphMemory is a self-hosted platform for ingesting documents, extracting ev
 
 - Project-isolated datasets and documents.
 - Streaming uploads with size, type, signature, and duplicate validation.
-- Durable parsing, chunking, graph extraction, projection, cleanup, retry, and reconciliation jobs.
+- Durable parsing, chunking, graph extraction, cleanup, retry, and reconciliation jobs.
 - PostgreSQL-authoritative entities, relations, evidence, extraction runs, reviews, and community analytics.
-- Rebuildable Neo4j graph projection.
+- Temporal PostgreSQL graph records with current and historical fact queries.
 - Bounded entity search, neighbors, paths, subgraphs, evidence, and graph inspection APIs.
 - Interactive Graph Playground with community levels, filters, relation evidence, and raw JSON.
 - Async Python SDK for dataset, document, and structured graph operations.
-- Explicit extractor, parser, chunker, object-store, graph-store, and graph-retriever plugin contracts.
+- Explicit extractor, parser, chunker, and object-store plugin contracts.
 
 ![OpenGraphMemory radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
 
@@ -21,18 +21,16 @@ OpenGraphMemory is a self-hosted platform for ingesting documents, extracting ev
 ```text
 Browser -> Caddy -> FastAPI -> PostgreSQL
                          |-> S3-compatible object storage
-                         |-> Redis -> Celery workers
-                         `-> Neo4j graph projection
+                         `-> Redis -> ARQ worker
 
 Upload -> parse -> chunk -> extract entities/relations/evidence
-       -> persist authoritative graph records -> project to Neo4j
+       -> persist authoritative temporal graph records
        -> refresh hierarchical community analytics
 ```
 
 - **PostgreSQL:** authoritative projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, and analytics.
 - **S3-compatible object storage:** authoritative uploaded source documents.
-- **Neo4j:** rebuildable graph traversal projection.
-- **Redis:** transient Celery broker.
+- **Redis:** transient ARQ queue.
 - **FastAPI:** authenticated dataset, document, and structured graph API.
 - **React/Vite:** dataset management and Graph Playground.
 
@@ -84,7 +82,7 @@ Important variables:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL application and migration connection |
-| `REDIS_URL` | Celery broker |
+| `REDIS_URL` | ARQ queue |
 | `ADMIN_API_KEY` | Project-creation credential |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint |
 | `S3_ACCESS_KEY` | Object-storage access key |
@@ -93,10 +91,6 @@ Important variables:
 | `GRAPH_EXTRACTOR_MODEL` | Extraction model identifier |
 | `OPENAI_GRAPH_EXTRACTOR_BASE_URL` | OpenAI-compatible extraction endpoint |
 | `OPENAI_API_KEY` | Extraction provider credential |
-| `NEO4J_URL` | Neo4j HTTP endpoint |
-| `NEO4J_AUTH` | Neo4j `username/password` |
-| `WORKER_CONCURRENCY` | Ingestion worker concurrency |
-| `GRAPH_WORKER_CONCURRENCY` | Graph worker concurrency |
 
 Deterministic and local NLP extraction need no external model credentials. NLP extraction recognizes conservative explicit active-sentence relations without co-occurrence edges. Production requires OpenAI-compatible graph extraction over HTTPS. See [Service and Provider Configuration](docs/service-configuration.md).
 
@@ -188,11 +182,11 @@ Full local gate: `scripts/check.sh`. Runtime gates create and destroy their own 
 ## Operations
 
 - `GET /api/health`: process liveness.
-- `GET /api/ready`: PostgreSQL, Redis, Neo4j, and object-storage readiness.
+- `GET /api/ready`: PostgreSQL, Redis, and object-storage readiness.
 - `GET /api/metrics`: Prometheus metrics; restrict public access.
-- Back up PostgreSQL and object storage. Redis is transient; rebuild Neo4j after loss.
+- Back up PostgreSQL and object storage. Redis is transient; PostgreSQL outboxes republish pending work.
 - Run migrations as explicit release step after verified backup.
-- Monitor readiness, queues, graph jobs, projection drift, latency, RAM, swap, disk, and restarts.
+- Monitor readiness, queues, graph jobs, latency, RAM, swap, disk, and restarts.
 
 Production procedure: [Deployment](docs/deployment.md). Operations: [runbook](docs/runbooks/operations.md). Backup and restore: [runbook](docs/runbooks/backup-restore.md).
 
@@ -203,16 +197,16 @@ API healthy but not ready:
 ```sh
 curl -s http://localhost:3000/api/ready
 docker compose -f deployments/docker-compose.yml ps
-docker compose -f deployments/docker-compose.yml logs api postgres redis neo4j rustfs
+docker compose -f deployments/docker-compose.yml logs api postgres redis rustfs
 ```
 
 Document or graph job stuck:
 
 ```sh
-docker compose -f deployments/docker-compose.yml logs worker graph-worker dispatcher
+docker compose -f deployments/docker-compose.yml logs worker
 ```
 
-Inspect PostgreSQL job/outbox state and dependency readiness before retrying. After Neo4j recovery, reconcile rebuildable graph projection.
+Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Expired leases are reconciled by the worker maintenance loop.
 
 ## Documentation
 

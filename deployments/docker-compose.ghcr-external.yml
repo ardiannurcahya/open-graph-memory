@@ -37,41 +37,15 @@ services:
   worker:
     <<: *host-access
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
-    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}"]
+    command: [arq, app.arq_worker.WorkerSettings]
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 256m
     pids_limit: 256
     stop_grace_period: 60s
     env_file: [{path: ../.env, required: false}]
     environment: {APP_ENV: production}
     depends_on: {redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}
-    healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
-    logging: *default-logging
-  graph-worker:
-    <<: *host-access
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
-    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${GRAPH_WORKER_CONCURRENCY:-1}", -Q, graph]
-    restart: unless-stopped
-    mem_limit: 384m
-    pids_limit: 256
-    stop_grace_period: 60s
-    env_file: [{path: ../.env, required: false}]
-    environment: {APP_ENV: production}
-    deploy: {replicas: "${GRAPH_WORKER_REPLICAS:-1}"}
-    depends_on: {redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}
-    healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
-    logging: *default-logging
-  dispatcher:
-    <<: *host-access
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
-    command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
-    restart: unless-stopped
-    mem_limit: 192m
-    pids_limit: 128
-    stop_grace_period: 30s
-    env_file: [{path: ../.env, required: false}]
-    environment: {APP_ENV: production}
-    depends_on: {redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}
+    healthcheck: {test: [CMD, arq, --check, app.arq_worker.WorkerSettings], interval: 15s, timeout: 10s, retries: 5}
     logging: *default-logging
   web:
     image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-web:${IMAGE_TAG:-latest}"

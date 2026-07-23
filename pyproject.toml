@@ -10,7 +10,7 @@ dependencies = [
     "asyncpg>=0.30,<1",
     "alembic>=1.14,<2",
     "redis>=5,<6",
-    "celery>=5.4,<6",
+    "arq>=0.26,<1",
     "httpx>=0.28,<1",
     "structlog>=24,<26",
     "boto3>=1.35,<2",
@@ -49,7 +49,7 @@ strict=true
 packages=["app","open_graph_core","open_graph_contracts","open_graph_sdk"]
 mypy_path=["apps/api","packages/core/src","packages/contracts/src", "packages/sdk/src"]
 [[tool.mypy.overrides]]
-module = "celery.*"
+module = "arq.*"
 ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["boto3", "botocore.*"]

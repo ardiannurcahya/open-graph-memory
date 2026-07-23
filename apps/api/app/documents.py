@@ -71,6 +71,8 @@ def validate(file: UploadFile, head: bytes, tail: bytes) -> str:
     extension = Path(filename).suffix.lower()
     if not filename or filename != file.filename or extension not in MIMES:
         raise HTTPException(400, "invalid filename or extension")
+    if len(filename) > 255:
+        raise HTTPException(400, "filename exceeds 255 characters")
     mime = (file.content_type or "").split(";", 1)[0].lower()
     if mime not in MIMES[extension]:
         raise HTTPException(415, "MIME type does not match extension")

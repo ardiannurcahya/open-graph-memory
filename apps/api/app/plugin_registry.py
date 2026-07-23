@@ -5,7 +5,6 @@ from typing import cast
 from open_graph_contracts import (
     Capability,
     Extractor,
-    GraphStore,
     ObjectStore,
     PluginCapabilities,
     PluginConfig,
@@ -21,8 +20,6 @@ from open_graph_core.extraction import (
     OpenAICompatibleExtractor,
 )
 
-from app.graph_store import GraphStore as AppGraphStore
-from app.graph_store import Neo4jGraphStore
 from app.storage import S3ObjectStore
 
 _CONTRACT = PluginVersion(1, 0)
@@ -84,11 +81,6 @@ def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
     )
 
 
-def _neo4j_factory(**kwargs: object) -> Neo4jGraphStore:
-    config = _config(kwargs)
-    return Neo4jGraphStore(_string(config, "url"), config.require_secret("auth").get())
-
-
 def _s3_factory(**kwargs: object) -> S3ObjectStore:
     return S3ObjectStore.from_plugin_config(_config(kwargs))
 
@@ -101,7 +93,6 @@ def register_builtin_plugins(registry: PluginRegistry | None = None) -> PluginRe
         (Capability.EXTRACTION, "nlp", _nlp_extractor_factory, Extractor),
         (Capability.EXTRACTION, "openai", _openai_extractor_factory, Extractor),
         (Capability.OBJECT_STORE, "s3", _s3_factory, ObjectStore),
-        (Capability.GRAPH_STORE, "neo4j", _neo4j_factory, GraphStore),
     )
     for capability, name, factory, protocol in registrations:
         target.register(_metadata(name, capability), factory, protocol=protocol)
@@ -117,11 +108,4 @@ def create_extractor(name: str, config: PluginConfig) -> Extractor:
 def create_object_store(config: PluginConfig) -> ObjectStore:
     return cast(
         ObjectStore, register_builtin_plugins().create(Capability.OBJECT_STORE, "s3", config=config)
-    )
-
-
-def create_graph_store(config: PluginConfig) -> AppGraphStore:
-    return cast(
-        AppGraphStore,
-        register_builtin_plugins().create(Capability.GRAPH_STORE, "neo4j", config=config),
     )

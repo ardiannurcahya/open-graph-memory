@@ -180,13 +180,10 @@ def main() -> int:
         "exec",
         "-T",
         "worker",
-        "celery",
-        "-A",
-        "worker.main.celery_app",
-        "call",
-        "graph.extract_job",
-        "--args",
-        json.dumps([job_id]),
+        "python",
+        "-c",
+        "import asyncio; from app.arq_worker import enqueue_extract_graph; "
+        f"asyncio.run(enqueue_extract_graph('{job_id}'))",
     )
     time.sleep(2)
     assert (
@@ -204,77 +201,30 @@ def main() -> int:
         "exec",
         "-T",
         "worker",
-        "celery",
-        "-A",
-        "worker.main.celery_app",
-        "call",
-        "graph.reconcile_jobs",
-    )
-    neo4j = (
-        "MATCH (e:Evidence {project_id: '"
-        + project["id"]
-        + "', dataset_id: '"
-        + dataset["id"]
-        + "'}) WHERE e.created_at IS NOT NULL AND e.updated_at IS NOT NULL "
-        + "AND e.document_id IS NOT NULL AND e.chunk_id IS NOT NULL "
-        + "AND e.provider IS NOT NULL AND e.model IS NOT NULL "
-        + "AND e.extractor_version IS NOT NULL AND e.prompt_version IS NOT NULL RETURN count(e)"
+        "python",
+        "-c",
+        "import asyncio; from app.graph_dispatch import reconcile_graph_jobs; "
+        "asyncio.run(reconcile_graph_jobs())",
     )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                neo4j,
-            ).splitlines()[-1]
+                "select count(*) from graph_evidence where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and document_id is not null and chunk_id is not null",
+            )
         )
         > 0
     )
-    # Deletion commits PostgreSQL intent first; the worker removes only the scoped Neo4j projection.
+    # Deletion removes only the scoped PostgreSQL graph evidence and unsupported subjects.
     deleted_document = ids[0]
     assert (
         request(base, "DELETE", f"/v1/documents/{deleted_document}", headers=primary_headers)[0]
         == 204
     )
-    # Simulate a broker-accepted task lost before a worker starts it. Reconciliation must release
-    # the expired delivery lease rather than leaving the deletion intent permanently published.
-    sql(
-        args.compose_file,
-        "update graph_cleanup_outbox set published_at=now(), "
-        "lease_expires_at=now() - interval '1 second', "
-        "next_attempt_at=now(), attempts=1 where document_id='" + deleted_document + "'",
-    )
-    compose(
-        args.compose_file,
-        "exec",
-        "-T",
-        "worker",
-        "celery",
-        "-A",
-        "worker.main.celery_app",
-        "call",
-        "graph.reconcile_cleanup_outbox",
-    )
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        released = sql(
-            args.compose_file,
-            "select count(*) from graph_cleanup_outbox where document_id='"
-            + deleted_document
-            + "' and (completed_at is not null "
-            "or (lease_expires_at is null and published_at is null))",
-        )
-        if released == "1":
-            break
-        time.sleep(1)
-    else:
-        raise RuntimeError("stale graph cleanup delivery lease was not reclaimed")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         completed = sql(
@@ -344,11 +294,10 @@ def main() -> int:
         "exec",
         "-T",
         "worker",
-        "celery",
-        "-A",
-        "worker.main.celery_app",
-        "call",
-        "graph.reconcile_jobs",
+        "python",
+        "-c",
+        "import asyncio; from app.graph_dispatch import reconcile_graph_jobs; "
+        "asyncio.run(reconcile_graph_jobs())",
     )
     assert (
         int(
@@ -363,85 +312,42 @@ def main() -> int:
         )
         == 0
     )
-    deleted_graph = (
-        "MATCH (n) WHERE n.project_id = '"
-        + project["id"]
-        + "' AND n.dataset_id = '"
-        + dataset["id"]
-        + "' AND (n:Document OR n:Chunk OR n:Evidence) "
-        + "AND (n.id = '"
-        + deleted_document
-        + "' OR n.document_id = '"
-        + deleted_document
-        + "') RETURN count(n)"
-    )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                deleted_graph,
-            ).splitlines()[-1]
+                "select count(*) from graph_evidence where document_id='"
+                + deleted_document
+                + "'",
+            )
         )
         == 0
     )
-    deleted_subjects = (
-        "MATCH (n) WHERE n.project_id = '"
-        + project["id"]
-        + "' AND n.dataset_id = '"
-        + dataset["id"]
-        + "' AND ((n:Relation AND n.relation_type = 'EMPLOYS') "
-        + "OR (n:Entity AND n.canonical_name = 'Alice')) RETURN count(n)"
-    )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                deleted_subjects,
-            ).splitlines()[-1]
+                "select count(*) from canonical_entities where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and canonical_name='Alice'",
+            )
         )
         == 0
     )
-    surviving_subjects = (
-        "MATCH (n) WHERE (n.project_id = '"
-        + project["id"]
-        + "' AND n.dataset_id = '"
-        + dataset["id"]
-        + "' AND n:Entity AND n.canonical_name IN ['Acme Labs', 'Alice Nguyen']) "
-        + "OR (n.project_id = '"
-        + outsider["id"]
-        + "' AND n.dataset_id = '"
-        + outsider_dataset["id"]
-        + "' AND n:Relation AND n.relation_type = 'EMPLOYS') RETURN count(n)"
-    )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                surviving_subjects,
-            ).splitlines()[-1]
+                "select count(*) from canonical_entities where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "' and canonical_name in ('Acme Labs', 'Alice Nguyen')",
+            )
         )
-        == 3
+        == 2
     )
     assert (
         request(base, "DELETE", f"/v1/datasets/{dataset['id']}", headers=primary_headers)[0] == 204
@@ -461,51 +367,31 @@ def main() -> int:
     assert (
         sql(args.compose_file, f"select count(*) from datasets where id='{dataset['id']}'") == "0"
     )
-    dataset_graph = (
-        "MATCH (n) WHERE n.project_id = '"
-        + project["id"]
-        + "' AND n.dataset_id = '"
-        + dataset["id"]
-        + "' RETURN count(n)"
-    )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                dataset_graph,
-            ).splitlines()[-1]
+                "select count(*) from canonical_entities where project_id='"
+                + project["id"]
+                + "' and dataset_id='"
+                + dataset["id"]
+                + "'",
+            )
         )
         == 0
     )
-    outsider_graph = (
-        "MATCH (n:Document {project_id: '"
-        + outsider["id"]
-        + "', dataset_id: '"
-        + outsider_dataset["id"]
-        + "', id: '"
-        + outsider_document["id"]
-        + "'}) RETURN count(n)"
-    )
     assert (
         int(
-            compose(
+            sql(
                 args.compose_file,
-                "exec",
-                "-T",
-                "neo4j",
-                "sh",
-                "-c",
-                'cypher-shell -u "${NEO4J_AUTH%%/*}" -p "${NEO4J_AUTH#*/}" --format plain "$1"',
-                "sh",
-                outsider_graph,
-            ).splitlines()[-1]
+                "select count(*) from documents where project_id='"
+                + outsider["id"]
+                + "' and dataset_id='"
+                + outsider_dataset["id"]
+                + "' and id='"
+                + outsider_document["id"]
+                + "'",
+            )
         )
         == 1
     )

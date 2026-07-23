@@ -1,7 +1,6 @@
 import asyncio
 
 import boto3
-import httpx
 from botocore.config import Config
 from fastapi import APIRouter, Response, status
 from redis.asyncio import Redis
@@ -47,14 +46,6 @@ async def checks() -> dict[str, bool]:
         finally:
             await client.aclose()
 
-    async def http(url: str, auth: tuple[str, str] | None = None) -> bool:
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url, auth=auth)
-                return 200 <= response.status_code < 400
-        except Exception:
-            return False
-
     async def s3() -> bool:
         def bucket_exists() -> bool:
             client = boto3.client(
@@ -77,16 +68,13 @@ async def checks() -> dict[str, bool]:
         except Exception:
             return False
 
-    neo4j_user, separator, neo4j_password = cfg.neo4j_auth.get_secret_value().partition("/")
-    neo4j_auth = (neo4j_user, neo4j_password) if separator else None
     values = await asyncio.gather(
         asyncio.wait_for(postgres(), timeout=timeout),
         asyncio.wait_for(redis(), timeout=timeout),
-        http(cfg.neo4j_url, neo4j_auth),
         s3(),
         return_exceptions=True,
     )
-    names = ("postgres", "redis", "neo4j", "s3")
+    names = ("postgres", "redis", "s3")
     return {name: value is True for name, value in zip(names, values, strict=True)}
 
 

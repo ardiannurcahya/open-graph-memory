@@ -27,7 +27,7 @@ curl -fsS http://localhost:3000/api/ready
 
 For local image pull, set `GHCR_NAMESPACE=ardiannurcahya`, `IMAGE_TAG=latest`, then run `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull` followed by `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml up -d --no-build`. Do not build source on host. Pin immutable tag or digest for production rollout.
 
-Production override sets one API process, Celery concurrency 1 by default, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. `graph-worker` consumes graph work; `dispatcher` publishes durable outbox work.
+Production override sets one API process, one ARQ worker, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. The ARQ worker consumes jobs and runs the durable outbox maintenance loop.
 
 For external S3-compatible storage, set S3 variables and include `deployments/docker-compose.external-s3.yml`; local RustFS services become profile-disabled. Use provider-native bucket versioning/export.
 
@@ -38,16 +38,16 @@ from integrations that require a registered plugin or code change.
 
 ## Authority and Recovery
 
-Back up PostgreSQL and object storage. Redis is transient. Neo4j is a rebuildable projection. Run `scripts/backup.sh`, encrypt result, copy off-host, alert on backup age, and drill `scripts/restore.sh` in isolation. See `docs/runbooks/backup-restore.md`.
+Back up PostgreSQL and object storage. Redis is transient and pending work is retained in PostgreSQL outboxes. Run `scripts/backup.sh`, encrypt the result, copy it off-host, alert on backup age, and drill `scripts/restore.sh` in isolation. See `docs/runbooks/backup-restore.md`.
 
 ## Observability
 
 - `/api/health`: liveness only.
-- `/api/ready`: PostgreSQL, Redis, Neo4j, and object-storage checks.
+- `/api/ready`: PostgreSQL, Redis, and object-storage checks.
 - `/api/metrics`: Prometheus text metrics; restrict network access.
 - Caddy emits JSON access logs; Docker rotates service logs.
 
-Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, graph-job failures, expired leases, and projection drift. See `docs/runbooks/operations.md` and [hierarchical community analytics](community-graphrag.md).
+Alert on readiness, backup age, disk, RAM/swap, OOM/restarts, queue age, dead letters, 5xx rate, latency, graph-job failures, and expired leases. See `docs/runbooks/operations.md` and [hierarchical community analytics](community-graphrag.md).
 
 ## Upgrade and Rollback
 

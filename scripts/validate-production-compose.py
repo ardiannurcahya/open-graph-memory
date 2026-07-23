@@ -15,7 +15,7 @@ command = [
 ]
 result = subprocess.run(command, check=True, capture_output=True, text=True)
 services = json.loads(result.stdout)["services"]
-application_services = {"api", "worker", "graph-worker", "dispatcher", "migrate", "web"}
+application_services = {"api", "worker", "migrate", "web"}
 errors: list[str] = []
 for name in sorted(application_services):
     service = services[name]

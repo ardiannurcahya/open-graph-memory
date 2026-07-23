@@ -159,6 +159,13 @@ class CanonicalEntity(ScopeMixin, Base):
         ),
         CheckConstraint("confidence BETWEEN 0 AND 1"),
         Index("ix_entities_explorer_page", "project_id", "dataset_id", "id"),
+        Index(
+            "ix_entities_temporal",
+            "project_id",
+            "dataset_id",
+            "valid_until",
+            postgresql_where="valid_until IS NULL",
+        ),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     canonical_name: Mapped[str] = mapped_column(String(500))
@@ -167,6 +174,11 @@ class CanonicalEntity(ScopeMixin, Base):
     confidence: Mapped[float] = mapped_column(Float)
     version: Mapped[int] = mapped_column(default=1)
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -243,6 +255,13 @@ class RelationAssertion(ScopeMixin, Base):
         CheckConstraint("confidence BETWEEN 0 AND 1"),
         CheckConstraint("source_entity_id <> target_entity_id"),
         Index("ix_relations_explorer_page", "project_id", "dataset_id", "id"),
+        Index(
+            "ix_relations_temporal",
+            "project_id",
+            "dataset_id",
+            "valid_until",
+            postgresql_where="valid_until IS NULL",
+        ),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_entity_id: Mapped[str] = mapped_column(
@@ -255,6 +274,11 @@ class RelationAssertion(ScopeMixin, Base):
     confidence: Mapped[float] = mapped_column(Float)
     extractor_version: Mapped[str] = mapped_column(String(100))
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

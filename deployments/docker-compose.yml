@@ -16,11 +16,6 @@ services:
     command: /data
     healthcheck: {test: [CMD, /usr/bin/rustfs, --version], interval: 5s, timeout: 3s, retries: 12}
     volumes: [rustfs-data:/data]
-  neo4j:
-    image: neo4j:5.26.2-community
-    environment: {NEO4J_AUTH: "${NEO4J_AUTH:-neo4j/change-me-now}"}
-    healthcheck: {test: [CMD-SHELL, "cypher-shell -u \"$${NEO4J_AUTH%%/*}\" -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null"], interval: 10s, timeout: 5s, retries: 12}
-    volumes: [neo4j-data:/data]
   bucket-init:
     image: minio/mc:RELEASE.2025-02-21T16-00-46Z
     depends_on: {rustfs: {condition: service_healthy}}
@@ -39,30 +34,18 @@ services:
     image: opengraphrag-api:latest
     build: {context: .., dockerfile: apps/api/Dockerfile}
     env_file: [{path: ../.env, required: false}]
-    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, neo4j: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"], interval: 10s, timeout: 5s, retries: 8}
   worker:
     image: opengraphrag-worker:latest
     build: {context: .., dockerfile: apps/worker/Dockerfile}
-    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${WORKER_CONCURRENCY:-1}"]
+    command: [arq, app.arq_worker.WorkerSettings]
     env_file: [{path: ../.env, required: false}]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
-    healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
-  graph-worker:
-    image: opengraphrag-worker:latest
-    command: [celery, -A, worker.main.celery_app, worker, --loglevel=INFO, --concurrency, "${GRAPH_WORKER_CONCURRENCY:-1}", -Q, graph]
-    env_file: [{path: ../.env, required: false}]
-    deploy: {replicas: "${GRAPH_WORKER_REPLICAS:-1}"}
-    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
-    healthcheck: {test: [CMD, celery, -A, worker.main.celery_app, inspect, ping, --timeout, "5"], interval: 15s, timeout: 10s, retries: 5}
-  dispatcher:
-    image: opengraphrag-worker:latest
-    command: [celery, -A, worker.main.celery_app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
-    env_file: [{path: ../.env, required: false}]
-    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, migrate: {condition: service_completed_successfully}}
+    healthcheck: {test: [CMD, arq, --check, app.arq_worker.WorkerSettings], interval: 15s, timeout: 10s, retries: 5}
   web:
     build: {context: .., dockerfile: apps/web/Dockerfile}
     environment: {CADDY_SITE_ADDRESS: "${CADDY_SITE_ADDRESS:-:80}"}
     ports: ["${WEB_PORT:-3000}:80"]
     depends_on: {api: {condition: service_healthy}}
-volumes: {postgres-data: {}, redis-data: {}, rustfs-data: {}, neo4j-data: {}}
+volumes: {postgres-data: {}, redis-data: {}, rustfs-data: {}}

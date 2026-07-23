@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+from arq.connections import ArqRedis
 from open_graph_core.extraction import stable_id
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +14,7 @@ from app.ingestion import sanitized_error
 from app.models import Document, DocumentStatus
 
 LEASE_SECONDS = 300
+MAX_GRAPH_OUTBOX_ATTEMPTS = 20
 
 
 class GraphExtractionFailed(RuntimeError):
@@ -60,43 +62,72 @@ async def enqueue_graph_extraction(db: AsyncSession, document: Document) -> Grap
     return job
 
 
-async def dispatch_pending_graph_jobs(limit: int = 100) -> int:
-    from app.worker import celery_app
-
+async def dispatch_pending_graph_jobs(redis: ArqRedis | None = None, limit: int = 100) -> int:
     now, sent = datetime.now(UTC), 0
+    owns_pool = redis is None
+    if redis is None:
+        from app.arq_worker import create_redis_pool
+
+        redis = await create_redis_pool()
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as db:
-        rows = list(
-            await db.scalars(
-                select(GraphExtractionOutbox)
-                .join(GraphExtractionJob)
-                .where(
-                    GraphExtractionOutbox.published_at.is_(None),
-                    GraphExtractionJob.status == GraphJobStatus.QUEUED,
-                    GraphExtractionJob.next_attempt_at <= now,
+    try:
+        async with factory() as db:
+            rows = list(
+                await db.scalars(
+                    select(GraphExtractionOutbox)
+                    .join(GraphExtractionJob)
+                    .where(
+                        GraphExtractionOutbox.published_at.is_(None),
+                        GraphExtractionOutbox.attempts < MAX_GRAPH_OUTBOX_ATTEMPTS,
+                        GraphExtractionJob.status == GraphJobStatus.QUEUED,
+                        GraphExtractionJob.next_attempt_at <= now,
+                    )
+                    .order_by(GraphExtractionOutbox.created_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
                 )
-                .order_by(GraphExtractionOutbox.created_at)
-                .limit(limit)
-                .with_for_update(skip_locked=True)
             )
-        )
+            for row in rows:
+                row.attempts += 1
+                row.published_at = now
+                row.last_error = None
+            await db.commit()
+
         for row in rows:
-            row.attempts += 1
             try:
-                celery_app.send_task("graph.extract_job", args=[row.job_id])
+                await redis.enqueue_job(
+                    "task_extract_graph", row.job_id, _job_id=f"graph:{row.job_id}"
+                )
             except Exception as exc:
-                row.last_error = sanitized_error(exc)
+                message = sanitized_error(exc)
+                async with factory() as db:
+                    outbox = await db.get(GraphExtractionOutbox, row.job_id)
+                    job = await db.get(GraphExtractionJob, row.job_id)
+                    if outbox is not None and outbox.published_at == now:
+                        outbox.published_at = None
+                        outbox.last_error = message
+                        if outbox.attempts >= MAX_GRAPH_OUTBOX_ATTEMPTS and job is not None:
+                            job.status = GraphJobStatus.FAILED
+                            job.error_message = message
+                            document = await db.get(Document, job.document_id)
+                            if document is not None:
+                                document.status = DocumentStatus.FAILED
+                                document.graph_stage = "failed"
+                                document.error_message = message
+                    await db.commit()
             else:
-                row.published_at, row.last_error = now, None
                 sent += 1
-        await db.commit()
-    return sent
+        return sent
+    finally:
+        if owns_pool:
+            await redis.close()
 
 
 async def reconcile_graph_jobs(limit: int = 100) -> int:
     now = datetime.now(UTC)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
+        # Recover RUNNING jobs with expired leases.
         jobs = list(
             await db.scalars(
                 select(GraphExtractionJob)
@@ -114,7 +145,28 @@ async def reconcile_graph_jobs(limit: int = 100) -> int:
             if outbox:
                 outbox.published_at = None
         await db.commit()
-    return len(jobs)
+        recovered = len(jobs)
+
+        # Recover QUEUED jobs whose outbox was dispatched but the task was lost.
+        stale_cutoff = now - timedelta(seconds=lease_seconds() * 2)
+        stale_outbox = list(
+            await db.scalars(
+                select(GraphExtractionOutbox)
+                .join(GraphExtractionJob)
+                .where(
+                    GraphExtractionOutbox.published_at.is_not(None),
+                    GraphExtractionJob.status == GraphJobStatus.QUEUED,
+                    GraphExtractionOutbox.published_at < stale_cutoff,
+                )
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for row in stale_outbox:
+            row.published_at = None
+            row.last_error = "dispatch stale; requeued"
+        await db.commit()
+        return recovered + len(stale_outbox)
 
 
 async def renew_graph_job_lease(job_id: str) -> None:
@@ -126,6 +178,25 @@ async def renew_graph_job_lease(job_id: str) -> None:
         if job is not None and job.status == GraphJobStatus.RUNNING:
             job.lease_expires_at = datetime.now(UTC) + timedelta(seconds=lease_seconds())
             await db.commit()
+
+
+async def requeue_graph_job(job_id: str, reason: str) -> None:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        job = await db.get(GraphExtractionJob, job_id, with_for_update=True)
+        if job is None or job.status == GraphJobStatus.SUCCEEDED:
+            return
+        job.status = GraphJobStatus.QUEUED
+        job.lease_expires_at = None
+        job.next_attempt_at = datetime.now(UTC)
+        job.error_message = reason
+        outbox = await db.get(GraphExtractionOutbox, job_id)
+        if outbox is None:
+            db.add(GraphExtractionOutbox(job_id=job_id, last_error=reason))
+        else:
+            outbox.published_at = None
+            outbox.last_error = reason
+        await db.commit()
 
 
 async def execute_graph_job(job_id: str) -> str:

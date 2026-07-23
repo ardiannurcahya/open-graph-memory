@@ -291,7 +291,7 @@ describe("GraphPage", () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "/api/v1/datasets") return ok([dataset]);
       if (url.includes("/graph/explorer")) return ok(explorerView);
-      if (url === "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25") return ok([alice]);
+      if (url === "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25&include_history=false") return ok([alice]);
       return ok([]);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -301,7 +301,7 @@ describe("GraphPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Run Entity search" }));
     await waitFor(() => expect(screen.getByText("person · ent_a")).toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25",
+      "/api/v1/datasets/ds_1/entities/search?q=Alice&limit=25&include_history=false",
       expect.objectContaining({ method: "GET" }),
     );
   });

@@ -45,6 +45,7 @@ export default function GraphPage() {
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
   const explorerRequestRef = useRef(0);
@@ -120,7 +121,7 @@ export default function GraphPage() {
     setSelectedNode(null);
     try {
       if (tool === "search") {
-        const response = await graphApi.searchEntities(datasetId, query.trim());
+        const response = await graphApi.searchEntities(datasetId, query.trim(), undefined, 25, showHistory);
         setSearchResults(response);
         setSummary({
           dataset_id: datasetId,
@@ -277,6 +278,7 @@ export default function GraphPage() {
           Visible search <kbd className="ml-1 rounded bg-stone-100 px-1">Ctrl+K</kbd>
         </button>
         <ToolbarButton active={showFilters} onClick={() => setShowFilters((value) => !value)}>Filters</ToolbarButton>
+        <ToolbarButton active={showHistory} onClick={() => setShowHistory((value) => !value)}>History</ToolbarButton>
         <ToolbarButton active={showLegend} onClick={() => setShowLegend((value) => !value)}>Legend</ToolbarButton>
         <button
           type="button"

@@ -3,9 +3,9 @@
 ## Layout
 
 - Root Python project uses `uv` and Python 3.12+. Root `pyproject.toml` supplies import paths for `apps/api`, `packages/core/src`, `packages/contracts/src`, and `packages/sdk/src`; run Python commands from repo root.
-- FastAPI entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). Celery entrypoint: `apps/worker/worker/main.py`, re-exporting `app.worker.celery_app`.
+- FastAPI entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). ARQ worker: `arq app.arq_worker.WorkerSettings`.
 - `apps/web` is separate Vite/React project, not npm workspace. Run all npm commands there. Vite dev server proxies `/api` to `http://localhost:8000`, stripping `/api`.
-- PostgreSQL and S3-compatible storage are authoritative. Neo4j is rebuildable traversal projection; do not make graph reads depend on Neo4j-only state.
+- PostgreSQL and S3-compatible storage are authoritative. Graph records and traversal queries use PostgreSQL.
 - Public plugin contracts live in `packages/contracts`; SDK in `packages/sdk`. Built-in plugins use explicit registration in `apps/api/app/plugin_registry.py`; no dynamic entry-point discovery.
 
 ## Commands

@@ -1,6 +1,6 @@
 # Service and Provider Configuration
 
-OpenGraphMemory runs as local Docker Compose stack or with selected managed dependencies. PostgreSQL and object storage are authoritative; Neo4j is rebuildable; Redis is transient.
+OpenGraphMemory runs as a local Docker Compose stack or with selected managed dependencies. PostgreSQL and object storage are authoritative; Redis is transient.
 
 ## Service Inventory
 
@@ -8,11 +8,10 @@ OpenGraphMemory runs as local Docker Compose stack or with selected managed depe
 |---|---|---|---|
 | Relational authority | PostgreSQL 16 | Managed PostgreSQL | `DATABASE_URL` |
 | Source-object authority | RustFS | Verified S3-compatible storage | `S3_*` |
-| Queue and broker | Redis 7 | Managed Redis reachable by Celery | `REDIS_URL` |
-| Graph projection | Neo4j Community | Compatible Neo4j endpoint | `NEO4J_*` |
+| Queue | Redis 7 | Managed Redis reachable by ARQ | `REDIS_URL` |
 | Graph extraction | Deterministic or local NLP extractor | OpenAI-compatible structured-output endpoint | `GRAPH_EXTRACTOR_*`, `OPENAI_*` |
 | API | FastAPI | Scale behind trusted ingress | application service |
-| Background work | Celery worker, graph worker, dispatcher | Scale replicas and concurrency | application service |
+| Background work | ARQ worker with maintenance loop | Scale worker replicas carefully | application service |
 | Web | React/Vite behind Caddy | Deployment preserving same-origin `/api` proxy | application service |
 | Bootstrap | `migrate`, `bucket-init` | Explicit migration and bucket provisioning | one-shot services |
 
@@ -128,8 +127,7 @@ GRAPH_DOCUMENT_CONSOLIDATION_MAX_CHARS=100000
 
 Enable only after setting `GRAPH_EXTRACTOR_PROVIDER=openai` and bumping extractor/consolidation
 versions for semantic changes. PostgreSQL stores raw chunk extraction and snapshot-scoped
-consolidation output. Neo4j remains rebuildable projection. Apply Alembic migration `0018` before
-enabling updated workers.
+consolidation output. Apply Alembic migration `0018` before enabling updated workers.
 
 `OPENAI_GRAPH_EXTRACTOR_BASE_URL` falls back to `OPENAI_BASE_URL` when blank.
 
@@ -146,15 +144,6 @@ GRAPH_EXTRACTOR_PARALLELISM=1
 
 NLP mode has no external dependency or credential. It recognizes conservative explicit active relations including employment, acquisition, creation, and technology use. It emits no relation for entity co-occurrence or unmatched grammar. Model value is provenance metadata and can be user-selected. Production still requires OpenAI-compatible extraction.
 
-## Neo4j
-
-```dotenv
-NEO4J_URL=http://neo4j:7474
-NEO4J_AUTH=neo4j/replace-with-strong-password
-```
-
-Adapter uses Neo4j HTTP transactional API and `username/password` auth. Test managed offerings for endpoint and authentication compatibility. Different graph engines require explicit `GraphStore` and `GraphRetriever` registration plus conformance and lifecycle tests.
-
 ## Application
 
 ```dotenv
@@ -163,9 +152,6 @@ ADMIN_API_KEY=replace-with-admin-secret
 READINESS_TIMEOUT_SECONDS=2
 WEB_PORT=3000
 CADDY_SITE_ADDRESS=:80
-WORKER_CONCURRENCY=1
-GRAPH_WORKER_CONCURRENCY=1
-GRAPH_WORKER_REPLICAS=1
 ```
 
 Production also needs immutable `IMAGE_TAG`, `GHCR_NAMESPACE`, TLS, backups, monitoring, and non-placeholder secrets.
@@ -187,7 +173,7 @@ docker compose \
   up -d
 ```
 
-Managed PostgreSQL, Redis, object storage, Neo4j, or extraction endpoint can reduce host load. Compose bundles only external S3 override; other substitutions need reviewed overrides that disable replaced containers and update dependencies.
+Managed PostgreSQL, Redis, object storage, or an extraction endpoint can reduce host load. Compose bundles only the external S3 override; other substitutions need reviewed overrides that disable replaced containers and update dependencies.
 
 ## Preflight
 
@@ -197,8 +183,7 @@ Managed PostgreSQL, Redis, object storage, Neo4j, or extraction endpoint can red
 4. Verify migration connectivity through `DATABASE_URL`.
 5. Verify Redis from worker network context.
 6. Test extraction schema and timeout against representative documents.
-7. Verify Neo4j bootstrap, projection, traversal, cleanup, and reconciliation.
-8. Render Compose configuration with selected overrides.
-9. Run readiness, upload, graph extraction, evidence, and Graph Playground smoke tests.
+7. Render Compose configuration with selected overrides.
+8. Run readiness, upload, graph extraction, evidence, deletion cleanup, and Graph Playground smoke tests.
 
 Never commit `.env`, keys, secret-bearing database URLs, provider responses, or private document content.

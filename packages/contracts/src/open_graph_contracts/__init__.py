@@ -26,8 +26,6 @@ from open_graph_contracts.metadata import (
 from open_graph_contracts.protocols import (
     Chunker,
     Extractor,
-    GraphRetriever,
-    GraphStore,
     ObjectStore,
     Parser,
 )
@@ -62,8 +60,6 @@ __all__ = [
     # Protocols
     "Chunker",
     "Extractor",
-    "GraphRetriever",
-    "GraphStore",
     "ObjectStore",
     "Parser",
     # Registry

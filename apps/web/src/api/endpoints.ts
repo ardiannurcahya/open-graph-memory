@@ -47,17 +47,17 @@ export const documentsApi = {
 };
 
 export const graphApi = {
-  searchEntities: (datasetId: string, q: string, entityType?: string, limit = 25) =>
+  searchEntities: (datasetId: string, q: string, entityType?: string, limit = 25, includeHistory = false) =>
     api.get<EntityView[]>(`/v1/datasets/${datasetId}/entities/search`, {
-      params: { q, entity_type: entityType, limit },
+      params: { q, entity_type: entityType, limit, include_history: includeHistory },
     }),
   getEntity: (id: string) => api.get<EntityView>(`/v1/entities/${id}`),
   getNeighbors: (id: string, limit = 25) =>
     api.get<NeighborView[]>(`/v1/entities/${id}/neighbors`, { params: { limit } }),
   refreshAnalytics: (datasetId: string) =>
     api.post<AnalyticsRunView>(`/v1/datasets/${datasetId}/analytics/refresh`),
-  getGraph: (datasetId: string, limit = 100, depth = 1) =>
-    api.get<GraphSummary>(`/v1/datasets/${datasetId}/graph`, { params: { limit, depth } }),
+  getGraph: (datasetId: string, limit = 100, depth = 1, includeHistory = false) =>
+    api.get<GraphSummary>(`/v1/datasets/${datasetId}/graph`, { params: { limit, depth, include_history: includeHistory } }),
   findPath: (datasetId: string, sourceEntityId: string, targetEntityId: string, maxDepth = 3, relationLimit = 100) =>
     api.get<GraphPathView>(`/v1/datasets/${datasetId}/graph/path`, {
       params: {

@@ -334,13 +334,11 @@ def test_protocols_are_runtime_checkable() -> None:
     from open_graph_contracts.protocols import (
         Chunker,
         Extractor,
-        GraphRetriever,
-        GraphStore,
         ObjectStore,
         Parser,
     )
 
-    for proto in (Extractor, Parser, Chunker, ObjectStore, GraphStore, GraphRetriever):
+    for proto in (Extractor, Parser, Chunker, ObjectStore):
         assert hasattr(proto, "__protocol_attrs__"), f"{proto.__name__} not a Protocol"
 
 
@@ -366,11 +364,6 @@ def test_protocol_isinstance_rejects_non_compliant() -> None:
 # ---------------------------------------------------------------------------
 # Import compatibility — old paths still work
 # ---------------------------------------------------------------------------
-
-def test_old_graph_store_imports_valid() -> None:
-    from app.graph_store import GraphStore, Neo4jGraphStore
-    assert Neo4jGraphStore is not None
-    assert GraphStore is not None
 
 
 def test_old_extraction_imports_valid() -> None:

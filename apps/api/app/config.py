@@ -42,8 +42,6 @@ class Settings(BaseSettings):
     liteparse_ocr_workers: int = 1
     liteparse_image_mode: str = "off"
     provider_version: str = "v1"
-    neo4j_url: str = "http://neo4j:7474"
-    neo4j_auth: SecretStr = SecretStr("neo4j/change-me-neo4j")
     upload_max_bytes: int = 50_000_000
     upload_spool_max_bytes: int = 1_000_000
     outbox_poll_seconds: int = 10
@@ -100,7 +98,6 @@ class Settings(BaseSettings):
         values = {
             "ADMIN_API_KEY": self.admin_api_key.get_secret_value(),
             "S3_SECRET_KEY": self.s3_secret_key.get_secret_value(),
-            "NEO4J_AUTH": self.neo4j_auth.get_secret_value(),
             "OPENAI_API_KEY": self.openai_api_key.get_secret_value(),
         }
         for name, value in values.items():
@@ -109,9 +106,6 @@ class Settings(BaseSettings):
         db = urlparse(self.database_url.replace("postgresql+asyncpg", "postgresql", 1))
         if not db.password or any(marker in db.password.lower() for marker in _PLACEHOLDERS):
             raise ValueError("DATABASE_URL must contain a non-placeholder password")
-        user, separator, password = values["NEO4J_AUTH"].partition("/")
-        if not separator or not user or not password:
-            raise ValueError("NEO4J_AUTH must be formatted as user/password")
         return self
 
     @property

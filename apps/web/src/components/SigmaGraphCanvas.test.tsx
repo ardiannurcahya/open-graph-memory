@@ -13,7 +13,7 @@ let sigmaSettings: { nodeReducer?: (node: string, data: Record<string, unknown>)
 vi.mock("sigma", () => {
   class FakeSigma {
     constructor(_graph: unknown, _container: unknown, settings: typeof sigmaSettings) { sigmaSettings = settings; }
-    graph = { forEachNode: () => undefined, forEachEdge: () => undefined, source: () => "n0", target: () => "n1", getNodeAttribute: () => "c0", order: 2 };
+    graph = { forEachNode: () => undefined, forEachEdge: () => undefined, source: () => "n0", target: () => "n1", getNodeAttribute: (_node: string, attribute: string) => attribute === "community" ? "c0" : false, order: 2 };
     on() {}
     addListener() {}
     getCamera() { return { on() {}, getState: () => ({ ratio: 1 }), animatedReset: () => undefined }; }
@@ -33,7 +33,8 @@ vi.mock("graphology", () => {
     hasNode() { return true; }
     setNodeAttribute() {}
     setEdgeAttribute() {}
-    getNodeAttribute() { return "c0"; }
+    getNodeAttribute(_node: string, attribute: string) { return attribute === "community" ? "c0" : false; }
+    getEdgeAttributes() { return { isExpired: false }; }
     source() { return "n0"; }
     target() { return "n1"; }
     forEachNode() {}

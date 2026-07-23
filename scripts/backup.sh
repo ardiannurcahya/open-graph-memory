@@ -44,7 +44,7 @@ created_at=${STAMP}
 postgres_db=${POSTGRES_DB}
 s3_bucket=${S3_BUCKET}
 authoritative_stores=postgresql,object-storage
-rebuildable_stores=neo4j
+rebuildable_stores=none
 EOF
 printf 'Backup complete: %s\n' "${DEST}"
 printf 'Copy this directory to encrypted off-host storage.\n'

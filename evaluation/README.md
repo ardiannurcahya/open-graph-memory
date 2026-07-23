@@ -4,7 +4,7 @@
 
 `m3_golden/v1.0.json` is a versioned, human-labeled graph fixture. It covers entities, an explicit alias, supported relations, ambiguous same-name entities, unsupported relation grammar, shared multi-document provenance, and a separate tenant. The golden labels deliberately exclude the ambiguous and unsupported relations: a deterministic extractor must not invent either.
 
-Run `uv run python evaluation/m3_evaluator.py --output artifacts/m3-report.json` to score the deterministic fixture, or pass `--predictions` with an object containing `entities`, `relations`, entity `documents`, `resolution_duplicate_rate`, and `idempotency`. It reports entity and relation precision/recall/F1, provenance completeness, resolution duplicate rate, and idempotency. `scripts/m3-runtime-gate.sh` executes both evaluation and a fresh Compose API/worker/Neo4j gate, enforcing frozen fixture thresholds.
+Run `uv run python evaluation/m3_evaluator.py --output artifacts/m3-report.json` to score the deterministic fixture, or pass `--predictions` with an object containing `entities`, `relations`, entity `documents`, `resolution_duplicate_rate`, and `idempotency`. It reports entity and relation precision/recall/F1, provenance completeness, resolution duplicate rate, and idempotency. `scripts/m3-runtime-gate.sh` executes both evaluation and a fresh PostgreSQL/ARQ Compose gate, enforcing frozen fixture thresholds.
 
 ## Milestone 2 Evaluation
 

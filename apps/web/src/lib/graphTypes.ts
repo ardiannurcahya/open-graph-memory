@@ -13,6 +13,9 @@ export interface GraphNode {
   radius: number;
   degree: number;
   degFrac: number;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  isExpired?: boolean;
 }
 
 export interface GraphEdge {
@@ -21,6 +24,9 @@ export interface GraphEdge {
   target: string;
   label: string;
   weight: number;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  isExpired?: boolean;
 }
 
 export interface CommunityInfo {

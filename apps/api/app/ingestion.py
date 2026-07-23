@@ -2,12 +2,10 @@ import asyncio
 import hashlib
 import re
 
-from celery.exceptions import SoftTimeLimitExceeded
 from open_graph_core.ids import new_id
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.async_runner import runner
 from app.chunking import RecursiveTextChunker
 from app.config import get_settings
 from app.db import engine
@@ -61,10 +59,15 @@ async def enqueue_document(db: AsyncSession, document: Document) -> IndexingJob:
     elif job.status == JobStatus.FAILED:
         job.status = JobStatus.QUEUED
         job.stage = IndexingStage.QUEUED
+    if job.status == JobStatus.SUCCEEDED:
+        document.status = DocumentStatus.INDEXED
+        document.error_message = None
+        await db.flush()
+        return job
     outbox = await db.get(IndexingOutbox, job_id)
     if outbox is None:
         db.add(IndexingOutbox(job_id=job_id, attempts=0))
-    elif job.status != JobStatus.SUCCEEDED:
+    else:
         outbox.dispatched_at = None
         outbox.last_error = None
     document.status = DocumentStatus.QUEUED
@@ -175,13 +178,13 @@ async def run_ingestion(
             )
             job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.PERSISTING
             document.error_message = None
-            # Persist graph work in this transaction; the dispatcher publishes only committed rows.
+            # Persist graph work here; the worker maintenance loop publishes only committed rows.
             from app.graph_dispatch import enqueue_graph_extraction
 
             await enqueue_graph_extraction(db, document)
             await db.commit()
             return document.id
-        except BaseException as exc:
+        except Exception as exc:
             await db.rollback()
             job = await db.get(IndexingJob, job_id)
             document = await db.get(Document, job.document_id) if job else None
@@ -196,11 +199,3 @@ async def run_ingestion(
                 document.status, document.error_message = DocumentStatus.FAILED, error
             await db.commit()
             raise
-
-
-def execute(job_id: str, store: ObjectStore | None = None) -> str:
-    return runner.run(run_ingestion(job_id, store))
-
-
-def is_transient(exc: BaseException) -> bool:
-    return isinstance(exc, (*_TRANSIENT, SoftTimeLimitExceeded))

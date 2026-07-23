@@ -1,6 +1,6 @@
 # Graph Extraction
 
-Milestone 3 stores extraction artifacts in PostgreSQL first, then projects the scoped topology to Neo4j. PostgreSQL is authoritative; Neo4j can be reconciled or rebuilt.
+Milestone 3 stores extraction artifacts and temporal graph topology in PostgreSQL.
 
 ## Model and provenance
 
@@ -21,8 +21,8 @@ Unsupported grammar is ignored deliberately. `NlpExtractor` is a local dependenc
 
 ## Operations and API
 
-Successful ingestion atomically creates graph job and outbox record. Dispatcher publishes committed outbox records; workers lease, retry, reconcile expired leases, and safely ignore duplicate delivery of active or succeeded job. `documents.status` and `documents.graph_stage` report ingestion and graph progress.
+Successful ingestion atomically creates a graph job and outbox record. The ARQ worker maintenance loop publishes committed outbox records; workers lease, retry, reconcile expired leases, and safely ignore duplicate delivery of active or succeeded jobs. `documents.status` and `documents.graph_stage` report ingestion and graph progress.
 
 Use `GET /v1/datasets/{dataset_id}/graph?limit=100&depth=1` for bounded inspection, `GET /v1/entities/{id}/neighbors` for bounded neighbors, and `GET /v1/evidence/{id}` or `GET /v1/graph-runs/{id}` for provenance. Relations transition once from `unreviewed`/`needs_review` to `approved` or `rejected` through `PATCH /v1/relations/{id}/review`.
 
-Run the real stack gate with `scripts/m3-runtime-gate.sh`. It starts a fresh Compose stack, uploads the versioned fixture through the API, verifies PostgreSQL and Neo4j artifacts, dispatch idempotency, bounded APIs, review transitions, and project isolation.
+Run the real stack gate with `scripts/m3-runtime-gate.sh`. It starts a fresh Compose stack, uploads the versioned fixture through the API, and verifies PostgreSQL artifacts, dispatch idempotency, bounded APIs, review transitions, deletion cleanup, and project isolation.

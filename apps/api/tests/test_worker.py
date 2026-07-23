@@ -1,27 +1,49 @@
-from app.worker import celery_app, ping
+from types import SimpleNamespace
+
+import pytest
+from app.arq_worker import WorkerSettings, enqueue_extract_graph, redis_settings
 
 
-def test_ping() -> None:
-    assert ping.run() == "pong"
+def test_worker_has_all_tasks() -> None:
+    task_names = {fn.name for fn in WorkerSettings.functions}
+    assert task_names == {"task_index_document", "task_extract_graph"}
 
 
-def test_graph_extraction_has_a_dedicated_queue() -> None:
-    assert celery_app.conf.task_routes["graph.extract_job"] == {"queue": "graph"}
-    assert celery_app.conf.task_default_queue == "default"
+def test_worker_uses_configured_redis() -> None:
+    assert redis_settings().host == "redis"
+    assert WorkerSettings.redis_settings.host == "redis"
 
 
-def test_graph_cleanup_reconciliation_is_scheduled() -> None:
-    assert celery_app.conf.beat_schedule["reconcile-graph-cleanup-outbox"]["task"] == (
-        "graph.reconcile_cleanup_outbox"
-    )
+def test_worker_task_limits_are_explicit() -> None:
+    functions = {fn.name: fn for fn in WorkerSettings.functions}
+    assert functions["task_index_document"].max_tries == 5
+    assert functions["task_index_document"].timeout_s == 1800
+    assert functions["task_extract_graph"].max_tries == 1
+    assert functions["task_extract_graph"].timeout_s >= 3600
 
 
-def test_community_report_tasks_are_not_registered_or_scheduled() -> None:
-    assert not any(name.startswith("community.") for name in celery_app.tasks)
-    assert not any(
-        entry["task"].startswith("community.")
-        for entry in celery_app.conf.beat_schedule.values()
-    )
+@pytest.mark.asyncio
+async def test_enqueue_graph_uses_deterministic_id_and_closes_pool(monkeypatch) -> None:
+    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+    closed = False
+
+    class Pool:
+        async def enqueue_job(self, name: str, *args: object, **kwargs: object) -> object:
+            calls.append((name, args, kwargs))
+            return SimpleNamespace()
+
+        async def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    async def pool() -> Pool:
+        return Pool()
+
+    monkeypatch.setattr("app.arq_worker.create_redis_pool", pool)
+    await enqueue_extract_graph("job-a")
+
+    assert calls == [("task_extract_graph", ("job-a",), {"_job_id": "graph:job-a"})]
+    assert closed
 
 
 def test_graph_job_lease_exceeds_extractor_timeout(monkeypatch) -> None:
@@ -37,10 +59,3 @@ def test_graph_job_lease_exceeds_extractor_timeout(monkeypatch) -> None:
     )
 
     assert lease_seconds() == 480
-
-
-def test_graph_extraction_has_no_celery_time_limit() -> None:
-    from app.worker import extract_graph
-
-    assert extract_graph.soft_time_limit is None
-    assert extract_graph.time_limit is None

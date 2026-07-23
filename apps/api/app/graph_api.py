@@ -1,4 +1,4 @@
-"""Bounded, PostgreSQL-authoritative graph inspection and review API."""
+"""Bounded, PostgreSQL-authoritative graph inspection and review API with temporal tracking."""
 
 import re
 from datetime import datetime
@@ -88,6 +88,9 @@ class EntityView(BaseModel):
     confidence: float
     version: int
     review_state: ReviewState
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by: str | None = None
 
 
 class RelationView(BaseModel):
@@ -99,6 +102,9 @@ class RelationView(BaseModel):
     confidence: float
     extractor_version: str
     review_state: ReviewState
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by: str | None = None
     citations: list[Citation] = Field(default_factory=list)
 
 
@@ -276,6 +282,34 @@ def supported_entity() -> ColumnElement[bool]:
     return or_(exists().where(GraphEvidence.entity_id == CanonicalEntity.id), cited_endpoint)
 
 
+def temporal_filter(
+    as_of: datetime | None = None,
+    include_history: bool = False,
+    entity: bool = True,
+) -> ColumnElement[bool]:
+    """Return a filter clause for temporal queries.
+
+    - as_of=None, include_history=False: only current facts (valid_until IS NULL)
+    - as_of=timestamp: facts valid at that point in time
+    - include_history=True: all facts regardless of validity
+    """
+    from sqlalchemy import literal
+
+    if include_history:
+        return literal(True)
+    if as_of is not None:
+        if entity:
+            return (CanonicalEntity.valid_from <= as_of) & (
+                (CanonicalEntity.valid_until.is_(None)) | (CanonicalEntity.valid_until > as_of)
+            )
+        return (RelationAssertion.valid_from <= as_of) & (
+            (RelationAssertion.valid_until.is_(None)) | (RelationAssertion.valid_until > as_of)
+        )
+    if entity:
+        return CanonicalEntity.valid_until.is_(None)
+    return RelationAssertion.valid_until.is_(None)
+
+
 def low_signal_entity(name: str, entity_type: str) -> bool:
     normalized_type = entity_type.strip().lower()
     normalized_name = name.strip().lower()
@@ -343,6 +377,9 @@ async def relation_view(db: AsyncSession, item: RelationAssertion) -> RelationVi
         confidence=item.confidence,
         extractor_version=item.extractor_version,
         review_state=item.review_state,
+        valid_from=item.valid_from,
+        valid_until=item.valid_until,
+        superseded_by=item.superseded_by,
         citations=await citations(db, item.id),
     )
 
@@ -490,6 +527,8 @@ async def search_entities(
     q: Annotated[str, Query(min_length=1, max_length=200)],
     entity_type: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_NEIGHBORS)] = 25,
+    as_of: Annotated[datetime | None, Query(description="Temporal snapshot timestamp")] = None,
+    include_history: Annotated[bool, Query(description="Include all temporal versions")] = False,
 ) -> list[EntityView]:
     await owned(db, project, dataset_id)
     term = q.strip()
@@ -509,6 +548,7 @@ async def search_entities(
             alias_match,
         ),
         supported_entity(),
+        temporal_filter(as_of=as_of, include_history=include_history, entity=True),
     ]
     if entity_type is not None:
         filters.append(func.lower(CanonicalEntity.entity_type) == entity_type.strip().lower())
@@ -661,6 +701,8 @@ async def graph(
     db: Db,
     limit: int = Query(100, ge=1, le=MAX_NODES),
     depth: int = Query(1, ge=0, le=1),
+    as_of: datetime | None = Query(None, description="Temporal snapshot timestamp"),  # noqa: B008
+    include_history: bool = Query(False, description="Include all temporal versions"),  # noqa: B008
 ) -> GraphSummary:
     await owned(db, project, dataset_id)
     candidate_entities = list(
@@ -670,6 +712,7 @@ async def graph(
                 CanonicalEntity.project_id == project.project_id,
                 CanonicalEntity.dataset_id == dataset_id,
                 supported_entity(),
+                temporal_filter(as_of=as_of, include_history=include_history, entity=True),
             )
             .order_by(CanonicalEntity.canonical_name)
             .limit(GRAPH_CANDIDATE_LIMIT)
@@ -681,6 +724,7 @@ async def graph(
             RelationAssertion.project_id == project.project_id,
             RelationAssertion.dataset_id == dataset_id,
             supported_relation(),
+            temporal_filter(as_of=as_of, include_history=include_history, entity=False),
         )
         .group_by(RelationAssertion.source_entity_id)
     )
@@ -691,6 +735,7 @@ async def graph(
             RelationAssertion.project_id == project.project_id,
             RelationAssertion.dataset_id == dataset_id,
             supported_relation(),
+            temporal_filter(as_of=as_of, include_history=include_history, entity=False),
         )
         .group_by(RelationAssertion.target_entity_id)
     )
@@ -710,6 +755,7 @@ async def graph(
                     RelationAssertion.source_entity_id.in_(entity_ids),
                     RelationAssertion.target_entity_id.in_(entity_ids),
                     supported_relation(),
+                    temporal_filter(as_of=as_of, include_history=include_history, entity=False),
                 )
                 .order_by(RelationAssertion.id)
                 .limit(limit)

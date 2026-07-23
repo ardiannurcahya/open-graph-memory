@@ -5,7 +5,7 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     $compose ps -a || true
-    $compose logs --no-color migrate api worker dispatcher graph-worker || true
+    $compose logs --no-color migrate api worker || true
   fi
   $compose down -v --remove-orphans
   exit "$status"
@@ -16,7 +16,7 @@ export WEB_PORT="${RUNTIME_GATE_PORT:-39091}"
 $compose up -d --build
 $compose run --rm bucket-init
 $compose run --rm bucket-init
-$compose exec -T worker celery -A worker.main.celery_app inspect ping --timeout 10
+$compose exec -T worker arq --check app.arq_worker.WorkerSettings
 curl -fsS http://localhost:${WEB_PORT:-3000}/api/health
 curl -fsS http://localhost:${WEB_PORT:-3000}/api/ready
 index=$(curl -fsS http://localhost:${WEB_PORT:-3000}/)

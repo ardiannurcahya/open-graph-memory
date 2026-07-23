@@ -18,9 +18,8 @@
 
 ## Dependency Outage
 
-- **Neo4j:** Structured PostgreSQL graph reads remain available where supported. Restart Neo4j, then reconcile rebuildable projection.
-- **Redis:** Workers and dispatcher stop delivering work. Restore Redis, then inspect PostgreSQL jobs and outboxes.
-- **PostgreSQL:** Stop writers and recover database first. Never promote Neo4j to authority.
+- **Redis:** The worker stops delivering work. Restore Redis, then inspect PostgreSQL jobs and outboxes.
+- **PostgreSQL:** Stop writers and recover the database first; graph and job state are stored there.
 - **Object storage:** Stop ingestion/deletion. Recover bucket access, verify objects, then resume.
 
 ## Stuck Jobs and Outboxes
@@ -37,6 +36,6 @@ Configured limits are not measured support. Builds must not run on constrained h
 
 ## Alerts and Secrets
 
-Alert on readiness failure, stale backup, disk/RAM pressure, swap growth, restart loops, PostgreSQL failures, queue age, dead-lettered outboxes, graph job failures, API 5xx/latency, and projection drift.
+Alert on readiness failure, stale backup, disk/RAM pressure, swap growth, restart loops, PostgreSQL failures, queue age, dead-lettered outboxes, graph job failures, and API 5xx/latency.
 
-Rotate admin/project, database, object-storage, Neo4j, and extraction-provider credentials independently. Deploy new credential, verify consumers, revoke old credential, and audit logs. Never commit `.env`.
+Rotate admin/project, database, object-storage, Redis, and extraction-provider credentials independently. Deploy new credentials, verify consumers, revoke old credentials, and audit logs. Never commit `.env`.

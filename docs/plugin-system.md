@@ -1,6 +1,6 @@
 # Plugin Contracts and Registry
 
-`open_graph_contracts` is independent from FastAPI, SQLAlchemy, Celery, Neo4j, and S3 clients. External providers can depend on bounded contract surface without receiving application state.
+`open_graph_contracts` is independent from FastAPI, SQLAlchemy, ARQ, and S3 clients. External providers can depend on the bounded contract surface without receiving application state.
 
 ## Contracts
 

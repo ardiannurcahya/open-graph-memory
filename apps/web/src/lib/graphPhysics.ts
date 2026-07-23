@@ -10,8 +10,8 @@ const BASE_RADIUS: Record<string, number> = {
 };
 
 export function buildGraphState(
-  rawNodes: { id: string; label: string; type: string; community: string; description: string; degree?: number }[],
-  rawEdges: { id: string; source: string; target: string; label: string; weight: number }[],
+  rawNodes: { id: string; label: string; type: string; community: string; description: string; degree?: number; validFrom?: string | null; validUntil?: string | null; isExpired?: boolean }[],
+  rawEdges: { id: string; source: string; target: string; label: string; weight: number; validFrom?: string | null; validUntil?: string | null; isExpired?: boolean }[],
   communityPalette: Map<string, { id: string; name: string; color: string; darkColor: string }>,
 ): GraphState {
   const adj = new Map<string, GraphEdge[]>();
@@ -31,6 +31,9 @@ export function buildGraphState(
       target: r.target,
       label: r.label,
       weight: r.weight,
+      validFrom: r.validFrom,
+      validUntil: r.validUntil,
+      isExpired: r.isExpired,
     };
     if (!adj.has(r.source)) adj.set(r.source, []);
     if (!adj.has(r.target)) adj.set(r.target, []);
@@ -64,6 +67,9 @@ export function buildGraphState(
       radius: (BASE_RADIUS[typeKey] ?? 5.2) + frac * 11.7,
       degree: deg,
       degFrac: frac,
+      validFrom: r.validFrom,
+      validUntil: r.validUntil,
+      isExpired: r.isExpired,
     };
   });
 

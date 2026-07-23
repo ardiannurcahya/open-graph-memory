@@ -15,27 +15,9 @@ services:
     image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
     build: !reset null
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 256m
     pids_limit: 256
     stop_grace_period: 60s
-    logging: *production-logging
-    environment: {APP_ENV: production}
-  graph-worker:
-    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: !reset null
-    restart: unless-stopped
-    mem_limit: 384m
-    pids_limit: 256
-    stop_grace_period: 60s
-    logging: *production-logging
-    environment: {APP_ENV: production}
-  dispatcher:
-    image: "ghcr.io/${GHCR_NAMESPACE:?set GHCR_NAMESPACE}/open-graph-memory-worker:${IMAGE_TAG:?set IMAGE_TAG}"
-    build: !reset null
-    restart: unless-stopped
-    mem_limit: 192m
-    pids_limit: 128
-    stop_grace_period: 30s
     logging: *production-logging
     environment: {APP_ENV: production}
   migrate:
@@ -55,8 +37,3 @@ services:
   redis: {restart: unless-stopped, mem_limit: 96m, logging: *production-logging}
   rustfs: {restart: unless-stopped, mem_limit: 160m, logging: *production-logging}
   bucket-init: {logging: *production-logging}
-  neo4j:
-    restart: unless-stopped
-    mem_limit: 512m
-    logging: *production-logging
-    environment: {NEO4J_server_memory_heap_initial__size: 128m, NEO4J_server_memory_heap_max__size: 256m, NEO4J_server_memory_pagecache_size: 128m}

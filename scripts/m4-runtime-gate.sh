@@ -8,7 +8,7 @@ export WEB_PORT="${M4_RUNTIME_PORT:-39095}"
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
-    $COMPOSE logs --no-color api worker graph-worker dispatcher neo4j >&2 || true
+    $COMPOSE logs --no-color api worker >&2 || true
   fi
   $COMPOSE down -v --remove-orphans
   exit "$status"

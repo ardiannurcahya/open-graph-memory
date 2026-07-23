@@ -1,7 +1,7 @@
 # Architecture
 
-Caddy serves Vite SPA and forwards same-origin `/api/*` calls to FastAPI. PostgreSQL and S3-compatible object storage are authoritative. Neo4j is a rebuildable graph traversal projection; Redis carries Celery work only.
+Caddy serves the Vite SPA and forwards same-origin `/api/*` calls to FastAPI. PostgreSQL stores application and temporal graph state, S3-compatible storage stores source documents, and Redis carries transient ARQ work.
 
-Ingestion parses source objects, persists chunks and evidence in PostgreSQL, extracts canonical entities and supported relations, then projects graph data to Neo4j. Graph jobs use durable PostgreSQL outboxes and graph workers. API graph reads remain project- and dataset-scoped and return source evidence from PostgreSQL.
+Ingestion parses source objects, persists chunks and evidence in PostgreSQL, and extracts canonical entities and supported relations. Durable PostgreSQL outboxes feed one async ARQ worker, whose maintenance loop dispatches and reconciles jobs. API graph reads remain project- and dataset-scoped and return source evidence from PostgreSQL.
 
 Python SDK exposes dataset/document lifecycle plus structured entity, neighbor, graph search, path, subgraph, evidence, run, job, and review operations.

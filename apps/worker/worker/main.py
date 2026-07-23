@@ -1,3 +1,3 @@
-from app.worker import celery_app
+from app.arq_worker import WorkerSettings
 
-__all__ = ["celery_app"]
+__all__ = ["WorkerSettings"]

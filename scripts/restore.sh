@@ -30,7 +30,7 @@ POSTGRES_DB="${POSTGRES_DB:-opengraphrag}"
 POSTGRES_USER="${POSTGRES_USER:-opengraphrag}"
 
 printf 'Stopping writers...\n'
-docker compose -f "${COMPOSE_FILE}" stop api worker graph-worker dispatcher
+docker compose -f "${COMPOSE_FILE}" stop api worker
 
 printf 'Restoring PostgreSQL...\n'
 docker compose -f "${COMPOSE_FILE}" exec -T postgres \
@@ -46,6 +46,6 @@ if [[ -d "${SOURCE}/objects" ]]; then
   docker compose -f "${COMPOSE_FILE}" start rustfs
 fi
 
-printf 'Starting services. Neo4j remains a rebuildable projection.\n'
-docker compose -f "${COMPOSE_FILE}" up -d migrate api worker graph-worker dispatcher web
-printf 'Validate /api/ready, smoke queries, object reads, and projection reconciliation.\n'
+printf 'Starting PostgreSQL-backed application services.\n'
+docker compose -f "${COMPOSE_FILE}" up -d migrate api worker web
+printf 'Validate /api/ready, smoke queries, object reads, and graph queries.\n'

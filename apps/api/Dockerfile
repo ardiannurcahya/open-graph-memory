@@ -1,6 +1,6 @@
 FROM python:3.12-slim AS runtime
 WORKDIR /app
-ARG UV_VERSION=0.6.3
+ARG UV_VERSION=0.11.31
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-eng \

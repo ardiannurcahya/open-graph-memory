@@ -2,7 +2,7 @@
 
 ## Scope
 
-PostgreSQL and object storage are authoritative. Redis is transient. Neo4j is rebuildable projection. Target policy: daily encrypted off-host backup, 14 daily copies, 8 weekly copies, and quarterly restore drill. Operators must choose RPO/RTO based on deployment needs.
+PostgreSQL and object storage are authoritative; Redis is transient. Target policy: daily encrypted off-host backup, 14 daily copies, 8 weekly copies, and quarterly restore drills. Operators must choose RPO/RTO based on deployment needs.
 
 ## Backup
 
@@ -26,9 +26,8 @@ Restore is destructive. Use isolated recovery environment first.
 4. Ensure `.env` targets intended environment.
 5. Run `RESTORE_CONFIRM=RESTORE scripts/restore.sh backups/<timestamp>`.
 6. Verify `/api/ready`, project authentication, object reads, upload, graph extraction, evidence, and migrations.
-7. Reconcile or rebuild Neo4j projection from authoritative stores.
-8. Compare row/object counts and run smoke evaluation.
-9. Reopen traffic only after owner approval.
+7. Compare row/object counts and run graph smoke evaluation.
+8. Reopen traffic only after owner approval.
 
 ## Abort and Escalate
 

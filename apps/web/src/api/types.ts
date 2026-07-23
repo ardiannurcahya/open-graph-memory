@@ -70,6 +70,9 @@ export interface EntityView {
   confidence: number;
   version: number;
   review_state: ReviewState;
+  valid_from: string | null;
+  valid_until: string | null;
+  superseded_by: string | null;
 }
 
 export interface CitationRef {
@@ -89,6 +92,9 @@ export interface RelationView {
   confidence: number;
   extractor_version: string;
   review_state: ReviewState;
+  valid_from: string | null;
+  valid_until: string | null;
+  superseded_by: string | null;
   citations: CitationRef[];
 }
 

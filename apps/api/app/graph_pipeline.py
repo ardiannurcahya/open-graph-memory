@@ -1,4 +1,4 @@
-"""Authoritative extraction persistence followed by rebuildable Neo4j projection."""
+"""Authoritative extraction persistence with temporal tracking."""
 
 import hashlib
 import json
@@ -40,17 +40,9 @@ from app.graph_models import (
     ReviewState,
     RunStatus,
 )
-from app.graph_store import (
-    ChunkProjection,
-    DocumentProjection,
-    EvidenceProjection,
-    GraphProjection,
-    GraphStore,
-    RelationProjection,
-)
 from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
-from app.plugin_registry import create_extractor, create_graph_store
+from app.plugin_registry import create_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -136,20 +128,10 @@ def build_extractor() -> tuple[Extractor, ExtractorMetadata]:
     )
 
 
-def _store() -> GraphStore:
-    settings = get_settings()
-    return create_graph_store(
-        PluginConfig(
-            {"url": settings.neo4j_url},
-            {"auth": SecretValue(settings.neo4j_auth.get_secret_value())},
-        )
-    )
-
 
 async def extract_document(
     document_id: str,
     extractor: Extractor | None = None,
-    graph: GraphStore | None = None,
     on_batch_committed: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     selected_extractor, metadata = (
@@ -197,7 +179,9 @@ async def extract_document(
             )
             completed = 0
             active_batch: list[Chunk] = []
+            in_flight_chunks: list[Chunk] = []
             for active_batch in _batches(pending_chunks, parallelism):
+                in_flight_chunks = list(active_batch)
                 for chunk in active_batch:
                     await _ensure_running_run(db, document, chunk, metadata)
                 await db.commit()
@@ -214,6 +198,8 @@ async def extract_document(
                         persist_relations=not settings.graph_document_consolidation_enabled,
                     )
                     completed += 1
+                    # Successfully persisted; remove from in-flight tracking.
+                    in_flight_chunks = [c for c in in_flight_chunks if c.id != item.chunk.id]
                     logger.info(
                         "graph extraction chunk persisted document=%s progress=%d/%d",
                         document.id,
@@ -225,6 +211,7 @@ async def extract_document(
                     await on_batch_committed()
                 if extraction_error is not None:
                     raise extraction_error
+                in_flight_chunks = []
             if settings.graph_document_consolidation_enabled:
                 if on_batch_committed is not None:
                     await on_batch_committed()
@@ -232,16 +219,14 @@ async def extract_document(
                 await db.commit()
                 if on_batch_committed is not None:
                     await on_batch_committed()
-            await project_document(db, document, graph or _store())
-            logger.info("graph projection completed document=%s", document.id)
             await refresh_dataset_analytics(db, document.project_id, document.dataset_id)
             await db.commit()
             logger.info("graph analytics refreshed dataset=%s", document.dataset_id)
             return document.id
-        except BaseException as exc:
+        except Exception as exc:
             # Rollback expires ORM attributes. Snapshot primitives before rollback so
             # failure bookkeeping never performs implicit async IO from sync access.
-            failed_chunks = [(chunk.id, chunk.text) for chunk in active_batch]
+            failed_chunks = [(chunk.id, chunk.text) for chunk in in_flight_chunks]
             await db.rollback()
             for chunk_id, chunk_text in failed_chunks:
                 run_id = stable_id("run", chunk_id, metadata.extractor_version, _hash(chunk_text))
@@ -386,6 +371,7 @@ async def _persist_chunk_result(
         run.error_message = None
         run.completed_at = None
     run.raw_extraction = result.model_dump(mode="json")
+    now = datetime.now(UTC)
     entities: dict[str, list[CanonicalEntity]] = {}
     for entity_item in result.entities:
         offset = chunk.text.find(entity_item.name)
@@ -419,8 +405,14 @@ async def _persist_chunk_result(
                 review_state=ReviewState.UNREVIEWED
                 if entity_item.confidence == 1
                 else ReviewState.NEEDS_REVIEW,
+                valid_from=now,
+                valid_until=None,
             )
             db.add(entity)
+        elif entity.valid_until is not None:
+            entity.valid_until = None
+            entity.valid_from = now
+            entity.superseded_by = None
         entities.setdefault(normalized, []).append(entity)
         evidence_id = stable_id("ev", run_id, entity_id)
         if await db.get(GraphEvidence, evidence_id) is None:
@@ -501,8 +493,14 @@ async def _persist_chunk_result(
                 review_state=ReviewState.UNREVIEWED
                 if relation_item.confidence == 1
                 else ReviewState.NEEDS_REVIEW,
+                valid_from=now,
+                valid_until=None,
             )
             db.add(relation)
+        elif relation.valid_until is not None:
+            relation.valid_until = None
+            relation.valid_from = now
+            relation.superseded_by = None
         evidence_id = stable_id("ev", run_id, relation_id)
         if await db.get(GraphEvidence, evidence_id) is None:
             db.add(
@@ -576,7 +574,8 @@ async def consolidate_document(
             run.status, run.error_message, run.completed_at = RunStatus.RUNNING, None, None
         await db.flush()
         try:
-            output = consolidate_openai(
+            output = await to_thread(
+                consolidate_openai,
                 settings.graph_extractor_base_url,
                 settings.openai_api_key.get_secret_value(),
                 settings.graph_extractor_model,
@@ -585,7 +584,7 @@ async def consolidate_document(
                 settings.graph_extractor_timeout_seconds,
             )
             run.output = output.model_dump(mode="json")
-        except BaseException as exc:
+        except Exception as exc:
             run.status, run.error_message, run.completed_at = (
                 RunStatus.FAILED,
                 sanitized_error(exc),
@@ -595,7 +594,7 @@ async def consolidate_document(
             raise
         try:
             validate_output(output, {chunk.id: chunk for chunk in chunks})
-        except BaseException as exc:
+        except Exception as exc:
             run.status, run.error_message, run.completed_at = (
                 RunStatus.FAILED,
                 sanitized_error(exc),
@@ -672,8 +671,14 @@ async def _persist_consolidation_output(
                 confidence=relation_item.confidence,
                 extractor_version=metadata.extractor_version,
                 review_state=ReviewState.NEEDS_REVIEW,
+                valid_from=datetime.now(UTC),
+                valid_until=None,
             )
             db.add(relation)
+        elif relation.valid_until is not None:
+            relation.valid_until = None
+            relation.valid_from = datetime.now(UTC)
+            relation.superseded_by = None
         await _add_consolidation_evidence(
             db,
             document,
@@ -782,140 +787,3 @@ async def _add_consolidation_evidence(
             )
         )
     return evidence_id
-
-
-async def project_document(db: AsyncSession, document: Document, graph: GraphStore) -> None:
-    chunks = list(
-        await db.scalars(
-            select(Chunk).where(
-                Chunk.project_id == document.project_id,
-                Chunk.dataset_id == document.dataset_id,
-                Chunk.document_id == document.id,
-            )
-        )
-    )
-    entities = list(
-        await db.scalars(
-            select(CanonicalEntity).where(
-                CanonicalEntity.project_id == document.project_id,
-                CanonicalEntity.dataset_id == document.dataset_id,
-            )
-        )
-    )
-    relations = list(
-        await db.scalars(
-            select(RelationAssertion).where(
-                RelationAssertion.project_id == document.project_id,
-                RelationAssertion.dataset_id == document.dataset_id,
-            )
-        )
-    )
-    evidence = list(
-        await db.scalars(
-            select(GraphEvidence).where(
-                GraphEvidence.project_id == document.project_id,
-                GraphEvidence.dataset_id == document.dataset_id,
-                GraphEvidence.document_id == document.id,
-            )
-        )
-    )
-    runs = {
-        run.id: run
-        for run in await db.scalars(
-            select(GraphExtractionRun).where(
-                GraphExtractionRun.project_id == document.project_id,
-                GraphExtractionRun.dataset_id == document.dataset_id,
-                GraphExtractionRun.document_id == document.id,
-            )
-        )
-    }
-    await graph.bootstrap()
-    await graph.project_document(
-        DocumentProjection(
-            project_id=str(document.project_id),
-            dataset_id=document.dataset_id,
-            document_id=document.id,
-            document_created_at=document.created_at.isoformat(),
-            document_updated_at=document.updated_at.isoformat(),
-            chunks=tuple(
-                ChunkProjection(
-                    str(chunk.project_id),
-                    chunk.dataset_id,
-                    chunk.document_id,
-                    chunk.id,
-                    chunk.pipeline_version,
-                    chunk.created_at.isoformat(),
-                )
-                for chunk in chunks
-            ),
-            entities=tuple(
-                GraphProjection(
-                    str(e.project_id),
-                    e.dataset_id,
-                    e.id,
-                    e.canonical_name,
-                    e.entity_type,
-                    e.version,
-                    e.created_at.isoformat(),
-                    e.updated_at.isoformat(),
-                )
-                for e in entities
-            ),
-            relations=tuple(
-                RelationProjection(
-                    str(r.project_id),
-                    r.dataset_id,
-                    r.id,
-                    r.source_entity_id,
-                    r.target_entity_id,
-                    r.relation_type,
-                    r.extractor_version,
-                    r.confidence,
-                    r.review_state.value,
-                    r.created_at.isoformat(),
-                    r.updated_at.isoformat(),
-                )
-                for r in relations
-            ),
-            evidence=tuple(
-                EvidenceProjection(
-                    str(item.project_id),
-                    item.dataset_id,
-                    item.id,
-                    item.document_id,
-                    item.chunk_id,
-                    item.entity_id,
-                    item.relation_id,
-                    item.run_id,
-                    item.quote,
-                    item.confidence,
-                    runs[item.run_id].provider,
-                    runs[item.run_id].model,
-                    runs[item.run_id].extractor_version,
-                    runs[item.run_id].prompt_version,
-                    item.created_at.isoformat(),
-                    item.updated_at.isoformat(),
-                )
-                for item in evidence
-            ),
-        )
-    )
-
-
-async def rebuild_dataset(project_id: str, dataset_id: str, graph: GraphStore | None = None) -> int:
-    target = graph or _store()
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as db:
-        documents = list(
-            await db.scalars(
-                select(Document).where(
-                    Document.project_id == project_id,
-                    Document.dataset_id == dataset_id,
-                    Document.status == DocumentStatus.INDEXED,
-                )
-            )
-        )
-        await target.reconcile_dataset(project_id, dataset_id)
-        for document in documents:
-            await project_document(db, document, target)
-        return len(documents)
