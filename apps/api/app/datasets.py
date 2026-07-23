@@ -131,7 +131,12 @@ async def delete(
             last_document = document
             document.status = DocumentStatus.DELETING
             await db.commit()
-            await store.delete(document.object_key)
+            try:
+                await store.delete(document.object_key)
+            except Exception as s3_exc:
+                # Ignore NoSuchKey — object already gone from S3
+                if "NoSuchKey" not in str(s3_exc):
+                    raise
             await db.delete(document)
             await db.commit()
     except Exception as exc:

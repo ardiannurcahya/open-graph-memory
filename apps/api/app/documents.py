@@ -279,9 +279,12 @@ async def delete_document(
     try:
         await store.delete(item.object_key)
     except Exception as exc:
-        item.status, item.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
-        await db.commit()
-        raise HTTPException(503, "object storage deletion failed") from exc
+        # Ignore NoSuchKey — object already gone from S3 (e.g., orphaned record
+        # from a failed upload with old S3 config). Proceed with DB cleanup.
+        if "NoSuchKey" not in str(exc):
+            item.status, item.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
+            await db.commit()
+            raise HTTPException(503, "object storage deletion failed") from exc
     # Flush the document cascade first so concurrent evidence inserts cannot escape collection.
     await db.delete(item)
     await db.flush()
