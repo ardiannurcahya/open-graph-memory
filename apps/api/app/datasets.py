@@ -51,6 +51,9 @@ def view(item: Dataset) -> DatasetView:
 
 
 async def owned(db: AsyncSession, project: ProjectContext, dataset_id: str) -> Dataset:
+    # Accept both formats: with prefix (ds_xxx) or without (xxx)
+    if not dataset_id.startswith("ds_"):
+        dataset_id = f"ds_{dataset_id}"
     item = await db.scalar(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project.project_id)
     )
