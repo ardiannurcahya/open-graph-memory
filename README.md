@@ -173,7 +173,7 @@ OpenGraphMemory exposes Agent Memory through the [OGM Agent Bridge](https://gith
   "mcp": {
     "ogm": {
       "type": "local",
-      "command": ["uvx", "ogm-agent-bridge"],
+      "command": ["uvx", "ogm-agent-bridge==0.1.7"],
       "environment": {
         "OGM_BASE_URL": "https://your-instance.example.com",
         "OGM_API_KEY": "<project-api-key>",

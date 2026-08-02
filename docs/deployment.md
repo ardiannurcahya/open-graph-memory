@@ -16,7 +16,7 @@ GitHub Actions builds and publishes multi-architecture (`linux/amd64`, `linux/ar
 
 ```sh
 cp .env.example .env
-# Replace all change-me values. Set GHCR_NAMESPACE=ardiannurcahya and IMAGE_TAG=latest for local image pull.
+# Replace all change-me values. Set GHCR_NAMESPACE=ardiannurcahya and IMAGE_TAG=v0.1.0 for local image pull.
 docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml config --quiet
 scripts/backup.sh
 docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull
@@ -25,7 +25,7 @@ docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.p
 curl -fsS http://localhost:3000/api/ready
 ```
 
-For local image pull, set `GHCR_NAMESPACE=ardiannurcahya`, `IMAGE_TAG=latest`, then run `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull` followed by `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml up -d --no-build`. Do not build source on host. Pin immutable tag or digest for production rollout.
+For local image pull, set `GHCR_NAMESPACE=ardiannurcahya`, `IMAGE_TAG=v0.1.0`, then run `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml pull` followed by `docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml up -d --no-build`. Do not build source on host. Pin immutable tag or digest for production rollout.
 
 Production override sets one API process, one ARQ worker, app image references, restart policy, memory/PID limits, health checks, graceful stop periods, and JSON log rotation. The ARQ worker consumes jobs and runs the durable outbox maintenance loop.
 

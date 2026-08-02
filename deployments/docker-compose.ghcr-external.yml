@@ -15,7 +15,7 @@ services:
     volumes: [redis-data:/data]
   migrate:
     <<: *host-access
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-latest}"
+    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-v0.1.0}"
     command: alembic upgrade head
     env_file: [{path: ../.env, required: false}]
     environment: {APP_ENV: production}
@@ -24,7 +24,7 @@ services:
     logging: *default-logging
   api:
     <<: *host-access
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-latest}"
+    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-api:${IMAGE_TAG:-v0.1.0}"
     restart: unless-stopped
     mem_limit: 256m
     pids_limit: 256
@@ -36,7 +36,7 @@ services:
     logging: *default-logging
   worker:
     <<: *host-access
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-latest}"
+    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-worker:${IMAGE_TAG:-v0.1.0}"
     command: [arq, app.arq_worker.WorkerSettings]
     restart: unless-stopped
     mem_limit: 256m
@@ -48,7 +48,7 @@ services:
     healthcheck: {test: [CMD, arq, --check, app.arq_worker.WorkerSettings], interval: 15s, timeout: 10s, retries: 5}
     logging: *default-logging
   web:
-    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-web:${IMAGE_TAG:-latest}"
+    image: "ghcr.io/${GHCR_NAMESPACE:-ardiannurcahya}/open-graph-memory-web:${IMAGE_TAG:-v0.1.0}"
     restart: unless-stopped
     mem_limit: 128m
     pids_limit: 128

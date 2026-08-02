@@ -1,16 +1,7 @@
 name: GHCR Images
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths:
-      - 'apps/api/**'
-      - 'apps/worker/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - '**/Dockerfile'
-      - 'deployments/Caddyfile'
-      - '.github/workflows/ghcr.yml'
   workflow_dispatch:
 permissions: {contents: read, packages: write, id-token: write, attestations: write}
 concurrency:
@@ -35,10 +26,10 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/open-graph-memory-${{ matrix.image }}
           tags: |
-            type=ref,event=branch
             type=ref,event=tag
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            latest=false
       - uses: docker/build-push-action@v6
         with:
           context: .
