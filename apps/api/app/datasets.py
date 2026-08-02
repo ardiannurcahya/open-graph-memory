@@ -142,7 +142,10 @@ async def delete(
     except Exception as exc:
         item.status, item.error_message = DatasetStatus.DELETE_FAILED, str(exc)[:2000]
         if last_document is not None and last_document.status == DocumentStatus.DELETING:
-            last_document.status, last_document.error_message = DocumentStatus.DELETE_FAILED, str(exc)[:2000]
+            last_document.status, last_document.error_message = (
+                DocumentStatus.DELETE_FAILED,
+                str(exc)[:2000],
+            )
         await db.commit()
         raise HTTPException(503, "dataset object deletion failed") from exc
     await mark_cleanup_ready(db, cleanup)

@@ -62,6 +62,12 @@ describe("LoginPage", () => {
     const { apiKey, projectId, adminKey } = useAuthStore.getState();
     expect(apiKey).toBe("ogm_newkey");
     expect(projectId).toBe("proj-1");
-    expect(adminKey).toBe("admin-secret");
+    expect(adminKey).toBe("");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/projects",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-API-Key": "admin-secret" }),
+      }),
+    );
   });
 });

@@ -51,7 +51,10 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, { error: Err
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Graph renderer failed; showing unavailable message.", error, info.componentStack);
+    // The boundary deliberately contains renderer failures; reporting is handled
+    // by the browser/application observability integration rather than console.
+    void error;
+    void info;
   }
 
   componentDidUpdate(previous: GraphErrorBoundaryProps) {

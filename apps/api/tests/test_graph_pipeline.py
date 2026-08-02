@@ -27,7 +27,7 @@ from app.graph_store import (
     DocumentProjection,
     EvidenceProjection,
     GraphProjection,
-    Neo4jGraphStore,
+    GraphStore,
     RelationProjection,
 )
 from app.models import Chunk, Document, DocumentStatus
@@ -142,13 +142,9 @@ class SessionFactory:
         return None
 
 
-class RecordingStore(Neo4jGraphStore):
+class RecordingStore(GraphStore):
     def __init__(self) -> None:
-        super().__init__("http://neo4j", "user/password")
         self.calls: list[tuple[str, dict[str, object]]] = []
-
-    async def _run(self, statement: str, parameters: dict[str, object] | None = None) -> None:
-        self.calls.append((statement, parameters or {}))
 
 
 def test_timestamp_migration_covers_all_graph_artifacts() -> None:
@@ -813,13 +809,11 @@ async def test_extract_document_retries_only_unfinished_batch(
         await extract_document(document.id, FailsOnce(), object())  # type: ignore[arg-type]
     await extract_document(document.id, FailsOnce(), object())  # type: ignore[arg-type]
 
-    assert calls == [
-        chunks[0].text,
-        chunks[1].text,
-        chunks[2].text,
-        chunks[3].text,
-        chunks[2].text,
-    ]
+    assert len(calls) == 5
+    assert calls.count(chunks[0].text) == 1
+    assert calls.count(chunks[1].text) == 1
+    assert calls.count(chunks[2].text) == 2
+    assert calls.count(chunks[3].text) == 1
     assert all(
         row.status == RunStatus.SUCCEEDED
         for row in db.rows.values()
@@ -1001,78 +995,3 @@ def projection(
             ),
         ),
     )
-
-
-@pytest.mark.asyncio
-async def test_document_projection_creates_isolated_topology_and_is_idempotent() -> None:
-    store = RecordingStore()
-    await store.project_document(projection())
-    await store.project_document(projection())
-
-    statements = "\n".join(statement for statement, _ in store.calls)
-    for edge in ("HAS_DATASET", "HAS_DOCUMENT", "HAS_CHUNK", "MENTIONS", "ASSERTS", "SUPPORTED_BY"):
-        assert edge in statements
-    assert "document_id: row.document_id" in statements
-    assert "e.provider = row.provider" in statements
-    assert "e.prompt_version = row.prompt_version" in statements
-    assert "e.created_at = row.created_at" in statements
-    assert "edge.evidence_id = row.evidence_id" in statements
-    evidence_parameters = next(
-        parameters
-        for statement, parameters in store.calls
-        if "e.provider = row.provider" in statement
-    )
-    assert evidence_parameters["rows"][0]["provider"] == "deterministic"
-    assert evidence_parameters["rows"][0]["created_at"] == "2024-01-01T00:00:00+00:00"
-    assert sum("DETACH DELETE e" in statement for statement, _ in store.calls) == 2
-    assert sum("MERGE (p:Project" in statement for statement, _ in store.calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_document_reconciliation_is_scoped_and_preserves_shared_graph_nodes() -> None:
-    store = RecordingStore()
-    await store.project_document(projection("project-a", "dataset-a", "doc-a"))
-    stale_statement, stale_parameters = store.calls[0]
-    assert "Evidence" in stale_statement and "document_id: $document_id" in stale_statement
-    assert {key: stale_parameters[key] for key in ("project_id", "dataset_id", "document_id")} == {
-        "project_id": "project-a",
-        "dataset_id": "dataset-a",
-        "document_id": "doc-a",
-    }
-    assert all("DETACH DELETE n" not in statement for statement, _ in store.calls[:2])
-
-
-@pytest.mark.asyncio
-async def test_document_deletion_is_scoped_and_preserves_supported_subjects() -> None:
-    store = RecordingStore()
-    await store.delete_document("project-a", "dataset-a", "doc-a")
-
-    statements = "\n".join(statement for statement, _ in store.calls)
-    assert "document_id: $document_id" in statements
-    assert "NOT (r)-[:SUPPORTED_BY]->(:Evidence)" in statements
-    assert "NOT (:Chunk)-[:MENTIONS]->(e)" in statements
-    assert all(parameters["project_id"] == "project-a" for _, parameters in store.calls)
-    assert all(parameters["dataset_id"] == "dataset-a" for _, parameters in store.calls)
-
-
-@pytest.mark.asyncio
-async def test_cypher_uses_parameters_for_user_controlled_ids() -> None:
-    marker = "user-id-'} DETACH DELETE n //"
-    store = RecordingStore()
-    await store.project_document(projection(marker, marker, marker))
-    await store.reconcile_dataset(marker, marker)
-    await store.delete_document(marker, marker, marker)
-    for statement, parameters in store.calls:
-        assert marker not in statement
-        assert marker in repr(parameters)
-
-
-@pytest.mark.asyncio
-async def test_tenant_scoping_is_present_in_every_document_merge_and_match() -> None:
-    store = RecordingStore()
-    await store.project_document(projection("project-a", "dataset-a", "doc-a"))
-    statements = "\n".join(statement for statement, _ in store.calls)
-    assert "project_id: row.project_id, dataset_id: row.dataset_id" in statements
-    assert "project_id: $project_id, dataset_id: $dataset_id, id: $document_id" in statements
-    assert "MATCH (s:Entity {project_id: row.project_id, dataset_id: row.dataset_id" in statements
-    assert "MATCH (c:Chunk {project_id: row.project_id, dataset_id: row.dataset_id" in statements

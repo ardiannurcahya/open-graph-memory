@@ -351,6 +351,7 @@ class AgentMemoryPattern(Base):
     weighted_total: Mapped[float] = mapped_column(default=0.0)
     confidence: Mapped[float] = mapped_column(default=0.0)
     promoted: Mapped[bool] = mapped_column(default=False)
+    superseded_by_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

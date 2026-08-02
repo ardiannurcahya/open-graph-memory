@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import SecretStr, model_validator
@@ -13,6 +14,8 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://opengraphrag:change-me-postgres@postgres:5432/opengraphrag"
     )
+    database_tls: Literal["disable", "require", "verify-full"] = "disable"
+    database_tls_ca_file: str | None = None
     redis_url: str = "redis://redis:6379/0"
     admin_api_key: SecretStr = SecretStr("change-me-admin-api-key")
     s3_endpoint_url: str = "http://rustfs:9000"
@@ -58,6 +61,8 @@ class Settings(BaseSettings):
     def validate_settings(self) -> "Settings":
         if self.upload_max_bytes < 1 or self.upload_spool_max_bytes < 1:
             raise ValueError("upload limits must be positive")
+        if self.database_tls == "verify-full" and not self.database_tls_ca_file:
+            raise ValueError("DATABASE_TLS_CA_FILE is required when DATABASE_TLS=verify-full")
         if self.graph_extractor_provider not in {"deterministic", "nlp", "openai"}:
             raise ValueError("graph extractor provider must be deterministic, nlp, or openai")
         if self.outbox_poll_seconds <= 0 or self.indexing_stale_seconds <= 0:
@@ -82,11 +87,7 @@ class Settings(BaseSettings):
             raise ValueError("PDF parser must be pypdf or liteparse")
         if self.liteparse_ocr_mode not in {"auto", "always", "disabled"}:
             raise ValueError("LiteParse OCR mode must be auto, always, or disabled")
-        if (
-            self.liteparse_dpi < 1
-            or self.liteparse_max_pages < 1
-            or self.liteparse_ocr_workers < 1
-        ):
+        if self.liteparse_dpi < 1 or self.liteparse_max_pages < 1 or self.liteparse_ocr_workers < 1:
             raise ValueError("LiteParse DPI, page limit, and worker count must be positive")
         if self.liteparse_image_mode != "off":
             raise ValueError("LiteParse image mode must be off")
@@ -117,6 +118,7 @@ class Settings(BaseSettings):
     @property
     def graph_extractor_base_url(self) -> str:
         return self.openai_graph_extractor_base_url or self.openai_base_url
+
 
 @lru_cache
 def get_settings() -> Settings:

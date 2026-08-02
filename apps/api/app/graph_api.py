@@ -306,8 +306,8 @@ def temporal_filter(
             (RelationAssertion.valid_until.is_(None)) | (RelationAssertion.valid_until > as_of)
         )
     if entity:
-        return CanonicalEntity.valid_until.is_(None)
-    return RelationAssertion.valid_until.is_(None)
+        return CanonicalEntity.valid_until.is_(None) & CanonicalEntity.superseded_by.is_(None)
+    return RelationAssertion.valid_until.is_(None) & RelationAssertion.superseded_by.is_(None)
 
 
 def low_signal_entity(name: str, entity_type: str) -> bool:
@@ -440,6 +440,7 @@ async def bounded_walk(
                 RelationAssertion.target_entity_id.in_(frontier),
             ),
             supported_relation(),
+            temporal_filter(entity=False),
         ]
         if relations:
             filters.append(RelationAssertion.id.not_in(relations))
@@ -465,6 +466,7 @@ async def bounded_walk(
                     CanonicalEntity.project_id == project_id,
                     CanonicalEntity.dataset_id == dataset_id,
                     supported_entity(),
+                    temporal_filter(entity=True),
                 )
             )
         }
@@ -672,7 +674,9 @@ async def neighbors(
             select(CanonicalEntity).where(
                 CanonicalEntity.id == other_id,
                 CanonicalEntity.project_id == project.project_id,
+                CanonicalEntity.dataset_id == entity.dataset_id,
                 supported_entity(),
+                temporal_filter(entity=True),
             )
         )
         if other is not None:

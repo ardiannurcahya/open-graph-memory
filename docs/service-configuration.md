@@ -22,6 +22,7 @@ POSTGRES_DB=opengraphrag
 POSTGRES_USER=opengraphrag
 POSTGRES_PASSWORD=replace-with-strong-password
 DATABASE_URL=postgresql+asyncpg://opengraphrag:replace-with-strong-password@postgres:5432/opengraphrag
+DATABASE_TLS=disable # disable, require, or verify-full; verify-full also needs DATABASE_TLS_CA_FILE
 ```
 
 `POSTGRES_*` configures local container. Application and migrations use `DATABASE_URL`. Add provider-required TLS parameters for managed PostgreSQL.

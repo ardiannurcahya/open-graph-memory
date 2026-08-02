@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.graph_api import (
@@ -14,6 +15,7 @@ from app.graph_api import (
     source_location,
     supported_entity,
     supported_relation,
+    temporal_filter,
 )
 from fastapi import FastAPI
 from sqlalchemy.dialects import postgresql
@@ -80,6 +82,33 @@ def test_supported_relations_require_evidence_and_exclude_rejected_state() -> No
         )
     )
     assert "review_state != 'REJECTED'" in entity_sql
+
+
+def test_current_temporal_filter_excludes_superseded_entities_and_relations() -> None:
+    entity_sql = str(
+        temporal_filter(entity=True).compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    relation_sql = str(
+        temporal_filter(entity=False).compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "canonical_entities.valid_until IS NULL" in entity_sql
+    assert "canonical_entities.superseded_by IS NULL" in entity_sql
+    assert "relation_assertions.valid_until IS NULL" in relation_sql
+    assert "relation_assertions.superseded_by IS NULL" in relation_sql
+
+
+def test_neighbors_other_entity_query_is_dataset_scoped() -> None:
+    source = Path("apps/api/app/graph_api.py").read_text(encoding="utf-8")
+    start = source.index("async def neighbors(")
+    end = source.index("async def refresh_analytics")
+    neighbors_source = source[start:end]
+
+    assert "CanonicalEntity.dataset_id == entity.dataset_id" in neighbors_source
 
 
 def test_agent_graph_routes_publish_hard_bounds_and_structured_responses() -> None:

@@ -1,10 +1,11 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 import pytest
-from app.agent_memory import is_promoted, router
+from app.agent_memory import SupersedeInput, is_promoted, router, supersede_episode
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
 from app.models import (
@@ -17,13 +18,13 @@ from fastapi import FastAPI
 
 
 def test_agent_memory_migration_and_models_match() -> None:
-    path = Path("apps/api/migrations/versions/0019_agent_memory.py")
+    path = Path("apps/api/migrations/versions/0021_agent_memory.py")
     spec = spec_from_file_location("agent_memory", path)
     assert spec is not None and spec.loader is not None
     migration = module_from_spec(spec)
     spec.loader.exec_module(migration)
 
-    assert migration.down_revision == "0018"
+    assert migration.down_revision == "0019"
     assert AgentMemoryEpisode.__tablename__ == "agent_memory_episodes"
     assert AgentMemoryAttempt.__tablename__ == "agent_memory_attempts"
     assert AgentMemoryOutcome.__tablename__ == "agent_memory_outcomes"
@@ -32,13 +33,13 @@ def test_agent_memory_migration_and_models_match() -> None:
 
 
 def test_agent_memory_timestamp_migration_follows_initial_schema() -> None:
-    path = Path("apps/api/migrations/versions/0020_agent_memory_timestamps.py")
+    path = Path("apps/api/migrations/versions/0022_agent_memory_timestamps.py")
     spec = spec_from_file_location("agent_memory_timestamps", path)
     assert spec is not None and spec.loader is not None
     migration = module_from_spec(spec)
     spec.loader.exec_module(migration)
 
-    assert migration.down_revision == "0019"
+    assert migration.down_revision == "0021"
     source = path.read_text(encoding="utf-8")
     assert '"agent_memory_attempts"' in source
     assert '"agent_memory_outcomes"' in source
@@ -106,3 +107,27 @@ async def test_create_episode_executes_project_dependency_and_persists_evidence(
         "AgentMemoryEpisode",
         "AgentMemoryEvidence",
     }
+
+
+@pytest.mark.asyncio
+async def test_episode_supersession_locks_both_rows_and_rejects_a_cycle(monkeypatch) -> None:
+    source = SimpleNamespace(id="source", status="active", superseded_by_id=None)
+    replacement = SimpleNamespace(id="replacement", status="active", superseded_by_id="source")
+    locks: list[tuple[str, bool]] = []
+
+    async def fake_owned_episode(_db, _project, episode_id: str, lock: bool = False):
+        locks.append((episode_id, lock))
+        return {"source": source, "replacement": replacement}[episode_id]
+
+    monkeypatch.setattr("app.agent_memory.owned_episode", fake_owned_episode)
+    with pytest.raises(Exception) as error:
+        await supersede_episode(
+            "source",
+            SupersedeInput(superseding_episode_id="replacement"),
+            ProjectContext(uuid4()),
+            SimpleNamespace(),
+        )
+
+    assert getattr(error.value, "status_code", None) == 409
+    assert locks[:2] == [("source", True), ("replacement", True)]
+    assert source.superseded_by_id is None
