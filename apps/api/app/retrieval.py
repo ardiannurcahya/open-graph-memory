@@ -71,7 +71,7 @@ async def bounded_graph_search(
             "reason": "graph_timeout",
             "latency_ms": round((perf_counter() - started) * 1000, 3),
         }
-    except Exception:
+    except (ValueError, RuntimeError):
         return [], {
             "status": "fallback",
             "reason": "graph_unavailable",
