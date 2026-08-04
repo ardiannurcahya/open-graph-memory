@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth import ProjectContext, require_project
+from app.confidence import (
+    apply_confidence_feedback,
+    get_version_history,
+    merge_memories,
+    supersede_memory,
+)
 from app.dependencies import get_session
+from app.memory_types import list_memory_types, validate_typed_content
 from app.models import (
     AgentMemoryAttempt,
     AgentMemoryEpisode,
@@ -19,13 +27,19 @@ from app.models import (
     AgentMemoryPatternMember,
     AgentMemoryRetrievalAudit,
     AgentMemoryVerifier,
+    AgentMemoryVersion,
 )
+from app.redaction import sanitize_input
+from app.idempotency import check_idempotency, store_idempotency
 
 router = APIRouter(prefix="/v1/agent-memory", tags=["agent-memory"])
 Project = Annotated[ProjectContext, Depends(require_project)]
 Db = Annotated[AsyncSession, Depends(get_session)]
 Domain = Literal["engineering", "trading", "research", "operations", "custom"]
-EpisodeStatus = Literal["open", "active", "degraded", "superseded", "rejected"]
+MemoryType = Literal[
+    "bugfix", "decision", "preference", "procedure", "research", "trading", "learning", "fact", "custom"
+]
+EpisodeStatus = Literal["open", "active", "degraded", "superseded", "rejected", "archived"]
 OutcomeStatus = Literal["success", "failed", "partial", "cancelled"]
 VerifierKind = Literal["ci", "runtime", "test", "build", "self_report", "custom"]
 
@@ -37,13 +51,17 @@ class EvidenceInput(BaseModel):
 
 class EpisodeInput(BaseModel):
     domain: Domain
+    type: MemoryType = "custom"
     title: str = Field(min_length=1, max_length=255)
     goal: str = Field(min_length=1)
     problem_signature: str = Field(min_length=1, max_length=512)
     scope: dict[str, object] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
+    content: dict[str, object] | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     evidence: list[EvidenceInput] = Field(default_factory=list)
+    idempotency_key: str | None = Field(default=None, max_length=255)
 
 
 class AttemptInput(BaseModel):
@@ -77,6 +95,13 @@ class FeedbackInput(BaseModel):
     score: int = Field(ge=-1, le=1)
 
 
+class ConfidenceFeedbackInput(BaseModel):
+    kind: Literal["confirm", "reject", "correct", "supersede", "merge", "stale", "verified"]
+    content: dict[str, object] | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    target_id: str | None = None
+
+
 class SupersedeInput(BaseModel):
     superseding_episode_id: str
 
@@ -94,12 +119,17 @@ class EpisodeView(BaseModel):
     id: str
     project_id: str
     domain: Domain
+    type: str
     title: str
     goal: str
     problem_signature: str
     scope: dict[str, object]
     tags: list[str]
     metadata: dict[str, object]
+    content: dict[str, object] | None
+    confidence: float
+    version: int
+    root_id: str | None
     status: EpisodeStatus
     feedback_score: int
     superseded_by_id: str | None
@@ -178,12 +208,17 @@ def episode_view(
         id=item.id,
         project_id=str(item.project_id),
         domain=cast(Domain, item.domain),
+        type=item.type,
         title=item.title,
         goal=item.goal,
         problem_signature=item.problem_signature,
         scope=item.scope,
         tags=item.tags,
         metadata=item.metadata_,
+        content=item.content,
+        confidence=item.confidence,
+        version=item.version,
+        root_id=item.root_id,
         status=cast(EpisodeStatus, item.status),
         feedback_score=item.feedback_score,
         superseded_by_id=item.superseded_by_id,
@@ -227,16 +262,36 @@ async def owned_episode(
 
 @router.post("/episodes", response_model=EpisodeView, status_code=201)
 async def create_episode(body: EpisodeInput, project: Project, db: Db) -> EpisodeView:
+    if body.idempotency_key:
+        existing_id = await check_idempotency(
+            db, body.idempotency_key, str(project.project_id), "episode.create"
+        )
+        if existing_id:
+            existing = await db.get(AgentMemoryEpisode, existing_id)
+            if existing:
+                return episode_view(existing)
+
+    if body.content:
+        validate_typed_content(body.type, body.content)
+        body.content = sanitize_input(body.content)
+
+    sanitized_metadata = sanitize_input(body.metadata)
+
     item = AgentMemoryEpisode(
         id=memory_id(),
         project_id=project.project_id,
         domain=body.domain,
+        type=body.type,
         title=body.title,
         goal=body.goal,
         problem_signature=body.problem_signature,
         scope=body.scope,
         tags=body.tags,
-        metadata_=body.metadata,
+        metadata_=sanitized_metadata,
+        content=body.content,
+        confidence=body.confidence,
+        version=1,
+        root_id=None,
         status="open",
         feedback_score=0,
     )
@@ -247,9 +302,16 @@ async def create_episode(body: EpisodeInput, project: Project, db: Db) -> Episod
                 id=memory_id(),
                 episode_id=item.id,
                 reference=evidence.reference,
-                metadata_=evidence.metadata,
+                metadata_=sanitize_input(evidence.metadata),
             )
         )
+
+    if body.idempotency_key:
+        await store_idempotency(
+            db, body.idempotency_key, str(project.project_id), "episode.create", item.id,
+            {"id": item.id, "type": item.type}
+        )
+
     await db.commit()
     return episode_view(item)
 
@@ -716,7 +778,39 @@ async def memory_graph(
             )
 
     if not episode_ids:
-        return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
+    return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
+
+
+@router.delete("/episodes/{episode_id}", status_code=204)
+async def hard_delete_episode(
+    episode_id: str, project: Project, db: Db, mode: str = "archive"
+) -> None:
+    if mode not in ("archive", "invalidate", "hard"):
+        raise HTTPException(400, "mode must be archive, invalidate, or hard")
+
+    episode = await owned_episode(db, project, episode_id, lock=True)
+
+    if mode == "archive":
+        episode.status = "archived"
+        episode.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return
+
+    if mode == "invalidate":
+        episode.status = "rejected"
+        episode.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return
+
+    from app.legal_hold import check_legal_hold
+
+    try:
+        await check_legal_hold(db, str(project.project_id), [episode_id])
+    except Exception:
+        raise HTTPException(423, "episode is under legal hold")
+
+    await db.delete(episode)
+    await db.commit()
 
     attempts = (
         await db.scalars(
@@ -887,3 +981,62 @@ async def memory_graph(
         stats["evidence"] += 1
 
     return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
+
+
+@router.post("/episodes/{episode_id}/confidence", response_model=EpisodeView)
+async def apply_confidence(
+    episode_id: str, body: ConfidenceFeedbackInput, project: Project, db: Db
+) -> EpisodeView:
+    episode = await owned_episode(db, project, episode_id, lock=True)
+
+    if body.kind in ("correct", "merge"):
+        if body.kind == "merge":
+            if not body.target_id:
+                raise HTTPException(400, "merge requires target_id")
+            episode = await merge_memories(
+                db, episode, body.target_id, body.content, body.confidence
+            )
+        else:
+            episode = await apply_confidence_feedback(
+                db, episode, body.kind, body.content, body.confidence
+            )
+    elif body.kind == "supersede":
+        if not body.target_id:
+            raise HTTPException(400, "supersede requires target_id")
+        episode = await supersede_memory(db, episode, body.target_id)
+    else:
+        episode = await apply_confidence_feedback(db, episode, body.kind, body.content)
+
+    await db.commit()
+    attempts = list(
+        await db.scalars(
+            select(AgentMemoryAttempt)
+            .where(AgentMemoryAttempt.episode_id == episode.id)
+            .order_by(AgentMemoryAttempt.sequence)
+        )
+    )
+    return episode_view(episode, attempts)
+
+
+@router.get("/episodes/{episode_id}/versions")
+async def get_version_history_endpoint(
+    episode_id: str, project: Project, db: Db
+) -> list[dict[str, object]]:
+    await owned_episode(db, project, episode_id)
+    versions = await get_version_history(db, episode_id)
+    return [
+        {
+            "id": v.id,
+            "version": v.version,
+            "content": v.content,
+            "confidence": v.confidence,
+            "superseded_by": v.superseded_by,
+            "created_at": v.created_at.isoformat(),
+        }
+        for v in versions
+    ]
+
+
+@router.get("/types")
+async def list_types() -> list[str]:
+    return list_memory_types()

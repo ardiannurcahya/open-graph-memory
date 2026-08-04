@@ -1,0 +1,285 @@
+"""MCP Streamable HTTP server for agent integration."""
+
+import json
+from datetime import datetime, timezone
+from typing import Any
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import ProjectContext, require_project
+from app.dependencies import get_session
+
+router = APIRouter(prefix="/mcp", tags=["mcp"])
+
+MCP_SESSION_HEADER = "Mcp-Session-Id"
+MCP_PROTOCOL_VERSION = "2024-11-05"
+
+
+class MCPRequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: int | str | None = None
+    method: str
+    params: dict[str, Any] | None = None
+
+
+class MCPResponse(BaseModel):
+    jsonrpc: str = "2.0"
+    id: int | str | None = None
+    result: Any = None
+    error: dict[str, Any] | None = None
+
+
+class MCPTool(BaseModel):
+    name: str
+    description: str
+    inputSchema: dict[str, Any]
+
+
+MCP_TOOLS: list[MCPTool] = [
+    MCPTool(
+        name="memory_observe",
+        description="Persist one immutable, redacted evidence episode.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["observation", "message", "command", "command_output", "file", "code", "tool_call", "tool_result", "error", "event"]},
+                "observation": {"type": "object", "description": "JSON evidence"},
+                "metadata": {"type": "object"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["kind", "observation", "idempotency_key"],
+        },
+    ),
+    MCPTool(
+        name="memory_commit",
+        description="Commit a typed durable memory supported by episode evidence.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["bugfix", "decision", "preference", "procedure", "research", "trading", "learning", "fact", "custom"]},
+                "content": {"type": "object"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "episodes": {"type": "array", "items": {"type": "object"}},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["type", "content", "confidence", "episodes", "idempotency_key"],
+        },
+    ),
+    MCPTool(
+        name="memory_recall",
+        description="Recall bounded, explainable memory capsules.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "exact": {"type": "object"},
+                "entity_key": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+        },
+    ),
+    MCPTool(
+        name="memory_feedback",
+        description="Confirm, reject, correct, merge, supersede, stale, or verify a memory.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+                "kind": {"type": "string", "enum": ["confirm", "reject", "correct", "supersede", "merge", "stale", "verified"]},
+                "content": {"type": "object"},
+                "confidence": {"type": "number"},
+                "target_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["memory_id", "kind", "idempotency_key"],
+        },
+    ),
+    MCPTool(
+        name="memory_forget",
+        description="Archive or invalidate by default; hard delete requires explicit mode.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+                "mode": {"type": "string", "enum": ["archive", "invalidate", "hard_delete"]},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["memory_id"],
+        },
+    ),
+    MCPTool(
+        name="memory_inspect",
+        description="Read bounded memory provenance and ranking explanation.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+                "include_inactive": {"type": "boolean"},
+            },
+            "required": ["memory_id"],
+        },
+    ),
+]
+
+
+async def handle_mcp_request(
+    request: MCPRequest,
+    project_id: str,
+    db: AsyncSession,
+) -> MCPResponse:
+    if request.method == "initialize":
+        return MCPResponse(
+            id=request.id,
+            result={
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {"tools": {}, "resources": {}},
+                "serverInfo": {"name": "ogm-mcp", "version": "1.0.0"},
+            },
+        )
+
+    elif request.method == "tools/list":
+        return MCPResponse(
+            id=request.id,
+            result={"tools": [tool.model_dump() for tool in MCP_TOOLS]},
+        )
+
+    elif request.method == "tools/call":
+        tool_name = request.params.get("name") if request.params else None
+        arguments = request.params.get("arguments", {}) if request.params else {}
+
+        if not tool_name:
+            return MCPResponse(
+                id=request.id,
+                error={"code": -32602, "message": "missing tool name"},
+            )
+
+        result = await execute_tool(tool_name, arguments, project_id, db)
+        return MCPResponse(id=request.id, result=result)
+
+    elif request.method == "resources/list":
+        return MCPResponse(
+            id=request.id,
+            result={
+                "resources": [
+                    {"uri": "ogm://project/profile", "name": "Project profile", "mimeType": "application/json"},
+                    {"uri": "ogm://project/memories/recent?limit=20", "name": "Recent memories", "mimeType": "application/json"},
+                ]
+            },
+        )
+
+    else:
+        return MCPResponse(
+            id=request.id,
+            error={"code": -32601, "message": f"method not found: {request.method}"},
+        )
+
+
+async def execute_tool(
+    name: str, arguments: dict, project_id: str, db: AsyncSession
+) -> dict:
+    from app.agent_memory import create_episode, owned_episode
+    from app.models import AgentMemoryEpisode
+
+    if name == "memory_observe":
+        episode = AgentMemoryEpisode(
+            id=f"mem_{uuid4().hex[:16]}",
+            project_id=project_id,
+            domain="engineering",
+            type="custom",
+            title=arguments.get("kind", "observation"),
+            goal="MCP observation",
+            problem_signature=arguments.get("kind", "observation"),
+            metadata_=arguments.get("metadata", {}),
+            content=arguments.get("observation", {}),
+            confidence=0.5,
+            version=1,
+            status="open",
+        )
+        db.add(episode)
+        await db.commit()
+        return {"episode_id": episode.id, "status": "created"}
+
+    elif name == "memory_recall":
+        from sqlalchemy import select
+        query = select(AgentMemoryEpisode).where(
+            AgentMemoryEpisode.project_id == project_id
+        )
+        limit = arguments.get("limit", 10)
+        episodes = list(await db.scalars(query.limit(limit)))
+        return {
+            "memories": [
+                {
+                    "id": ep.id,
+                    "type": ep.type,
+                    "title": ep.title,
+                    "content": ep.content,
+                    "confidence": ep.confidence,
+                    "status": ep.status,
+                }
+                for ep in episodes
+            ]
+        }
+
+    elif name == "memory_inspect":
+        memory_id = arguments.get("memory_id")
+        episode = await db.get(AgentMemoryEpisode, memory_id)
+        if not episode or str(episode.project_id) != project_id:
+            return {"error": "memory not found"}
+        return {
+            "id": episode.id,
+            "type": episode.type,
+            "title": episode.title,
+            "content": episode.content,
+            "confidence": episode.confidence,
+            "status": episode.status,
+            "version": episode.version,
+        }
+
+    return {"error": f"unknown tool: {name}"}
+
+
+@router.post("")
+async def mcp_endpoint(
+    request: Request,
+    mcp_session_id: str | None = Header(None, alias=MCP_SESSION_HEADER),
+    x_api_key: str = Header(...),
+    x_project_id: str = Header(...),
+) -> Response:
+    from sqlalchemy import select
+    from app.models import ApiKey
+    import hashlib
+
+    db_gen = get_session()
+    db = await db_gen.__anext__()
+
+    try:
+        digest = hashlib.sha256(x_api_key.encode()).hexdigest()
+        key = await db.scalar(
+            select(ApiKey).where(
+                ApiKey.project_id == x_project_id,
+                ApiKey.key_prefix == x_api_key[:16],
+                ApiKey.key_hash == digest,
+                ApiKey.revoked_at.is_(None),
+            )
+        )
+        if not key:
+            raise HTTPException(401, "invalid API key")
+
+        body = await request.json()
+        mcp_request = MCPRequest(**body)
+
+        if not mcp_session_id:
+            mcp_session_id = str(uuid4())
+
+        response = await handle_mcp_request(mcp_request, x_project_id, db)
+
+        return Response(
+            content=response.model_dump_json(),
+            media_type="application/json",
+            headers={MCP_SESSION_HEADER: mcp_session_id},
+        )
+    finally:
+        await db.close()

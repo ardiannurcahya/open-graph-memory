@@ -5,12 +5,17 @@ import structlog
 from fastapi import FastAPI
 
 from app.agent_memory import router as agent_memory_router
+from app.audit import router as audit_router
 from app.datasets import router as datasets_router
 from app.documents import router as documents_router
+from app.export_import import router as export_import_router
 from app.graph_api import router as graph_router
 from app.health import router
+from app.legal_hold import router as legal_hold_router
+from app.mcp_server import router as mcp_router
 from app.observability import MetricsMiddleware
 from app.projects import router as projects_router
+from app.retention import router as retention_router
 
 
 @asynccontextmanager
@@ -27,3 +32,8 @@ app.include_router(datasets_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(agent_memory_router)
+app.include_router(legal_hold_router)
+app.include_router(retention_router)
+app.include_router(audit_router)
+app.include_router(export_import_router)
+app.include_router(mcp_router)
