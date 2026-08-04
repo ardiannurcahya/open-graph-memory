@@ -265,20 +265,33 @@ class AgentMemoryEpisode(Base):
             name="ck_agent_memory_episode_domain",
         ),
         CheckConstraint(
-            "status IN ('open', 'active', 'degraded', 'superseded', 'rejected')",
+            "status IN ('open', 'active', 'degraded', 'superseded', 'rejected', 'archived')",
             name="ck_agent_memory_episode_status",
         ),
+        CheckConstraint(
+            "type IN ('bugfix', 'decision', 'preference', 'procedure', 'research', 'trading', 'learning', 'fact', 'custom')",
+            name="ck_agent_memory_episode_type",
+        ),
         Index("ix_agent_memory_episodes_scope_created", "project_id", "created_at"),
+        Index("ix_agent_memory_episodes_type", "project_id", "type"),
+        Index("ix_agent_memory_episodes_confidence", "project_id", "confidence"),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     domain: Mapped[str] = mapped_column(String(32))
+    type: Mapped[str] = mapped_column(String(32), default="custom")
     title: Mapped[str] = mapped_column(String(255))
     goal: Mapped[str] = mapped_column(Text)
     problem_signature: Mapped[str] = mapped_column(String(512))
     scope: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    content: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    confidence: Mapped[float] = mapped_column(default=0.5)
+    version: Mapped[int] = mapped_column(default=1)
+    root_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="SET NULL")
+    )
     status: Mapped[str] = mapped_column(String(32), default="open")
     feedback_score: Mapped[int] = mapped_column(default=0)
     superseded_by_id: Mapped[str | None] = mapped_column(
@@ -404,4 +417,108 @@ class AgentMemoryRetrievalAudit(Base):
     project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     query: Mapped[str] = mapped_column(Text)
     results: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgentMemoryVersion(Base):
+    __tablename__ = "agent_memory_versions"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "version", name="uq_agent_memory_version"),
+        Index("ix_agent_memory_versions_episode", "episode_id", "version"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_memory_episodes.id", ondelete="CASCADE")
+    )
+    version: Mapped[int]
+    content: Mapped[dict[str, object]] = mapped_column(JSONB)
+    confidence: Mapped[float]
+    superseded_by: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_memory_versions.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LegalHold(Base):
+    __tablename__ = "legal_holds"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('episode', 'memory', 'entity', 'project')",
+            name="ck_legal_hold_resource_type",
+        ),
+        UniqueConstraint(
+            "project_id", "resource_type", "resource_id", name="uq_legal_hold_resource"
+        ),
+        Index("ix_legal_holds_project_resource", "project_id", "resource_type", "resource_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    resource_type: Mapped[str] = mapped_column(String(32))
+    resource_id: Mapped[str] = mapped_column(String(40))
+    reason: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RetentionPolicy(Base):
+    __tablename__ = "retention_policies"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('episode', 'memory')",
+            name="ck_retention_policy_resource_type",
+        ),
+        CheckConstraint(
+            "action IN ('archive', 'delete')",
+            name="ck_retention_policy_action",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'paused', 'completed')",
+            name="ck_retention_policy_status",
+        ),
+        CheckConstraint("older_than_days > 0", name="ck_retention_policy_days_positive"),
+        Index("ix_retention_policies_project_status", "project_id", "status"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    resource_type: Mapped[str] = mapped_column(String(32))
+    older_than_days: Mapped[int]
+    action: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "actor_type IN ('user', 'api_key', 'system')",
+            name="ck_audit_log_actor_type",
+        ),
+        Index("ix_audit_logs_project_resource", "project_id", "resource_type", "resource_id"),
+        Index("ix_audit_logs_project_operation", "project_id", "operation"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    actor_type: Mapped[str] = mapped_column(String(32))
+    actor_id: Mapped[str | None] = mapped_column(String(255))
+    operation: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str] = mapped_column(String(32))
+    resource_id: Mapped[str] = mapped_column(String(40))
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class IdempotencyKey(Base):
+    __tablename__ = "idempotency_keys"
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    operation: Mapped[str] = mapped_column(String(64))
+    resource_id: Mapped[str | None] = mapped_column(String(40))
+    result_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
