@@ -1,21 +1,36 @@
+<div align="center">
+
 # OpenGraphMemory
 
-OpenGraphMemory is a self-hosted platform for ingesting documents, extracting evidence-backed knowledge graphs, exploring graph structure, and accessing structured graph APIs.
+**Self-hosted knowledge graph extraction, temporal graph storage, and agent memory platform.**
 
-## Features
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791.svg)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
+[![Ruff](https://img.shields.io/badge/Linter-Ruff-D7FF64.svg)](https://docs.astral.sh/ruff/)
 
-- Project-isolated datasets and documents.
-- Streaming uploads with size, type, signature, and duplicate validation.
-- Durable parsing, chunking, graph extraction, cleanup, retry, and reconciliation jobs.
-- PostgreSQL-authoritative entities, relations, evidence, extraction runs, reviews, and community analytics.
-- Temporal PostgreSQL graph records with current and historical fact queries.
-- Bounded entity search, neighbors, paths, subgraphs, evidence, and graph inspection APIs.
-- **Agent Memory:** project-scoped episode, attempt, outcome, and pattern storage with temporal supersession, feedback scoring, and verified operational experience retrieval.
-- Interactive Graph Playground with community levels, filters, relation evidence, and raw JSON.
-- Async Python SDK for dataset, document, and structured graph operations.
-- Explicit extractor, parser, chunker, and object-store plugin contracts.
+[Quick Start](#quick-start) · [API Docs](#structured-graph-api) · [Agent Memory](#agent-memory-api) · [Python SDK](#python-sdk) · [Documentation](#documentation)
+
+</div>
+
+---
+
+Ingest documents, extract evidence-backed knowledge graphs, explore graph structure, and give AI agents persistent operational memory — all backed by PostgreSQL.
 
 ![OpenGraphMemory radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
+
+## Highlights
+
+- **Document ingestion** — streaming uploads with size, type, signature, and duplicate validation.
+- **Graph extraction** — durable parsing, chunking, entity/relation extraction, cleanup, retry, and reconciliation jobs.
+- **Temporal graph** — PostgreSQL-authoritative entities, relations, evidence, reviews, and community analytics with time-travel queries.
+- **Graph API** — bounded entity search, neighbors, paths, subgraphs, evidence inspection, and analytics refresh.
+- **Agent Memory** — episode, attempt, outcome, and pattern storage with temporal supersession, feedback scoring, and verified experience retrieval.
+- **Graph Playground** — interactive force-directed visualization with community levels, filters, and relation evidence.
+- **Python SDK** — async client for dataset, document, graph, and agent memory operations.
+- **Plugin system** — explicit extractor, parser, chunker, and object-store contracts.
 
 ## Architecture
 
@@ -33,11 +48,13 @@ Agent Memory -> episodes, attempts, outcomes, patterns
             -> verified experience search and retrieval
 ```
 
-- **PostgreSQL:** authoritative projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, analytics, and agent memory.
-- **S3-compatible object storage:** authoritative uploaded source documents.
-- **Redis:** transient ARQ queue.
-- **FastAPI:** authenticated dataset, document, structured graph, and agent memory API.
-- **React/Vite:** dataset management and Graph Playground.
+| Component | Role |
+|---|---|
+| **PostgreSQL** | Projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, analytics, agent memory |
+| **S3-compatible storage** | Uploaded source documents |
+| **Redis** | Transient ARQ queue |
+| **FastAPI** | Authenticated dataset, document, graph, and agent memory API |
+| **React/Vite** | Dashboard and Graph Playground |
 
 ## Requirements
 
