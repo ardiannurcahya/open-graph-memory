@@ -1,181 +1,275 @@
 # OpenGraphMemory
 
-OpenGraphMemory is a self-hosted platform for ingesting documents, extracting evidence-backed knowledge graphs, exploring graph structure, and accessing structured graph APIs.
+<p align="center">
+  <img src="docs/assets/graph-explorer.png" alt="OpenGraphMemory Knowledge Graph" width="100%">
+</p>
+
+<p align="center">
+  <strong>Self-hosted platform for knowledge graph extraction, exploration, and AI agent memory</strong>
+</p>
+
+<p align="center">
+  <a href="#quickstart">Quickstart</a> •
+  <a href="#features">Features</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#api">API</a> •
+  <a href="#documentation">Documentation</a> •
+  <a href="#contributing">Contributing</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
+  <img src="https://img.shields.io/badge/docker-compose-blue.svg" alt="Docker">
+  <img src="https://img.shields.io/badge/postgresql-16+-blue.svg" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/status-alpha-yellow.svg" alt="Status">
+</p>
+
+---
+
+## Why OpenGraphMemory?
+
+**OpenGraphMemory** transforms unstructured documents into queryable knowledge graphs and provides persistent memory for AI agents. It's designed for teams who need:
+
+- **Document Intelligence** — Extract entities, relations, and evidence from PDFs, Markdown, and HTML
+- **Knowledge Graphs** — Temporal graph storage with traversal, search, and community analytics
+- **AI Agent Memory** — Persistent operational memory across coding sessions with confidence scoring
+- **Self-hosted Control** — Full ownership of your data with no external dependencies
+
+### Use Cases
+
+| Use Case | Description |
+|----------|-------------|
+| **Codebase Intelligence** | Extract architecture knowledge from repos, docs, and ADRs |
+| **Research Knowledge Base** | Build explorable graphs from papers, specs, and documentation |
+| **AI Agent Memory** | Give Claude Code, Cursor, or custom agents persistent memory |
+| **Compliance & Audit** | Track decision provenance and evidence chains |
+
+---
 
 ## Features
 
-- Project-isolated datasets and documents.
-- Streaming uploads with size, type, signature, and duplicate validation.
-- Durable parsing, chunking, graph extraction, cleanup, retry, and reconciliation jobs.
-- PostgreSQL-authoritative entities, relations, evidence, extraction runs, reviews, and community analytics.
-- Temporal PostgreSQL graph records with current and historical fact queries.
-- Bounded entity search, neighbors, paths, subgraphs, evidence, and graph inspection APIs.
-- **Agent Memory:** project-scoped episode, attempt, outcome, and pattern storage with temporal supersession, feedback scoring, and verified operational experience retrieval.
-- Interactive Graph Playground with community levels, filters, relation evidence, and raw JSON.
-- Async Python SDK for dataset, document, and structured graph operations.
-- Explicit extractor, parser, chunker, and object-store plugin contracts.
+### Knowledge Graph Platform
 
-![OpenGraphMemory radial knowledge graph showing extracted entities and semantic relations](docs/assets/graph-explorer.png)
+- **Document Ingestion** — Streaming uploads with validation, deduplication, and multi-format parsing
+- **Graph Extraction** — Deterministic, NLP, and LLM-powered entity/relation extraction
+- **Temporal Storage** — PostgreSQL-authoritative graph with historical fact queries
+- **Graph Traversal** — Search, neighbors, paths, subgraphs, and evidence inspection
+- **Community Analytics** — Hierarchical community detection with density and importance metrics
+- **Interactive Playground** — React/Vite UI with force-directed visualization
+
+### AI Agent Memory
+
+- **Episode Tracking** — Record problem-solving sessions with domain, goals, and signatures
+- **Attempt Logging** — Hypothesis-driven actions with success/failed/partial outcomes
+- **Verified Outcomes** — CI, runtime, test, and build verifiers with confidence scoring
+- **Pattern Learning** — Aggregated experience keys with Bayesian confidence and promotion
+- **Temporal Supersession** — Version history with automatic lineage tracking
+- **9 Memory Types** — bugfix, decision, preference, procedure, research, trading, learning, fact, custom
+
+### Data Governance
+
+- **Legal Hold** — Compliance controls to prevent deletion of specific resources
+- **Retention Policy** — Automated data lifecycle with archive/delete actions
+- **Export/Import** — Full project data portability with credential sanitization
+- **Audit Trail** — Complete mutation logging for all operations
+- **Secret Redaction** — Automatic detection and redaction of API keys, tokens, passwords
+
+### Operational Tools
+
+- **CLI Commands** — backup, restore, integrity, vacuum, fts-rebuild, checkpoint
+- **Health Monitoring** — Liveness, readiness, and Prometheus metrics endpoints
+- **Graceful Shutdown** — Clean process termination with connection draining
+
+### MCP Integration
+
+- **Streamable HTTP** — Native MCP endpoint at `/mcp` with session management
+- **stdio Server** — Direct agent integration without network overhead
+- **6 MCP Tools** — memory_observe, memory_commit, memory_recall, memory_feedback, memory_forget, memory_inspect
+
+---
 
 ## Architecture
 
-```text
-Browser -> Caddy -> FastAPI -> PostgreSQL
-                         |-> S3-compatible object storage
-                         `-> Redis -> ARQ worker
-
-Upload -> parse -> chunk -> extract entities/relations/evidence
-       -> persist authoritative temporal graph records
-       -> refresh hierarchical community analytics
-
-Agent Memory -> episodes, attempts, outcomes, patterns
-            -> temporal supersession and feedback scoring
-            -> verified experience search and retrieval
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    OpenGraphMemory Stack                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Browser ──► Caddy ──► FastAPI ──► PostgreSQL              │
+│                                  ├──► S3 Object Storage     │
+│                                  └──► Redis ──► ARQ Worker  │
+│                                                             │
+│   Upload ──► Parse ──► Chunk ──► Extract                    │
+│          ──► Persist Temporal Graph                         │
+│          ──► Refresh Community Analytics                    │
+│                                                             │
+│   Agent Memory ──► Episodes, Attempts, Outcomes, Patterns   │
+│                ──► Temporal Supersession                    │
+│                ──► Verified Experience Retrieval            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-- **PostgreSQL:** authoritative projects, datasets, documents, chunks, graph records, evidence, reviews, jobs, outboxes, analytics, and agent memory.
-- **S3-compatible object storage:** authoritative uploaded source documents.
-- **Redis:** transient ARQ queue.
-- **FastAPI:** authenticated dataset, document, structured graph, and agent memory API.
-- **React/Vite:** dataset management and Graph Playground.
+| Component | Purpose |
+|-----------|---------|
+| **PostgreSQL** | Authoritative storage for projects, datasets, documents, graph records, evidence, analytics, and agent memory |
+| **S3-compatible** | Object storage for uploaded source documents |
+| **Redis** | Transient queue for ARQ background workers |
+| **FastAPI** | Authenticated REST API with OpenAPI documentation |
+| **React/Vite** | Dashboard and Graph Playground UI |
 
-## Requirements
+---
 
-Local stack: Docker Engine, Docker Compose v2, and at least 4 GB free RAM.
+## Quickstart
 
-Host development: Python 3.12+, `uv`, Node.js 22+, and npm.
+### Prerequisites
 
-## Quick Start
+- Docker Engine and Docker Compose v2
+- At least 4 GB free RAM
+
+### Installation
 
 ```sh
+# Clone repository
 git clone https://github.com/ardiannurcahya/open-graph-memory.git
 cd open-graph-memory
+
+# Configure environment
 cp .env.example .env
-```
+# Edit .env and replace all 'change-me' values
 
-Replace every `change-me` value in `.env`, then start stack:
-
-```sh
+# Start stack
 docker compose -f deployments/docker-compose.yml config --quiet
 docker compose -f deployments/docker-compose.yml up -d
+
+# Verify health
 curl -fsS http://localhost:3000/api/health
 curl -fsS http://localhost:3000/api/ready
 ```
 
-Open:
+### Access Points
 
-- Dashboard and Graph Playground: `http://localhost:3000`
-- OpenAPI: `http://localhost:3000/api/docs`
-- Metrics: `http://localhost:3000/api/metrics`
+| Service | URL |
+|---------|-----|
+| Dashboard & Graph Playground | http://localhost:3000 |
+| API Documentation (OpenAPI) | http://localhost:3000/api/docs |
+| Prometheus Metrics | http://localhost:3000/api/metrics |
 
-Stop without deleting data:
+### Stop & Cleanup
 
 ```sh
+# Stop without deleting data
 docker compose -f deployments/docker-compose.yml down
-```
 
-Delete local volumes only when data loss is intended:
-
-```sh
+# Delete volumes (data loss intended)
 docker compose -f deployments/docker-compose.yml down -v
 ```
 
-## Configuration
+---
 
-Important variables:
+## API
 
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | PostgreSQL application and migration connection |
-| `REDIS_URL` | ARQ queue |
-| `ADMIN_API_KEY` | Project-creation credential |
-| `S3_ENDPOINT_URL` | S3-compatible endpoint |
-| `S3_ACCESS_KEY` | Object-storage access key |
-| `S3_SECRET_KEY` | Object-storage secret key |
-| `GRAPH_EXTRACTOR_PROVIDER` | `deterministic`, `nlp`, or `openai` |
-| `GRAPH_EXTRACTOR_MODEL` | Extraction model identifier |
-| `OPENAI_GRAPH_EXTRACTOR_BASE_URL` | OpenAI-compatible extraction endpoint |
-| `OPENAI_API_KEY` | Extraction provider credential |
+### Authentication
 
-Deterministic and local NLP extraction need no external model credentials. NLP extraction recognizes conservative explicit active-sentence relations without co-occurrence edges. Production requires OpenAI-compatible graph extraction over HTTPS. See [Service and Provider Configuration](docs/service-configuration.md).
-
-Never commit `.env` or credentials.
-
-## Structured Graph API
-
-Project resources require:
+Project resources require authentication headers:
 
 ```text
 X-Project-Id: <project-id>
 X-Api-Key: <project-api-key>
 ```
 
-Typical flow:
+### Core Endpoints
 
-1. Create project with admin credentials.
-2. Create dataset and upload document.
-3. Wait for ingestion and graph extraction to complete.
-4. Search entities or inspect dataset graph.
-5. Traverse neighbors, paths, or bounded subgraphs.
-6. Inspect source evidence and review relation assertions.
-7. Refresh community analytics when graph changes.
+#### Knowledge Graph
 
-Core endpoints:
-
-```text
-GET  /v1/datasets/{dataset_id}/graph
-GET  /v1/datasets/{dataset_id}/entities/search?q={text}
-GET  /v1/entities/{entity_id}
-GET  /v1/entities/{entity_id}/neighbors
-GET  /v1/datasets/{dataset_id}/graph/path
-GET  /v1/datasets/{dataset_id}/graph/subgraph
-GET  /v1/evidence/{evidence_id}
-PATCH /v1/relations/{relation_id}/review
-POST /v1/datasets/{dataset_id}/analytics/refresh
-GET  /v1/datasets/{dataset_id}/graph/explorer
+```http
+GET  /v1/datasets/{dataset_id}/graph          # Get dataset graph
+GET  /v1/datasets/{dataset_id}/entities/search # Search entities
+GET  /v1/entities/{entity_id}                  # Get entity details
+GET  /v1/entities/{entity_id}/neighbors        # Get entity neighbors
+GET  /v1/datasets/{dataset_id}/graph/path      # Find path between entities
+GET  /v1/datasets/{dataset_id}/graph/subgraph  # Get bounded subgraph
+GET  /v1/evidence/{evidence_id}                # Get evidence details
 ```
 
-Use OpenAPI at `/api/docs` for complete schemas, bounds, and parameters. See [Graph extraction](docs/graph-extraction.md) and [Hierarchical community analytics](docs/community-graphrag.md).
+#### Agent Memory
 
-## Agent Memory API
-
-Agent Memory provides project-scoped persistent memory for AI agents to record, retrieve, and curate operational experience.
-
-### Concepts
-
-- **Episodes:** individual problem-solving sessions with domain, title, goal, and problem signature.
-- **Attempts:** hypothesis-driven actions within an episode, with success/failed/partial outcomes.
-- **Outcomes:** final verified results with optional verifiers (CI, runtime, test, build) and metrics.
-- **Patterns:** aggregated experience keys derived from problem signatures, with confidence scoring and promotion.
-- **Temporal supersession:** episodes and patterns can be superseded by newer versions while preserving history.
-
-### Endpoints
-
-```text
-POST   /v1/agent-memory/episodes                          # Create episode
-GET    /v1/agent-memory/episodes                          # List episodes
-GET    /v1/agent-memory/episodes/{episode_id}             # Get episode with attempts
-POST   /v1/agent-memory/episodes/{episode_id}/attempts    # Append attempt
-POST   /v1/agent-memory/episodes/{episode_id}/outcomes    # Record outcome
-GET    /v1/agent-memory/search?q={query}                  # Search episodes
-POST   /v1/agent-memory/episodes/{episode_id}/feedback    # Score episode
-POST   /v1/agent-memory/episodes/{episode_id}/supersede   # Supersede episode
-POST   /v1/agent-memory/patterns/{pattern_key}/feedback   # Score pattern
-POST   /v1/agent-memory/patterns/{pattern_key}/supersede  # Supersede pattern
+```http
+POST /v1/agent-memory/episodes                 # Create episode
+GET  /v1/agent-memory/episodes                 # List episodes
+GET  /v1/agent-memory/episodes/{id}            # Get episode details
+POST /v1/agent-memory/episodes/{id}/attempts   # Append attempt
+POST /v1/agent-memory/episodes/{id}/outcomes   # Record outcome
+POST /v1/agent-memory/episodes/{id}/confidence # Apply confidence feedback
+GET  /v1/agent-memory/episodes/{id}/versions   # Get version history
+GET  /v1/agent-memory/search                   # Search episodes
+GET  /v1/agent-memory/types                    # List memory types
 ```
 
-### MCP Integration
+#### Data Governance
 
-OpenGraphMemory exposes Agent Memory through the [OGM Agent Bridge](https://github.com/ardiannurcahya/ogm-agent-bridge) MCP server for Claude Code, OpenCode, and Hermes:
+```http
+POST /v1/legal-holds                           # Create legal hold
+GET  /v1/legal-holds                           # List legal holds
+POST /v1/retention/preview                     # Preview retention
+POST /v1/retention/apply                       # Apply retention policy
+GET  /v1/audit-logs                            # Query audit logs
+GET  /v1/projects/{id}/export                  # Export project data
+POST /v1/projects/{id}/import                  # Import project data
+```
+
+#### MCP (Model Context Protocol)
+
+```http
+POST /mcp                                      # MCP Streamable HTTP endpoint
+```
+
+### Example: Record AI Agent Experience
+
+```bash
+# Create episode
+curl -X POST http://localhost:3000/v1/agent-memory/episodes \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "engineering",
+    "type": "bugfix",
+    "title": "Fix deployment failure",
+    "goal": "Resolve API startup crash",
+    "problem_signature": "api-deploy-failure",
+    "content": {
+      "summary": "Missing S3 credentials caused startup crash",
+      "root_cause": "S3_ENDPOINT_URL not set in environment",
+      "fix": "Added S3_ENDPOINT_URL to .env file",
+      "verified": true
+    },
+    "confidence": 0.9
+  }'
+
+# Search experience
+curl "http://localhost:3000/v1/agent-memory/search?q=deployment+S3" \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>"
+```
+
+---
+
+## MCP Integration
+
+Connect AI agents directly to OpenGraphMemory using the MCP protocol:
+
+### Claude Code / Cursor / OpenCode
 
 ```json
 {
-  "mcp": {
+  "mcpServers": {
     "ogm": {
-      "type": "local",
-      "command": ["uvx", "ogm-agent-bridge==0.1.7"],
-      "environment": {
-        "OGM_BASE_URL": "https://your-instance.example.com",
+      "command": "uvx",
+      "args": ["ogm-agent-bridge==0.1.7"],
+      "env": {
+        "OGM_BASE_URL": "http://localhost:3000",
         "OGM_API_KEY": "<project-api-key>",
         "OGM_PROJECT_ID": "<project-uuid>",
         "OGM_PERMISSION_PROFILE": "personal-safe"
@@ -185,144 +279,157 @@ OpenGraphMemory exposes Agent Memory through the [OGM Agent Bridge](https://gith
 }
 ```
 
-Permission profiles:
-- `read-only`: graph and agent memory retrieval.
-- `personal-safe`: reviewed document uploads and additive agent memory records.
-- `memory-curator`: memory feedback and supersession governance.
+### Permission Profiles
 
-### Example: Record Experience
+| Profile | Capabilities |
+|---------|--------------|
+| `read-only` | Graph and agent memory retrieval only |
+| `personal-safe` | Document uploads and additive memory records |
+| `memory-curator` | Memory feedback and supersession governance |
 
-```bash
-# Create episode
-curl -X POST https://your-instance.example.com/v1/agent-memory/episodes \
-  -H "X-Project-Id: <project-id>" \
-  -H "X-Api-Key: <api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"domain":"engineering","title":"Fix deployment","goal":"Resolve API startup failure","problem_signature":"api-deploy-failure"}'
+---
 
-# Append attempt
-curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode_id>/attempts \
-  -H "X-Project-Id: <project-id>" \
-  -H "X-Api-Key: <api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"hypothesis":"Missing S3 credentials","result":"success","notes":"Added S3_ENDPOINT_URL env var"}'
+## Configuration
 
-# Record outcome
-curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode_id>/outcomes \
-  -H "X-Project-Id: <project-id>" \
-  -H "X-Api-Key: <api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"status":"success","summary":"Fixed by configuring S3_ENDPOINT_URL","lesson":"Always check env var names match config model"}'
+### Environment Variables
 
-# Search experience
-curl "https://your-instance.example.com/v1/agent-memory/search?q=deployment+S3" \
-  -H "X-Project-Id: <project-id>" \
-  -H "X-Api-Key: <api-key>"
-```
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `REDIS_URL` | Redis connection string | Required |
+| `ADMIN_API_KEY` | Admin credential for project creation | Required |
+| `S3_ENDPOINT_URL` | S3-compatible endpoint | Required |
+| `S3_ACCESS_KEY` | Object storage access key | Required |
+| `S3_SECRET_KEY` | Object storage secret key | Required |
+| `GRAPH_EXTRACTOR_PROVIDER` | `deterministic`, `nlp`, or `openai` | `deterministic` |
+| `GRAPH_EXTRACTOR_MODEL` | Extraction model identifier | — |
+| `OPENAI_API_KEY` | OpenAI API key for extraction | — |
 
-See [OGM Agent Bridge documentation](https://github.com/ardiannurcahya/ogm-agent-bridge) for MCP tool reference.
+See [Service Configuration](docs/service-configuration.md) for complete reference.
 
-## Graph Playground
-
-Open `http://localhost:3000`, enter project credentials, and select dataset. Playground provides:
-
-- force-directed graph inspection with labels, filters, and community colors;
-- detail, thematic, and overview community levels;
-- entity search and bounded neighbor traversal;
-- path and subgraph tools;
-- relation evidence and raw JSON inspection;
-- analytics refresh and node inspector.
-
-See [Dashboard and Graph Playground](docs/dashboard.md).
-
-## Python SDK
-
-SDK source lives in `packages/sdk`. Install development dependencies with `uv sync --frozen --group dev`.
-
-SDK covers project, dataset, document, structured graph, and agent memory operations. See [Python SDK](docs/sdk-python.md).
-
-## Provider Plugins
-
-Public contracts live in `packages/contracts`. Implement required protocol, register provider explicitly through application plugin registry, then run conformance tests. Dynamic package entry-point discovery is not enabled.
-
-See [Plugin system](docs/plugin-system.md).
+---
 
 ## Development
 
+### Backend (Python)
+
 ```sh
+# Install dependencies
 uv sync --frozen --group dev
-uv run ruff check .
-uv run mypy
-uv run pytest
+
+# Run checks
+uv run ruff check .          # Lint
+uv run mypy                  # Type check
+uv run pytest                # Tests
+
+# Full gate
+scripts/check.sh
 ```
 
-Web gates:
+### Frontend (React/TypeScript)
 
 ```sh
 cd apps/web
+
+# Install dependencies
 npm ci
+
+# Run checks
 npm run lint
 npm run typecheck
 npm test
 npm run build
 ```
 
-Full local gate: `scripts/check.sh`. Runtime gates create and destroy their own resources; run them only on CI or machines with enough RAM.
-
-## Operations
-
-- `GET /api/health`: process liveness.
-- `GET /api/ready`: PostgreSQL, Redis, and object-storage readiness.
-- `GET /api/metrics`: Prometheus metrics; restrict public access.
-- Back up PostgreSQL and object storage. Redis is transient; PostgreSQL outboxes republish pending work.
-- Run migrations as explicit release step after verified backup.
-- Monitor readiness, queues, graph jobs, latency, RAM, swap, disk, and restarts.
-
-Production procedure: [Deployment](docs/deployment.md). Operations: [runbook](docs/runbooks/operations.md). Backup and restore: [runbook](docs/runbooks/backup-restore.md).
-
-## Troubleshooting
-
-API healthy but not ready:
+### Database Migrations
 
 ```sh
-curl -s http://localhost:3000/api/ready
-docker compose -f deployments/docker-compose.yml ps
-docker compose -f deployments/docker-compose.yml logs api postgres redis rustfs
+# Create migration
+uv run alembic revision --autogenerate -m "description"
+
+# Apply migrations
+scripts/migrate.sh
 ```
 
-Document or graph job stuck:
-
-```sh
-docker compose -f deployments/docker-compose.yml logs worker
-```
-
-Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Expired leases are reconciled by the worker maintenance loop.
+---
 
 ## Documentation
 
-- [Local quickstart](docs/quickstart.md)
-- [Architecture](docs/architecture.md)
-- [Dataset upload](docs/dataset-upload.md)
-- [Graph extraction](docs/graph-extraction.md)
-- [Hierarchical community analytics](docs/community-graphrag.md)
-- [Agent Memory](#agent-memory-api) (see above)
-- [Dashboard and Graph Playground](docs/dashboard.md)
-- [Structured Graph Python SDK](docs/sdk-python.md)
-- [Plugin system](docs/plugin-system.md)
-- [Service configuration](docs/service-configuration.md)
-- [Deployment](docs/deployment.md)
-- [Operations runbook](docs/runbooks/operations.md)
-- [Backup/restore runbook](docs/runbooks/backup-restore.md)
-- [Security audit](docs/security-final-audit.md)
+| Document | Description |
+|----------|-------------|
+| [Quickstart](docs/quickstart.md) | Local development setup |
+| [Architecture](docs/architecture.md) | System design and components |
+| [Dataset Upload](docs/dataset-upload.md) | Document ingestion guide |
+| [Graph Extraction](docs/graph-extraction.md) | Entity/relation extraction |
+| [Community Analytics](docs/community-graphrag.md) | Hierarchical community detection |
+| [Agent Memory](#agent-memory-api) | AI agent memory API |
+| [Dashboard](docs/dashboard.md) | Graph Playground UI |
+| [Python SDK](docs/sdk-python.md) | SDK reference |
+| [Plugin System](docs/plugin-system.md) | Provider plugins |
+| [Service Configuration](docs/service-configuration.md) | Environment variables |
+| [Deployment](docs/deployment.md) | Production deployment |
+| [Operations Runbook](docs/runbooks/operations.md) | Operational procedures |
+| [Backup/Restore](docs/runbooks/backup-restore.md) | Data backup guide |
+| [Security Audit](docs/security-final-audit.md) | Security review |
+
+---
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Quick Contribution Guide
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Setup
+
+```sh
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/open-graph-memory.git
+cd open-graph-memory
+
+# Install dependencies
+uv sync --frozen --group dev
+cd apps/web && npm ci && cd ../..
+
+# Run tests
+uv run pytest
+cd apps/web && npm test && cd ../..
+```
+
+---
 
 ## Current Limitations
 
-- Analytics refresh is synchronous and bounded to 5,000 entities and 20,000 relations per dataset.
-- Dynamic plugin entry-point discovery is not enabled.
-- JavaScript/TypeScript SDK is not provided.
-- Small-VPS limits are targets, not measured capacity guarantees.
-- Production use requires load tests, restore drills, external monitoring, secret management, and environment-specific security review.
+- Analytics refresh is synchronous and bounded to 5,000 entities and 20,000 relations per dataset
+- Dynamic plugin entry-point discovery is not enabled
+- JavaScript/TypeScript SDK is not provided
+- Small-VPS limits are targets, not measured capacity guarantees
+- Production use requires load tests, restore drills, external monitoring, secret management, and environment-specific security review
+
+---
 
 ## License
 
-See repository license file if present.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Acknowledgments
+
+- [FastAPI](https://fastapi.tiangolo.com/) — Web framework
+- [SQLAlchemy](https://www.sqlalchemy.org/) — ORM
+- [React](https://react.dev/) — Frontend UI
+- [Vite](https://vitejs.dev/) — Build tool
+- [PostgreSQL](https://www.postgresql.org/) — Database
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/ardiannurcahya">Ardian Nurcahya</a>
+</p>
