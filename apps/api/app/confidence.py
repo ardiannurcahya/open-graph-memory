@@ -1,6 +1,6 @@
 """Confidence feedback system for memory management."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import HTTPException
@@ -50,7 +50,7 @@ async def apply_confidence_feedback(
     content: dict | None = None,
     confidence: float | None = None,
 ) -> AgentMemoryEpisode:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if kind == "confirm":
         episode.confidence = calculate_confidence(episode.confidence, kind)
@@ -114,7 +114,7 @@ async def merge_memories(
     if target.id == source.id:
         raise HTTPException(400, "cannot merge with itself")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     new_version = AgentMemoryVersion(
         id=f"ver_{source.id}_v{source.version}",
@@ -126,7 +126,10 @@ async def merge_memories(
     db.add(new_version)
 
     source.content = content or target.content
-    source.confidence = confidence if confidence is not None else max(source.confidence, target.confidence)
+    source.confidence = (
+        confidence if confidence is not None
+        else max(source.confidence, target.confidence)
+    )
     source.version += 1
     source.updated_at = now
 
@@ -150,7 +153,7 @@ async def supersede_memory(
     if superseding.id == current.id:
         raise HTTPException(400, "cannot supersede itself")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     current.status = "superseded"
     current.superseded_by_id = superseding_id

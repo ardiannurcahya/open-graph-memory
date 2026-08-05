@@ -46,7 +46,12 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_agent_memory_episode_type",
         "agent_memory_episodes",
-        "type IN ('bugfix', 'decision', 'preference', 'procedure', 'research', 'trading', 'learning', 'fact', 'custom')",
+        (
+            "type IN ("
+            "'bugfix', 'decision', 'preference', 'procedure', "
+            "'research', 'trading', 'learning', 'fact', 'custom'"
+            ")"
+        ),
     )
 
     op.create_index(

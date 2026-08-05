@@ -2,7 +2,7 @@
 
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -34,7 +34,7 @@ def backup(out: str, fmt: str):
     out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     if out_path.is_dir():
         out_path = out_path / f"ogm_backup_{timestamp}.sql"
 
@@ -48,7 +48,7 @@ def backup(out: str, fmt: str):
         pg_dump_cmd.extend(["-f", str(out_path)])
 
     try:
-        result = subprocess.run(pg_dump_cmd, capture_output=True, text=True, check=True)
+        subprocess.run(pg_dump_cmd, capture_output=True, text=True, check=True)
         click.echo(f"Backup completed: {out_path}")
     except subprocess.CalledProcessError as e:
         click.echo(f"Backup failed: {e.stderr}", err=True)
@@ -87,10 +87,10 @@ def restore(from_file: str, apply: bool):
                 "-d", db_url.replace("+asyncpg", "").replace("postgresql://", ""),
                 str(from_path),
             ]
-            result = subprocess.run(pg_restore_cmd, capture_output=True, text=True, check=True)
+            subprocess.run(pg_restore_cmd, capture_output=True, text=True, check=True)
         else:
             with open(from_path) as f:
-                result = subprocess.run(
+                subprocess.run(
                     psql_cmd, stdin=f, capture_output=True, text=True, check=True
                 )
         click.echo("Restore completed")
@@ -202,11 +202,12 @@ def fts_rebuild():
         async with engine.connect() as conn:
             click.echo("Rebuilding FTS indexes...")
 
-            await conn.execute(text("""
-                UPDATE agent_memory_episodes
-                SET search_vector = to_tsvector('simple', title || ' ' || goal || ' ' || problem_signature)
-                WHERE search_vector IS NULL;
-            """))
+            await conn.execute(text(
+                "UPDATE agent_memory_episodes "
+                "SET search_vector = to_tsvector('simple', "
+                "title || ' ' || goal || ' ' || problem_signature) "
+                "WHERE search_vector IS NULL;"
+            ))
 
             await conn.execute(text("REINDEX INDEX ix_agent_memory_episodes_search;"))
 

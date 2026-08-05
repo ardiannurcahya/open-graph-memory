@@ -160,7 +160,10 @@ async def delete_legal_hold(hold_id: str, project: Project, db: Db) -> None:
 
 
 async def check_legal_hold(
-    db: AsyncSession, project_id: str, resource_ids: list[str], resource_types: list[str] | None = None
+    db: AsyncSession,
+    project_id: str,
+    resource_ids: list[str],
+    resource_types: list[str] | None = None,
 ) -> None:
     if not resource_ids:
         return

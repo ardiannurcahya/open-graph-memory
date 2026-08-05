@@ -3,19 +3,19 @@
 import asyncio
 import json
 import sys
-from typing import Any
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config import get_settings
 from app.mcp_server import MCPRequest, MCPResponse, handle_mcp_request
 
 
 class MCPStdioServer:
     def __init__(self, database_url: str, project_id: str, api_key: str):
         self.engine = create_async_engine(database_url, echo=False)
-        self.session_factory = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        self.session_factory = sessionmaker(
+            self.engine, class_=AsyncSession, expire_on_commit=False
+        )
         self.project_id = project_id
         self.api_key = api_key
 

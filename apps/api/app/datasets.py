@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
 from app.graph_cleanup import create_dataset_cleanup, mark_cleanup_ready
+from app.graph_helpers import normalize_dataset_id
 from app.models import Dataset, DatasetStatus, Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 
@@ -51,9 +52,7 @@ def view(item: Dataset) -> DatasetView:
 
 
 async def owned(db: AsyncSession, project: ProjectContext, dataset_id: str) -> Dataset:
-    # Accept both formats: with prefix (ds_xxx) or without (xxx)
-    if not dataset_id.startswith("ds_"):
-        dataset_id = f"ds_{dataset_id}"
+    dataset_id = normalize_dataset_id(dataset_id)
     item = await db.scalar(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project.project_id)
     )

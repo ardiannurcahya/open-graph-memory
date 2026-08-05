@@ -15,6 +15,7 @@ from app.auth import ProjectContext, require_project
 from app.datasets import owned
 from app.dependencies import get_session
 from app.graph_analytics import refresh_dataset_analytics, snapshot_hash
+from app.graph_helpers import supported_entity, supported_relation
 from app.graph_models import (
     CanonicalEntity,
     EntityAlias,
@@ -260,26 +261,6 @@ class ExplorerRelationPage(BaseModel):
 
 def entity_view(item: CanonicalEntity) -> EntityView:
     return EntityView.model_validate(item, from_attributes=True)
-
-
-def supported_relation() -> ColumnElement[bool]:
-    """Relation needs authoritative citation and must not be rejected."""
-    return (RelationAssertion.review_state != ReviewState.REJECTED) & exists().where(
-        GraphEvidence.relation_id == RelationAssertion.id
-    )
-
-
-def supported_entity() -> ColumnElement[bool]:
-    """Entity needs direct evidence or endpoint of cited relation."""
-    cited_endpoint = exists().where(
-        GraphEvidence.relation_id == RelationAssertion.id,
-        RelationAssertion.review_state != ReviewState.REJECTED,
-        or_(
-            RelationAssertion.source_entity_id == CanonicalEntity.id,
-            RelationAssertion.target_entity_id == CanonicalEntity.id,
-        ),
-    )
-    return or_(exists().where(GraphEvidence.entity_id == CanonicalEntity.id), cited_endpoint)
 
 
 def temporal_filter(

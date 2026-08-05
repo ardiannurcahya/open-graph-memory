@@ -1,12 +1,11 @@
 """Tests for audit trail API."""
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.audit import create_audit_log
 from app.main import app
 from app.models import ApiKey, AuditLog, Project
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
 

@@ -1,7 +1,7 @@
 """Idempotency key management for duplicate prevention."""
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ async def check_idempotency(
         )
     )
     if existing:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
+        cutoff = datetime.now(UTC) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
         if existing.created_at >= cutoff:
             return existing.resource_id
         await db.delete(existing)
@@ -57,7 +57,7 @@ async def store_idempotency(
 
 
 async def cleanup_expired_keys(db: AsyncSession) -> int:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
+    cutoff = datetime.now(UTC) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
     result = await db.execute(
         delete(IdempotencyKey).where(IdempotencyKey.created_at < cutoff)
     )

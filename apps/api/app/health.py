@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import boto3
 from botocore.config import Config
@@ -10,6 +11,7 @@ from app.config import get_settings
 from app.db import engine
 from app.observability import render_metrics
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -33,6 +35,7 @@ async def checks() -> dict[str, bool]:
                 await conn.execute(text("SELECT 1"))
             return True
         except Exception:
+            logger.exception("postgres readiness check failed")
             return False
 
     async def redis() -> bool:
@@ -42,6 +45,7 @@ async def checks() -> dict[str, bool]:
         try:
             return bool(await client.ping())
         except Exception:
+            logger.exception("redis readiness check failed")
             return False
         finally:
             await client.aclose()
@@ -66,6 +70,7 @@ async def checks() -> dict[str, bool]:
         try:
             return await asyncio.wait_for(asyncio.to_thread(bucket_exists), timeout=timeout)
         except Exception:
+            logger.exception("s3 readiness check failed")
             return False
 
     values = await asyncio.gather(

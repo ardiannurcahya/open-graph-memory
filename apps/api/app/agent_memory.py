@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +17,7 @@ from app.confidence import (
     supersede_memory,
 )
 from app.dependencies import get_session
+from app.idempotency import check_idempotency, store_idempotency
 from app.memory_types import list_memory_types, validate_typed_content
 from app.models import (
     AgentMemoryAttempt,
@@ -27,17 +28,16 @@ from app.models import (
     AgentMemoryPatternMember,
     AgentMemoryRetrievalAudit,
     AgentMemoryVerifier,
-    AgentMemoryVersion,
 )
 from app.redaction import sanitize_input
-from app.idempotency import check_idempotency, store_idempotency
 
 router = APIRouter(prefix="/v1/agent-memory", tags=["agent-memory"])
 Project = Annotated[ProjectContext, Depends(require_project)]
 Db = Annotated[AsyncSession, Depends(get_session)]
 Domain = Literal["engineering", "trading", "research", "operations", "custom"]
 MemoryType = Literal[
-    "bugfix", "decision", "preference", "procedure", "research", "trading", "learning", "fact", "custom"
+    "bugfix", "decision", "preference", "procedure",
+    "research", "trading", "learning", "fact", "custom",
 ]
 EpisodeStatus = Literal["open", "active", "degraded", "superseded", "rejected", "archived"]
 OutcomeStatus = Literal["success", "failed", "partial", "cancelled"]
@@ -741,6 +741,7 @@ async def memory_graph(
     }
 
     seen_episodes: set[str] = set()
+    seen_attempts: set[str] = set()
     seen_patterns: set[str] = set()
     seen_verifiers: set[str] = set()
     seen_evidence: set[str] = set()
@@ -778,39 +779,7 @@ async def memory_graph(
             )
 
     if not episode_ids:
-    return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
-
-
-@router.delete("/episodes/{episode_id}", status_code=204)
-async def hard_delete_episode(
-    episode_id: str, project: Project, db: Db, mode: str = "archive"
-) -> None:
-    if mode not in ("archive", "invalidate", "hard"):
-        raise HTTPException(400, "mode must be archive, invalidate, or hard")
-
-    episode = await owned_episode(db, project, episode_id, lock=True)
-
-    if mode == "archive":
-        episode.status = "archived"
-        episode.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-        return
-
-    if mode == "invalidate":
-        episode.status = "rejected"
-        episode.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-        return
-
-    from app.legal_hold import check_legal_hold
-
-    try:
-        await check_legal_hold(db, str(project.project_id), [episode_id])
-    except Exception:
-        raise HTTPException(423, "episode is under legal hold")
-
-    await db.delete(episode)
-    await db.commit()
+        return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
 
     attempts = (
         await db.scalars(
@@ -820,6 +789,9 @@ async def hard_delete_episode(
         )
     ).all()
     for att in attempts:
+        if att.id in seen_attempts:
+            continue
+        seen_attempts.add(att.id)
         nodes.append(
             MemoryGraphNode(
                 id=att.id,
@@ -846,7 +818,9 @@ async def hard_delete_episode(
 
     outcomes = (
         await db.scalars(
-            select(AgentMemoryOutcome).where(AgentMemoryOutcome.episode_id.in_(episode_ids))
+            select(AgentMemoryOutcome).where(
+                AgentMemoryOutcome.episode_id.in_(episode_ids)
+            )
         )
     ).all()
     pattern_keys: set[str] = set()
@@ -922,7 +896,9 @@ async def hard_delete_episode(
     if outcome_ids:
         verifiers = (
             await db.scalars(
-                select(AgentMemoryVerifier).where(AgentMemoryVerifier.outcome_id.in_(outcome_ids))
+                select(AgentMemoryVerifier).where(
+                    AgentMemoryVerifier.outcome_id.in_(outcome_ids)
+                )
             )
         ).all()
         for ver in verifiers:
@@ -955,7 +931,9 @@ async def hard_delete_episode(
 
     evidence = (
         await db.scalars(
-            select(AgentMemoryEvidence).where(AgentMemoryEvidence.episode_id.in_(episode_ids))
+            select(AgentMemoryEvidence).where(
+                AgentMemoryEvidence.episode_id.in_(episode_ids)
+            )
         )
     ).all()
     for ev in evidence:
@@ -981,6 +959,38 @@ async def hard_delete_episode(
         stats["evidence"] += 1
 
     return MemoryGraphView(nodes=nodes, edges=edges, stats=stats)
+
+
+@router.delete("/episodes/{episode_id}", status_code=204)
+async def hard_delete_episode(
+    episode_id: str, project: Project, db: Db, mode: str = "archive"
+) -> None:
+    if mode not in ("archive", "invalidate", "hard"):
+        raise HTTPException(400, "mode must be archive, invalidate, or hard")
+
+    episode = await owned_episode(db, project, episode_id, lock=True)
+
+    if mode == "archive":
+        episode.status = "archived"
+        episode.updated_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    if mode == "invalidate":
+        episode.status = "rejected"
+        episode.updated_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    from app.legal_hold import check_legal_hold
+
+    try:
+        await check_legal_hold(db, str(project.project_id), [episode_id])
+    except Exception as err:
+        raise HTTPException(423, "episode is under legal hold") from err
+
+    await db.delete(episode)
+    await db.commit()
 
 
 @router.post("/episodes/{episode_id}/confidence", response_model=EpisodeView)

@@ -1,18 +1,18 @@
 """Tests for retention policy API."""
 
-import pytest
-from datetime import datetime, timedelta, timezone
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from app.main import app
 from app.models import AgentMemoryEpisode, ApiKey, Project, RetentionPolicy
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_preview_retention(session: AsyncSession, project: Project, api_key: ApiKey):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for i in range(5):
         episode = AgentMemoryEpisode(
             id=f"mem_old_{i:03d}",
@@ -46,7 +46,7 @@ async def test_preview_retention(session: AsyncSession, project: Project, api_ke
 
 
 async def test_apply_retention(session: AsyncSession, project: Project, api_key: ApiKey):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for i in range(3):
         episode = AgentMemoryEpisode(
             id=f"mem_apply_{i:03d}",

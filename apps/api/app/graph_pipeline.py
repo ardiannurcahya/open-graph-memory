@@ -2,13 +2,13 @@
 
 import hashlib
 import json
-import logging
 from asyncio import Semaphore, gather, to_thread
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, cast
 
+import structlog
 from open_graph_contracts import PluginConfig, SecretValue
 from open_graph_core.extraction import (
     BatchExtractionResult,
@@ -55,7 +55,7 @@ from app.ingestion import sanitized_error
 from app.models import Chunk, Document, DocumentStatus
 from app.plugin_registry import create_extractor
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class _ContextualExtractor(Protocol):

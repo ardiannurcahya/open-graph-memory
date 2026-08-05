@@ -1,7 +1,7 @@
 """Export/Import API for project data lifecycle."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,15 +11,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_admin_key, require_project
+from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
 from app.models import (
     AgentMemoryAttempt,
     AgentMemoryEpisode,
     AgentMemoryEvidence,
     AgentMemoryOutcome,
-    AgentMemoryPattern,
-    AgentMemoryVerifier,
 )
 
 router = APIRouter(prefix="/v1/projects", tags=["export-import"])
@@ -126,7 +124,7 @@ async def export_project(project_id: str, project: Project, db: Db) -> Streaming
     payload = {
         "metadata": {
             "project_id": str(project.project_id),
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "schema_version": "1.0.0",
             "episode_count": len(export_episodes),
         },
@@ -145,7 +143,6 @@ async def export_project(project_id: str, project: Project, db: Db) -> Streaming
 async def import_project(
     project_id: str, body: ImportInput, project: Project, db: Db
 ) -> ImportResult:
-    metadata = body.data.get("metadata", {})
     episodes_data = body.data.get("episodes", [])
 
     if not isinstance(episodes_data, list):

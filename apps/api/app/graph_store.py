@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db import engine
-from app.graph_models import CanonicalEntity, RelationAssertion, ReviewState
+from app.graph_helpers import supported_entity, supported_relation
+from app.graph_models import CanonicalEntity, RelationAssertion
 from app.graph_models import GraphEvidence as GraphEvidenceModel
 from app.retrieval import GraphEvidence
 
@@ -135,7 +136,7 @@ class GraphStore:
                             CanonicalEntity.canonical_name.in_(seed_entity_names),
                             CanonicalEntity.valid_until.is_(None),
                             CanonicalEntity.superseded_by.is_(None),
-                            supported_entity_subject(),
+                            supported_entity(),
                         )
                     )
                 )
@@ -166,7 +167,7 @@ class GraphStore:
                                 RelationAssertion.dataset_id == dataset_id,
                                 RelationAssertion.valid_until.is_(None),
                                 RelationAssertion.superseded_by.is_(None),
-                                supported_relation_subject(),
+                                supported_relation(),
                             )
                         )
                     )
@@ -194,7 +195,7 @@ class GraphStore:
                             RelationAssertion.dataset_id == dataset_id,
                             RelationAssertion.valid_until.is_(None),
                             RelationAssertion.superseded_by.is_(None),
-                            supported_relation_subject(),
+                            supported_relation(),
                             or_(
                                 RelationAssertion.source_entity_id.in_(frontier),
                                 RelationAssertion.target_entity_id.in_(frontier),
@@ -264,28 +265,6 @@ class GraphStore:
             ]
 
 
-def supported_relation_subject() -> ColumnElement[bool]:
-    """Require relation evidence and exclude reviewer-rejected relations."""
-    return (RelationAssertion.review_state != ReviewState.REJECTED) & exists().where(
-        GraphEvidenceModel.relation_id == RelationAssertion.id
-    )
-
-
-def supported_entity_subject() -> ColumnElement[bool]:
-    """Require direct entity evidence or an endpoint of a cited relation."""
-    cited_endpoint = exists().where(
-        GraphEvidenceModel.relation_id == RelationAssertion.id,
-        RelationAssertion.review_state != ReviewState.REJECTED,
-        or_(
-            RelationAssertion.source_entity_id == CanonicalEntity.id,
-            RelationAssertion.target_entity_id == CanonicalEntity.id,
-        ),
-    )
-    return or_(
-        exists().where(GraphEvidenceModel.entity_id == CanonicalEntity.id), cited_endpoint
-    )
-
-
 async def supported_entity_ids(
     db: AsyncSession,
     project_id: str,
@@ -302,7 +281,7 @@ async def supported_entity_ids(
             CanonicalEntity.dataset_id == dataset_id,
             CanonicalEntity.valid_until.is_(None),
             CanonicalEntity.superseded_by.is_(None),
-            supported_entity_subject(),
+            supported_entity(),
         )
     )
     return set(rows)

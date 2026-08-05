@@ -1,12 +1,12 @@
 """Retention policy API for data lifecycle management."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
@@ -59,8 +59,10 @@ def policy_id() -> str:
 
 
 @router.post("/preview", response_model=RetentionPreviewResponse)
-async def preview_retention(body: RetentionInput, project: Project, db: Db) -> RetentionPreviewResponse:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=body.older_than_days)
+async def preview_retention(
+    body: RetentionInput, project: Project, db: Db
+) -> RetentionPreviewResponse:
+    cutoff = datetime.now(UTC) - timedelta(days=body.older_than_days)
 
     query = select(AgentMemoryEpisode).where(
         AgentMemoryEpisode.project_id == project.project_id,
@@ -91,7 +93,7 @@ async def preview_retention(body: RetentionInput, project: Project, db: Db) -> R
 
 @router.post("/apply", response_model=RetentionApplyResponse)
 async def apply_retention(body: RetentionInput, project: Project, db: Db) -> RetentionApplyResponse:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=body.older_than_days)
+    cutoff = datetime.now(UTC) - timedelta(days=body.older_than_days)
     pid = policy_id()
 
     policy = RetentionPolicy(
@@ -134,7 +136,7 @@ async def apply_retention(body: RetentionInput, project: Project, db: Db) -> Ret
             continue
         if body.action == "archive":
             item.status = "archived"
-            item.updated_at = datetime.now(timezone.utc)
+            item.updated_at = datetime.now(UTC)
         else:
             await db.delete(item)
         affected += 1

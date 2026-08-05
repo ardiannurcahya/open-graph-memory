@@ -269,7 +269,10 @@ class AgentMemoryEpisode(Base):
             name="ck_agent_memory_episode_status",
         ),
         CheckConstraint(
-            "type IN ('bugfix', 'decision', 'preference', 'procedure', 'research', 'trading', 'learning', 'fact', 'custom')",
+            "type IN ("
+            "'bugfix', 'decision', 'preference', 'procedure', "
+            "'research', 'trading', 'learning', 'fact', 'custom'"
+            ")",
             name="ck_agent_memory_episode_type",
         ),
         Index("ix_agent_memory_episodes_scope_created", "project_id", "created_at"),
