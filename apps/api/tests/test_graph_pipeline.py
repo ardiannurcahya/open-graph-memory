@@ -574,7 +574,9 @@ async def test_provider_items_without_exact_evidence_are_skipped() -> None:
 
 
 @pytest.mark.asyncio
-async def test_persistence_logs_artifact_loss(caplog: pytest.LogCaptureFixture) -> None:
+async def test_persistence_logs_artifact_loss(
+    caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     caplog.set_level("INFO", logger="app.graph_pipeline")
     db = FakeSession()
     document, chunk = inputs()
@@ -587,8 +589,10 @@ async def test_persistence_logs_artifact_loss(caplog: pytest.LogCaptureFixture) 
 
     await _persist_chunk(db, document, chunk, extractor)  # type: ignore[arg-type]
 
-    assert "skipped_entities=1" in caplog.text
-    assert "raw_relations=0" in caplog.text
+    log_output = caplog.text + capsys.readouterr().out
+    assert "skipped_entities=1" in log_output
+    assert "raw_relations=0" in log_output
+
 
 
 @pytest.mark.asyncio

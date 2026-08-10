@@ -39,9 +39,12 @@ def audit_id() -> str:
     return f"al_{uuid7()}"
 
 
+from uuid import UUID
+
+
 async def create_audit_log(
     db: AsyncSession,
-    project_id: str,
+    project_id: str | UUID,
     actor_type: str,
     actor_id: str | None,
     operation: str,
@@ -49,9 +52,11 @@ async def create_audit_log(
     resource_id: str,
     metadata: dict[str, object] | None = None,
 ) -> AuditLog:
+    p_uuid = UUID(project_id) if isinstance(project_id, str) else project_id
     log = AuditLog(
         id=audit_id(),
-        project_id=project_id,
+        project_id=p_uuid,
+
         actor_type=actor_type,
         actor_id=actor_id,
         operation=operation,

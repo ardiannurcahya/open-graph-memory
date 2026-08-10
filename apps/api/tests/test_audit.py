@@ -22,6 +22,7 @@ async def test_create_audit_log(session: AsyncSession, project: Project):
         metadata={"title": "Test episode"},
     )
     await session.commit()
+    await session.refresh(log)
 
     assert log.id.startswith("al_")
     assert log.operation == "episode.create"

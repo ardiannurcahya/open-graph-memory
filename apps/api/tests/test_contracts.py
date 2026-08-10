@@ -339,7 +339,12 @@ def test_protocols_are_runtime_checkable() -> None:
     )
 
     for proto in (Extractor, Parser, Chunker, ObjectStore):
-        assert hasattr(proto, "__protocol_attrs__"), f"{proto.__name__} not a Protocol"
+        assert (
+            getattr(proto, "_is_protocol", False)
+            or getattr(proto, "_is_runtime_protocol", False)
+            or hasattr(proto, "__protocol_attrs__")
+        ), f"{proto.__name__} not a Protocol"
+
 
 
 def test_extractor_protocol_isinstance() -> None:

@@ -76,7 +76,9 @@ async def create_legal_hold(body: LegalHoldInput, project: Project, db: Db) -> L
     )
     db.add(item)
     await db.commit()
+    await db.refresh(item)
     return LegalHoldView(
+
         id=item.id,
         project_id=str(item.project_id),
         resource_type=item.resource_type,

@@ -1,10 +1,8 @@
 from pathlib import Path
 
-from app.graph_store import (
-    current_evidence_subject,
-    supported_entity_subject,
-    supported_relation_subject,
-)
+from app.graph_helpers import supported_entity, supported_relation
+from app.graph_store import current_evidence_subject
+
 from sqlalchemy.dialects import postgresql
 
 
@@ -34,12 +32,12 @@ def test_multi_frontier_traversal_uses_the_matched_endpoint_as_path_parent() -> 
 
 def test_supported_traversal_subjects_match_graph_review_rules() -> None:
     relation_sql = str(
-        supported_relation_subject().compile(
+        supported_relation().compile(
             dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
         )
     )
     entity_sql = str(
-        supported_entity_subject().compile(
+        supported_entity().compile(
             dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
         )
     )
@@ -53,10 +51,11 @@ def test_supported_traversal_subjects_match_graph_review_rules() -> None:
 def test_traversal_filters_seed_relations_and_frontier_endpoints() -> None:
     source = Path("apps/api/app/graph_store.py").read_text(encoding="utf-8")
 
-    assert source.count("supported_relation_subject(),") == 2
+    assert source.count("supported_relation(),") == 2
     assert "seed_entity_ids = await supported_entity_ids(" in source
     assert "supported_endpoints = await supported_entity_ids(" in source
     assert "if entity_id not in supported_endpoints:" in source
     assert source.index("if entity_id not in supported_endpoints:") < source.index(
         "relation_ids.add(relation.id)"
     )
+
