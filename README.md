@@ -159,6 +159,33 @@ POST /v1/codebase/sync-file                       # Real-time single file AST sy
 
 Use OpenAPI at `/api/docs` for complete schemas, bounds, and parameters. See [Graph extraction](docs/graph-extraction.md) and [Hierarchical community analytics](docs/community-graphrag.md).
 
+## Codebase Knowledge Graph & Tri-Memory Synergy
+
+OpenGraphMemory unifies Document Specifications (PDF/MD/CSV), Codebase Knowledge Graphs (tree-sitter AST & Call Graph), and Operational Agent Memory (Past Bugfixes & Refactors) under a single project boundary.
+
+### Supported Languages & Features
+- **Supported Languages:** Python, TypeScript, JavaScript, Go, Rust, C, C++.
+- **Canonical Symbol Naming:** Standardized symbol identifiers (`py:module.path:SymbolName`, `ts:file.path:SymbolName`).
+- **Call Graph Discovery:** Explicit relation tracking (`calls`, `called_by`, `inherits`, `implements`, `contains`).
+- **Incremental Real-Time Sync:** Real-time single-file AST update via `POST /v1/codebase/sync-file` and MCP `ogm_sync_code_file` tool when AI agents edit code.
+
+### Codebase Endpoints
+
+```text
+POST /v1/codebase/ingest      # Batch AST codebase ingestion
+POST /v1/codebase/sync-file   # Real-time single file AST sync
+```
+
+### Codebase MCP Tools (OGM Agent Bridge)
+
+- `ogm_search_code_symbols`: Search codebase functions, classes, interfaces, and structs.
+- `ogm_get_code_call_graph`: Inspect callers, calls, and inheritance for a code symbol.
+- `ogm_get_code_chunks`: Fetch AST structural code chunks with exact line bounds.
+- `ogm_recall_code_memory`: Recall past agent bugfixes and refactoring memories.
+- `ogm_record_code_fix`: Record an agent memory episode for a codebase bug fix or refactor.
+- `ogm_sync_code_file`: Sync a single edited code file into the Knowledge Graph in real-time.
+
+
 ## Agent Memory API
 
 Agent Memory provides project-scoped persistent memory for AI agents to record, retrieve, and curate operational experience.
