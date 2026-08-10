@@ -2,7 +2,6 @@ from pathlib import Path
 
 from app.graph_helpers import supported_entity, supported_relation
 from app.graph_store import current_evidence_subject
-
 from sqlalchemy.dialects import postgresql
 
 

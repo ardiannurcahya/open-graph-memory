@@ -1,6 +1,6 @@
 """Tests for production-grade Codebase Knowledge Graph Extractor and AST Chunker."""
 
-from open_graph_core.code_extractor import CodeExtractor, CodeSymbolKind, CodeRelationKind
+from open_graph_core.code_extractor import CodeExtractor, CodeRelationKind
 
 
 def test_python_extraction():
