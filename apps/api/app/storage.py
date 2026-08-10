@@ -77,12 +77,53 @@ class S3ObjectStore:
         return await asyncio.to_thread(response["Body"].read)
 
 
+from pathlib import Path
+
+
+class LocalObjectStore:
+    def __init__(self, base_dir: str | Path) -> None:
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def from_plugin_config(cls, config: PluginConfig) -> "LocalObjectStore":
+        base_dir = config.get("base_dir", "./data/uploads")
+        if not isinstance(base_dir, str):
+            raise TypeError("base_dir must be a string")
+        return cls(base_dir=base_dir)
+
+    async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None:
+        file_path = self.base_dir / key
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        content = stream.read()
+        await asyncio.to_thread(file_path.write_bytes, content)
+
+    async def delete(self, key: str) -> None:
+        file_path = self.base_dir / key
+        if file_path.exists():
+            await asyncio.to_thread(file_path.unlink)
+
+    async def download(self, key: str) -> bytes:
+        file_path = self.base_dir / key
+        if not file_path.exists():
+            raise FileNotFoundError(f"Key not found in local object store: {key}")
+        return await asyncio.to_thread(file_path.read_bytes)
+
+
 def get_object_store() -> ObjectStore:
     settings = get_settings()
     from app.plugin_registry import create_object_store
 
+    provider = settings.object_store_provider.lower()
+    if provider == "local":
+        return create_object_store(
+            provider="local",
+            config=PluginConfig({"base_dir": settings.local_storage_dir}),
+        )
+
     return create_object_store(
-        PluginConfig(
+        provider="s3",
+        config=PluginConfig(
             {
                 "bucket": settings.s3_bucket,
                 "endpoint_url": settings.s3_endpoint_url,
@@ -91,5 +132,6 @@ def get_object_store() -> ObjectStore:
                 "force_path_style": settings.s3_force_path_style,
             },
             {"secret_key": SecretValue(settings.s3_secret_key.get_secret_value())},
-        )
+        ),
     )
+

@@ -82,8 +82,16 @@ def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
     )
 
 
-def _s3_factory(**kwargs: object) -> S3ObjectStore:
+def _s3_factory(**kwargs: object) -> ObjectStore:
+    from app.storage import S3ObjectStore
+
     return S3ObjectStore.from_plugin_config(_config(kwargs))
+
+
+def _local_storage_factory(**kwargs: object) -> ObjectStore:
+    from app.storage import LocalObjectStore
+
+    return LocalObjectStore.from_plugin_config(_config(kwargs))
 
 
 def register_builtin_plugins(registry: PluginRegistry | None = None) -> PluginRegistry:
@@ -94,6 +102,7 @@ def register_builtin_plugins(registry: PluginRegistry | None = None) -> PluginRe
         (Capability.EXTRACTION, "nlp", _nlp_extractor_factory, Extractor),
         (Capability.EXTRACTION, "openai", _openai_extractor_factory, Extractor),
         (Capability.OBJECT_STORE, "s3", _s3_factory, ObjectStore),
+        (Capability.OBJECT_STORE, "local", _local_storage_factory, ObjectStore),
     )
     for capability, name, factory, protocol in registrations:
         target.register(_metadata(name, capability), factory, protocol=protocol)
@@ -106,7 +115,7 @@ def create_extractor(name: str, config: PluginConfig) -> Extractor:
     )
 
 
-def create_object_store(config: PluginConfig) -> ObjectStore:
+def create_object_store(config: PluginConfig, provider: str = "s3") -> ObjectStore:
     return cast(
-        ObjectStore, register_builtin_plugins().create(Capability.OBJECT_STORE, "s3", config=config)
+        ObjectStore, register_builtin_plugins().create(Capability.OBJECT_STORE, provider, config=config)
     )

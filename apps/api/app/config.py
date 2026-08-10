@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     database_tls_ca_file: str | None = None
     redis_url: str = "redis://redis:6379/0"
     admin_api_key: SecretStr = SecretStr("change-me-admin-api-key")
+    object_store_provider: str = "s3"
+    local_storage_dir: str = "./data/uploads"
     s3_endpoint_url: str = "http://rustfs:9000"
+
     s3_access_key: str = "opengraphrag"
     s3_secret_key: SecretStr = SecretStr("change-me-s3-secret")
     s3_bucket: str = "opengraphrag"

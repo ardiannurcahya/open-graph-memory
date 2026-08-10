@@ -31,3 +31,24 @@ async def test_upload_sends_content_length_without_multipart() -> None:
         "ContentType": "application/pdf",
         "ContentLength": len(content),
     }
+
+
+import tempfile
+from app.storage import LocalObjectStore
+
+
+@pytest.mark.asyncio
+async def test_local_object_store_operations() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        store = LocalObjectStore(base_dir=tmp_dir)
+        content = b"hello open graph memory"
+        key = "docs/test.txt"
+
+        await store.upload(key, BytesIO(content), "text/plain")
+        downloaded = await store.download(key)
+        assert downloaded == content
+
+        await store.delete(key)
+        with pytest.raises(FileNotFoundError):
+            await store.download(key)
+

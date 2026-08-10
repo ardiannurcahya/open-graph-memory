@@ -15,7 +15,8 @@ from open_graph_contracts import Capability, PluginConfig, SecretValue
 def test_builtin_registry_declares_expected_plugins() -> None:
     registry = register_builtin_plugins()
     assert registry.list_names(Capability.EXTRACTION) == ["deterministic", "nlp", "openai"]
-    assert registry.list_names(Capability.OBJECT_STORE) == ["s3"]
+    assert set(registry.list_names(Capability.OBJECT_STORE)) == {"s3", "local"}
+
 
 
 def test_nlp_factory_accepts_model_without_secret() -> None:
