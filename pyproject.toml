@@ -21,6 +21,8 @@ dependencies = [
     "beautifulsoup4>=4.12,<5",
     "lxml>=6.1,<7",
     "networkx>=3.4,<4",
+    "tree-sitter>=0.21,<1",
+    "tree-sitter-languages>=1.10,<2",
 ]
 [dependency-groups]
 dev = [
@@ -54,3 +56,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["boto3", "botocore.*"]
 ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = ["tree_sitter", "tree_sitter_languages", "tree_sitter_languages.*"]
+ignore_missing_imports = true
+
