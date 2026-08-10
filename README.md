@@ -24,13 +24,16 @@ Ingest documents, extract evidence-backed knowledge graphs, explore graph struct
 ## Highlights
 
 - **Document ingestion** — streaming uploads with size, type, signature, and duplicate validation.
+- **Codebase Knowledge Graph** — multi-language AST parsing (Python, TS/JS, Go, Rust, C/C++) with tree-sitter, canonical symbol IDs, call graphs, structural AST chunking, and real-time file sync (`/v1/codebase/sync-file`).
 - **Graph extraction** — durable parsing, chunking, entity/relation extraction, cleanup, retry, and reconciliation jobs.
 - **Temporal graph** — PostgreSQL-authoritative entities, relations, evidence, reviews, and community analytics with time-travel queries.
 - **Graph API** — bounded entity search, neighbors, paths, subgraphs, evidence inspection, and analytics refresh.
 - **Agent Memory** — episode, attempt, outcome, and pattern storage with temporal supersession, feedback scoring, and verified experience retrieval.
+- **Tri-Memory Synergy** — unified project engine interconnecting Document Specs, Codebase Knowledge Graphs, and Operational Agent Memory.
 - **Graph Playground** — interactive force-directed visualization with community levels, filters, and relation evidence.
 - **Python SDK** — async client for dataset, document, graph, and agent memory operations.
 - **Plugin system** — explicit extractor, parser, chunker, and object-store contracts.
+
 
 ## Architecture
 
@@ -150,6 +153,8 @@ GET  /v1/evidence/{evidence_id}
 PATCH /v1/relations/{relation_id}/review
 POST /v1/datasets/{dataset_id}/analytics/refresh
 GET  /v1/datasets/{dataset_id}/graph/explorer
+POST /v1/codebase/ingest                          # Batch AST codebase ingestion
+POST /v1/codebase/sync-file                       # Real-time single file AST sync
 ```
 
 Use OpenAPI at `/api/docs` for complete schemas, bounds, and parameters. See [Graph extraction](docs/graph-extraction.md) and [Hierarchical community analytics](docs/community-graphrag.md).
