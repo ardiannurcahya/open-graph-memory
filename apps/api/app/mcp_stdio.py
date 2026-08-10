@@ -2,24 +2,24 @@
 
 import asyncio
 import json
+import os
 import sys
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.mcp_server import MCPRequest, MCPResponse, handle_mcp_request
 
 
 class MCPStdioServer:
-    def __init__(self, database_url: str, project_id: str, api_key: str):
+    def __init__(self, database_url: str, project_id: str, api_key: str) -> None:
         self.engine = create_async_engine(database_url, echo=False)
-        self.session_factory = sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
+        self.session_factory = async_sessionmaker(
+            self.engine, expire_on_commit=False, class_=AsyncSession
         )
         self.project_id = project_id
         self.api_key = api_key
 
-    async def run(self):
+    async def run(self) -> None:
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
         await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
@@ -65,14 +65,12 @@ class MCPStdioServer:
                 sys.stdout.flush()
 
 
-async def run_mcp_stdio(database_url: str, project_id: str, api_key: str):
+async def run_mcp_stdio(database_url: str, project_id: str, api_key: str) -> None:
     server = MCPStdioServer(database_url, project_id, api_key)
     await server.run()
 
 
-def main():
-    import os
-
+def main() -> None:
     database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://localhost/ogm")
     project_id = os.environ.get("OGM_PROJECT_ID", "")
     api_key = os.environ.get("OGM_API_KEY", "")

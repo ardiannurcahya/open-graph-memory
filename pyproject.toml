@@ -15,15 +15,18 @@ dependencies = [
     "structlog>=24,<26",
     "boto3>=1.35,<2",
     "python-multipart>=0.0.18,<1",
-    "pypdf>=6.13.3,<7",
+    "pypdf>=6.15.0,<7",
+
     "liteparse==2.6.0",
     "markdown-it-py>=3,<4",
     "beautifulsoup4>=4.12,<5",
     "lxml>=6.1,<7",
     "networkx>=3.4,<4",
-    "tree-sitter>=0.21,<1",
-    "tree-sitter-languages>=1.10,<2",
+    "tree-sitter>=0.21.0,<0.22.0",
+    "tree-sitter-languages>=1.10.2,<2",
 ]
+
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3,<10",
@@ -31,7 +34,9 @@ dev = [
     "ruff>=0.9,<1",
     "mypy>=1.14,<2",
     "types-networkx>=3.4,<4",
+    "aiosqlite>=0.20,<1",
 ]
+
 [build-system]
 requires=["hatchling"]
 build-backend="hatchling.build"

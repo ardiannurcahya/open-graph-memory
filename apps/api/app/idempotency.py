@@ -1,7 +1,9 @@
 """Idempotency key management for duplicate prevention."""
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +13,7 @@ from app.models import IdempotencyKey
 IDEMPOTENCY_TTL_HOURS = 24
 
 
-def compute_result_hash(data: dict) -> str:
-    import json
+def compute_result_hash(data: dict[str, Any]) -> str:
     serialized = json.dumps(data, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode()).hexdigest()
 
@@ -43,7 +44,7 @@ async def store_idempotency(
     project_id: str,
     operation: str,
     resource_id: str,
-    result_data: dict,
+    result_data: dict[str, Any],
 ) -> None:
     result_hash = compute_result_hash(result_data)
     entry = IdempotencyKey(
@@ -61,4 +62,5 @@ async def cleanup_expired_keys(db: AsyncSession) -> int:
     result = await db.execute(
         delete(IdempotencyKey).where(IdempotencyKey.created_at < cutoff)
     )
-    return result.rowcount
+    rowcount = getattr(result, "rowcount", 0)
+    return cast(int, rowcount)

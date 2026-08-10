@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import IO, Protocol
 
 import boto3
@@ -77,10 +78,8 @@ class S3ObjectStore:
         return await asyncio.to_thread(response["Body"].read)
 
 
-from pathlib import Path
-
-
 class LocalObjectStore:
+
     def __init__(self, base_dir: str | Path) -> None:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)

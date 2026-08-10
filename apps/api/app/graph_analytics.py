@@ -212,12 +212,11 @@ def analyze_graph(
         for entity in graph.nodes
     }
     total = sum(weighted_degree.values())
+    importance_map: dict[str, float] = {}
     if total:
-        importance = {e: v / total for e, v in weighted_degree.items()}
+        importance_map = {e: v / total for e, v in weighted_degree.items()}
     elif graph:
-        importance = {entity: 1 / len(graph) for entity in graph}
-    else:
-        importance = {}
+        importance_map = {entity: 1 / len(graph) for entity in graph}
 
     return AnalyticsResult(
         snapshot_hash=digest,
@@ -225,9 +224,10 @@ def analyze_graph(
         community_stats=stats,
         degree=degree,
         weighted_degree=weighted_degree,
-        importance=importance,
+        importance=importance_map,
         relation_count=len(relations),
     )
+
 
 
 async def refresh_dataset_analytics(

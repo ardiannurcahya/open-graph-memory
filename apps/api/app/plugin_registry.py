@@ -83,7 +83,6 @@ def _openai_extractor_factory(**kwargs: object) -> OpenAICompatibleExtractor:
 
 
 def _s3_factory(**kwargs: object) -> ObjectStore:
-    from app.storage import S3ObjectStore
 
     return S3ObjectStore.from_plugin_config(_config(kwargs))
 
@@ -117,5 +116,9 @@ def create_extractor(name: str, config: PluginConfig) -> Extractor:
 
 def create_object_store(config: PluginConfig, provider: str = "s3") -> ObjectStore:
     return cast(
-        ObjectStore, register_builtin_plugins().create(Capability.OBJECT_STORE, provider, config=config)
+        ObjectStore,
+        register_builtin_plugins().create(
+            Capability.OBJECT_STORE, provider, config=config
+        ),
     )
+

@@ -1,7 +1,7 @@
 """Secret auto-redaction for input sanitization."""
 
 import re
-from typing import Any
+from typing import Any, cast
 
 PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("assignment", re.compile(
@@ -96,7 +96,8 @@ def contains_secret(value: Any, parent_key: str = "") -> bool:
 
 
 def sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
-    return redact_value(data)
+    return cast(dict[str, Any], redact_value(data))
+
 
 
 def validate_no_secrets(data: dict[str, Any]) -> None:

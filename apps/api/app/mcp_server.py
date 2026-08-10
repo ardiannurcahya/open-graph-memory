@@ -352,17 +352,18 @@ async def execute_tool(
 
     if name == "memory_inspect":
         memory_id = arguments.get("memory_id")
-        episode = await db.get(AgentMemoryEpisode, memory_id)
-        if not episode or str(episode.project_id) != project_id:
+        ep_obj = await db.get(AgentMemoryEpisode, memory_id)
+        if not ep_obj or str(ep_obj.project_id) != project_id:
             return {"error": "memory not found"}
         return {
-            "id": episode.id,
-            "type": episode.type,
-            "title": episode.title,
-            "content": episode.content,
-            "confidence": episode.confidence,
-            "status": episode.status,
-            "version": episode.version,
+            "id": ep_obj.id,
+            "type": ep_obj.type,
+            "title": ep_obj.title,
+            "content": ep_obj.content,
+            "confidence": ep_obj.confidence,
+            "status": ep_obj.status,
+            "version": ep_obj.version,
+
         }
 
     return {"error": f"unknown tool: {name}"}

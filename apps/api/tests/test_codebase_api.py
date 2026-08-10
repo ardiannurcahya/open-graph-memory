@@ -9,12 +9,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = pytest.mark.asyncio
 
 
-async def test_codebase_ingest_and_file_sync(session: AsyncSession, project: Project, api_key: ApiKey):
+async def test_codebase_ingest_and_file_sync(
+    session: AsyncSession, project: Project, api_key: ApiKey
+) -> None:
     client = TestClient(app)
     headers = {
         "X-API-Key": api_key.key_prefix + "test",
         "X-Project-ID": str(project.id),
     }
+
+    code_v1 = (
+        "def add(a: int, b: int) -> int:\n"
+        "    return a + b\n\n"
+        "def multiply(a: int, b: int) -> int:\n"
+        "    return a * b\n"
+    )
+    code_v2 = (
+        "def add(a: int, b: int) -> int:\n"
+        "    return a + b\n\n"
+        "def subtract(a: int, b: int) -> int:\n"
+        "    return a - b\n"
+    )
+
 
     # Batch Ingest
     response = client.post(
@@ -24,7 +40,7 @@ async def test_codebase_ingest_and_file_sync(session: AsyncSession, project: Pro
             "files": [
                 {
                     "file_path": "src/math_utils.py",
-                    "code": "def add(a: int, b: int) -> int:\n    return a + b\n\ndef multiply(a: int, b: int) -> int:\n    return a * b\n",
+                    "code": code_v1,
                     "language": "python",
                 }
             ],
@@ -42,7 +58,7 @@ async def test_codebase_ingest_and_file_sync(session: AsyncSession, project: Pro
         json={
             "dataset_id": "ds_test_codebase",
             "file_path": "src/math_utils.py",
-            "code": "def add(a: int, b: int) -> int:\n    return a + b\n\ndef subtract(a: int, b: int) -> int:\n    return a - b\n",
+            "code": code_v2,
             "language": "python",
         },
         headers=headers,

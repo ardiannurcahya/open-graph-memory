@@ -9,20 +9,21 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
-    from tree_sitter_languages import get_language, get_parser
+    from tree_sitter_languages import get_parser
     TREE_SITTER_AVAILABLE = True
 except Exception:
     TREE_SITTER_AVAILABLE = False
 
 
-class CodeSymbolKind(str, Enum):
+class CodeSymbolKind(str, Enum):  # noqa: UP042
     FILE = "file"
     CLASS = "class"
     FUNCTION = "function"
@@ -36,7 +37,8 @@ class CodeSymbolKind(str, Enum):
     MODULE = "module"
 
 
-class CodeRelationKind(str, Enum):
+class CodeRelationKind(str, Enum):  # noqa: UP042
+
     CONTAINS = "contains"
     CALLS = "calls"
     IMPORTS = "imports"
@@ -181,13 +183,14 @@ class CodeExtractor:
 
         entities: list[CodeEntity] = [file_entity]
         relations: list[CodeRelation] = []
-        lines = content.splitlines()
 
         def node_text(node: Any) -> str:
+
             return code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
         def traverse(node: Any, current_parent_id: str) -> None:
             node_type = node.type
+            next_parent_id = current_parent_id
 
             # --- Python ---
             if language == "python":
@@ -239,7 +242,8 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
+
 
                 elif node_type == "class_definition":
                     name_node = node.child_by_field_name("name")
@@ -247,11 +251,15 @@ class CodeExtractor:
                     sym_id = canonical_symbol_id(language, file_path, name, "class")
 
                     superclasses = []
-                    super_node = node.child_by_field_name("superclasses")
+                    super_node = node.child_by_field_name(
+                        "superclasses"
+                    ) or node.child_by_field_name("argument_list")
+
                     if super_node:
                         for child in super_node.children:
                             if child.type in {"identifier", "attribute"}:
                                 superclasses.append(node_text(child))
+
 
                     entity = CodeEntity(
                         id=sym_id,
@@ -291,11 +299,13 @@ class CodeExtractor:
                                 quote=f"class {name}({base}):",
                             )
                         )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
                 elif node_type in {"import_statement", "import_from_statement"}:
                     imp_text = node_text(node).strip()
-                    imp_id = canonical_symbol_id(language, file_path, f"import_{node.start_byte}", "import")
+                    imp_id = canonical_symbol_id(
+                        language, file_path, f"import_{node.start_byte}", "import"
+                    )
                     entities.append(
                         CodeEntity(
                             id=imp_id,
@@ -328,7 +338,9 @@ class CodeExtractor:
                     if fn_node:
                         fn_name = node_text(fn_node)
                         if fn_name and current_parent_id != file_entity_id:
-                            target_sym_id = canonical_symbol_id(language, file_path, fn_name, "function")
+                            target_sym_id = canonical_symbol_id(
+                                language, file_path, fn_name, "function"
+                            )
                             relations.append(
                                 CodeRelation(
                                     id=f"rel_calls_{current_parent_id}_{node.start_byte}",
@@ -346,8 +358,10 @@ class CodeExtractor:
                 if node_type in {"function_declaration", "method_definition", "arrow_function"}:
                     name_node = node.child_by_field_name("name")
                     name = node_text(name_node) if name_node else "anonymous"
-                    kind = CodeSymbolKind.METHOD if node_type == "method_definition" else CodeSymbolKind.FUNCTION
+                    is_method = node_type == "method_definition"
+                    kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
                     sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
 
                     params = node.child_by_field_name("parameters")
                     sig = f"function {name}{node_text(params)}" if params else f"function {name}()"
@@ -377,9 +391,11 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
-                elif node_type in {"class_declaration", "interface_declaration", "type_alias_declaration"}:
+                elif node_type in {
+                    "class_declaration", "interface_declaration", "type_alias_declaration"
+                }:
                     name_node = node.child_by_field_name("name")
                     name = node_text(name_node) if name_node else "AnonymousType"
                     kind = (
@@ -414,11 +430,14 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
                 elif node_type == "import_statement":
                     imp_text = node_text(node).strip()
-                    imp_id = canonical_symbol_id(language, file_path, f"import_{node.start_byte}", "import")
+                    imp_id = canonical_symbol_id(
+                        language, file_path, f"import_{node.start_byte}", "import"
+                    )
+
                     entities.append(
                         CodeEntity(
                             id=imp_id,
@@ -451,8 +470,10 @@ class CodeExtractor:
                 if node_type in {"function_declaration", "method_declaration"}:
                     name_node = node.child_by_field_name("name")
                     name = node_text(name_node) if name_node else "anonymous"
-                    kind = CodeSymbolKind.METHOD if node_type == "method_declaration" else CodeSymbolKind.FUNCTION
+                    is_method = node_type == "method_declaration"
+                    kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
                     sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
 
                     entities.append(
                         CodeEntity(
@@ -479,18 +500,21 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
                 elif node_type == "type_spec":
                     name_node = node.child_by_field_name("name")
                     name = node_text(name_node) if name_node else "AnonymousType"
                     type_node = node.child_by_field_name("type")
+                    is_struct = type_node and type_node.type == "struct_type"
+                    is_iface = type_node and type_node.type == "interface_type"
                     kind = (
-                        CodeSymbolKind.STRUCT if type_node and type_node.type == "struct_type"
-                        else CodeSymbolKind.INTERFACE if type_node and type_node.type == "interface_type"
+                        CodeSymbolKind.STRUCT if is_struct
+                        else CodeSymbolKind.INTERFACE if is_iface
                         else CodeSymbolKind.TYPE_ALIAS
                     )
                     sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
 
                     entities.append(
                         CodeEntity(
@@ -556,7 +580,7 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
             # --- C / C++ ---
             elif language in {"c", "cpp"}:
@@ -591,13 +615,15 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
                 elif node_type in {"struct_specifier", "class_specifier"}:
                     name_node = node.child_by_field_name("name")
                     name = node_text(name_node) if name_node else "anonymous"
-                    kind = CodeSymbolKind.CLASS if node_type == "class_specifier" else CodeSymbolKind.STRUCT
+                    is_class = node_type == "class_specifier"
+                    kind = CodeSymbolKind.CLASS if is_class else CodeSymbolKind.STRUCT
                     sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
 
                     entities.append(
                         CodeEntity(
@@ -624,12 +650,13 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
-                    current_parent_id = sym_id
+                    next_parent_id = sym_id
 
             for child in node.children:
-                traverse(child, current_parent_id)
+                traverse(child, next_parent_id)
 
         traverse(tree.root_node, file_entity_id)
+
 
         chunks = self._generate_ast_chunks(file_path, content, entities)
 
@@ -671,8 +698,10 @@ class CodeExtractor:
             match = func_regex.search(line)
             if match:
                 name = match.group(1)
-                kind = CodeSymbolKind.FUNCTION if "def" in line or "function" in line or "fn" in line else CodeSymbolKind.CLASS
+                is_fn = "def" in line or "function" in line or "fn" in line
+                kind = CodeSymbolKind.FUNCTION if is_fn else CodeSymbolKind.CLASS
                 sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
                 entities.append(
                     CodeEntity(
                         id=sym_id,

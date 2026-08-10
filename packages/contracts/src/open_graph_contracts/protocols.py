@@ -1,7 +1,7 @@
 """Runtime-checkable protocols for graph ingestion and storage plugins."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import IO, TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from app.chunking import TextChunk
@@ -38,6 +38,7 @@ class Chunker(Protocol):
 class ObjectStore(Protocol):
     """Async object/blob store protocol."""
 
-    async def upload(self, key: str, stream: object, content_type: str) -> None: ...
+    async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None: ...
     async def download(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
+

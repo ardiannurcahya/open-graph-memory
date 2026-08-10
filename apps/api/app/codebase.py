@@ -2,12 +2,12 @@
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from open_graph_core.code_extractor import CodeExtractor
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
@@ -16,6 +16,9 @@ from app.graph_models import CanonicalEntity, RelationAssertion, ReviewState
 
 router = APIRouter(prefix="/v1/codebase", tags=["codebase"])
 extractor = CodeExtractor()
+
+ProjectDep = Annotated[ProjectContext, Depends(require_project)]
+DbDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 class FileIngestItem(BaseModel):
@@ -51,9 +54,10 @@ def _short_id(prefix: str, val: str) -> str:
 @router.post("/ingest", response_model=CodebaseIngestResponse, status_code=status.HTTP_200_OK)
 async def ingest_codebase(
     payload: CodebaseIngestRequest,
-    ctx: ProjectContext = Depends(require_project),
-    db: AsyncSession = Depends(get_session),
+    ctx: ProjectDep,
+    db: DbDep,
 ) -> CodebaseIngestResponse:
+
     """Batch ingest codebase files into Knowledge Graph with AST parsing."""
     project_id = ctx.project_id
     dataset_id = payload.dataset_id
@@ -63,12 +67,16 @@ async def ingest_codebase(
     now = datetime.now(UTC)
 
     for item in payload.files:
-        result = extractor.extract(code=item.code, file_path=item.file_path, language=item.language)
+        result = extractor.extract(
+            code=item.code, file_path=item.file_path, language=item.language
+        )
 
         # Insert or update canonical entities
         for entity in result.entities:
             normalized_name = f"{item.file_path}::{entity.name}".lower()[:500]
-            entity_type = f"code.{entity.kind.value if hasattr(entity.kind, 'value') else entity.kind}"
+            kind_val = entity.kind.value if hasattr(entity.kind, "value") else entity.kind
+            entity_type = f"code.{kind_val}"
+
 
             existing = await db.scalar(
                 select(CanonicalEntity).where(
@@ -148,12 +156,18 @@ async def ingest_codebase(
 @router.post("/sync-file", response_model=CodebaseIngestResponse, status_code=status.HTTP_200_OK)
 async def sync_codebase_file(
     payload: SingleFileSyncRequest,
-    ctx: ProjectContext = Depends(require_project),
-    db: AsyncSession = Depends(get_session),
+    ctx: ProjectDep,
+    db: DbDep,
 ) -> CodebaseIngestResponse:
     """Real-time single file AST sync for AI agents during live editing."""
+    file_item = FileIngestItem(
+        file_path=payload.file_path,
+        code=payload.code,
+        language=payload.language,
+    )
     ingest_req = CodebaseIngestRequest(
         dataset_id=payload.dataset_id,
-        files=[FileIngestItem(file_path=payload.file_path, code=payload.code, language=payload.language)],
+        files=[file_item],
     )
     return await ingest_codebase(payload=ingest_req, ctx=ctx, db=db)
+

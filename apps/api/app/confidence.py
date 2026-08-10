@@ -1,7 +1,7 @@
 """Confidence feedback system for memory management."""
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -47,7 +47,7 @@ async def apply_confidence_feedback(
     db: AsyncSession,
     episode: AgentMemoryEpisode,
     kind: FeedbackKind,
-    content: dict | None = None,
+    content: dict[str, Any] | None = None,
     confidence: float | None = None,
 ) -> AgentMemoryEpisode:
     now = datetime.now(UTC)
@@ -101,9 +101,10 @@ async def merge_memories(
     db: AsyncSession,
     source: AgentMemoryEpisode,
     target_id: str,
-    content: dict | None = None,
+    content: dict[str, Any] | None = None,
     confidence: float | None = None,
 ) -> AgentMemoryEpisode:
+
     target = await db.get(AgentMemoryEpisode, target_id)
     if not target:
         raise HTTPException(404, "target episode not found")

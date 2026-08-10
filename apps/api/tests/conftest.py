@@ -1,19 +1,16 @@
 """Shared Pytest Async Fixtures for apps/api tests."""
 
 import uuid
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from app.dependencies import get_session
 from app.main import app
 from app.models import ApiKey, Base, Project
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-
-from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -35,7 +32,10 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
 
     @event.listens_for(engine.sync_engine, "connect")
     def register_sqlite_functions(dbapi_connection, connection_record):
-        dbapi_connection.create_function("to_tsvector", 2, lambda lang, text: text or "", deterministic=True)
+        dbapi_connection.create_function(
+            "to_tsvector", 2, lambda lang, text: text or "", deterministic=True
+        )
+
 
 
     async with engine.begin() as conn:

@@ -1,5 +1,6 @@
 """CLI tools for database operations."""
 
+import asyncio
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -7,18 +8,18 @@ from pathlib import Path
 
 import click
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.config import get_settings
 
 
-def get_engine():
+def get_engine() -> AsyncEngine:
     settings = get_settings()
     return create_async_engine(settings.database_url, echo=False)
 
 
 @click.group()
-def cli():
+def cli() -> None:
     """OGM operational tools."""
     pass
 
@@ -26,7 +27,7 @@ def cli():
 @cli.command()
 @click.option("--out", "-o", required=True, help="Output file path")
 @click.option("--format", "fmt", type=click.Choice(["sql", "custom"]), default="sql")
-def backup(out: str, fmt: str):
+def backup(out: str, fmt: str) -> None:
     """Create database backup."""
     settings = get_settings()
     db_url = settings.database_url
@@ -61,7 +62,7 @@ def backup(out: str, fmt: str):
 @cli.command()
 @click.option("--from", "from_file", required=True, help="Backup file path")
 @click.option("--apply", is_flag=True, help="Actually restore (requires confirmation)")
-def restore(from_file: str, apply: bool):
+def restore(from_file: str, apply: bool) -> None:
     """Restore database from backup."""
     from_path = Path(from_file)
     if not from_path.exists():
@@ -72,7 +73,7 @@ def restore(from_file: str, apply: bool):
     db_url = settings.database_url
 
     if not apply:
-        click.echo("DRY RUN: Would restore from", from_path)
+        click.echo(f"DRY RUN: Would restore from {from_path}")
         click.echo("Use --apply to actually restore")
         return
 
@@ -100,11 +101,9 @@ def restore(from_file: str, apply: bool):
 
 
 @cli.command()
-def integrity():
+def integrity() -> None:
     """Check database integrity."""
-    import asyncio
-
-    async def _check():
+    async def _check() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Checking foreign key constraints...")
@@ -122,7 +121,7 @@ def integrity():
                 WHERE tc.constraint_type = 'FOREIGN KEY'
                 ORDER BY tc.table_name;
             """))
-            fk_count = result.rowcount
+            fk_count = getattr(result, "rowcount", 0)
             click.echo(f"Found {fk_count} foreign key constraints")
 
             click.echo("\nChecking for orphaned records...")
@@ -132,7 +131,7 @@ def integrity():
                     SELECT 1 FROM projects p WHERE p.id = e.project_id
                 );
             """))
-            orphans = result.scalar()
+            orphans = result.scalar() or 0
             if orphans > 0:
                 click.echo(f"WARNING: Found {orphans} orphaned episodes", err=True)
             else:
@@ -155,11 +154,9 @@ def integrity():
 
 @cli.command()
 @click.option("--apply", is_flag=True, help="Actually vacuum")
-def vacuum(apply: bool):
+def vacuum(apply: bool) -> None:
     """Vacuum database to reclaim space."""
-    import asyncio
-
-    async def _vacuum():
+    async def _vacuum() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             if not apply:
@@ -184,20 +181,17 @@ def vacuum(apply: bool):
                 return
 
             click.echo("Running VACUUM ANALYZE...")
-            await conn.execution_options(isolation_level="AUTOCOMMIT").execute(
-                text("VACUUM ANALYZE;")
-            )
+            auto_conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await auto_conn.execute(text("VACUUM ANALYZE;"))
             click.echo("Vacuum completed")
 
     asyncio.run(_vacuum())
 
 
 @cli.command()
-def fts_rebuild():
+def fts_rebuild() -> None:
     """Rebuild full-text search indexes."""
-    import asyncio
-
-    async def _rebuild():
+    async def _rebuild() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Rebuilding FTS indexes...")
@@ -217,18 +211,16 @@ def fts_rebuild():
 
 
 @cli.command()
-def checkpoint():
+def checkpoint() -> None:
     """Truncate WAL (Write-Ahead Log)."""
-    import asyncio
-
-    async def _checkpoint():
+    async def _checkpoint() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Running CHECKPOINT...")
-            await conn.execution_options(isolation_level="AUTOCOMMIT").execute(
-                text("CHECKPOINT;")
-            )
+            auto_conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await auto_conn.execute(text("CHECKPOINT;"))
             click.echo("Checkpoint completed")
+
 
     asyncio.run(_checkpoint())
 

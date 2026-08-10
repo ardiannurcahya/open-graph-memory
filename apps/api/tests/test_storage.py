@@ -1,7 +1,8 @@
+import tempfile
 from io import BytesIO
 
 import pytest
-from app.storage import S3ObjectStore
+from app.storage import LocalObjectStore, S3ObjectStore
 
 
 class RecordingS3Client:
@@ -33,10 +34,6 @@ async def test_upload_sends_content_length_without_multipart() -> None:
     }
 
 
-import tempfile
-from app.storage import LocalObjectStore
-
-
 @pytest.mark.asyncio
 async def test_local_object_store_operations() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -51,4 +48,3 @@ async def test_local_object_store_operations() -> None:
         await store.delete(key)
         with pytest.raises(FileNotFoundError):
             await store.download(key)
-

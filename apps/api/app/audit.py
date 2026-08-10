@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from open_graph_core.ids import uuid7
@@ -39,10 +40,8 @@ def audit_id() -> str:
     return f"al_{uuid7()}"
 
 
-from uuid import UUID
-
-
 async def create_audit_log(
+
     db: AsyncSession,
     project_id: str | UUID,
     actor_type: str,
