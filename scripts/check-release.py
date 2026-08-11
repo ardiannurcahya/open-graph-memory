@@ -47,9 +47,7 @@ for relative in (
     if re.search(r"(?:open-graph-memory|opengraphrag)-(?:api|worker|web):latest", text):
         errors.append(f"{relative}: mutable first-party latest image is forbidden")
 
-external = (ROOT / "deployments/docker-compose.ghcr-external.yml").read_text(
-    encoding="utf-8"
-)
+external = (ROOT / "deployments/docker-compose.ghcr-external.yml").read_text(encoding="utf-8")
 if f"${{IMAGE_TAG:-{TAG}}}" not in external:
     errors.append(f"external compose must default IMAGE_TAG to {TAG}")
 if f"IMAGE_TAG={TAG}" not in (ROOT / ".env.example").read_text(encoding="utf-8"):

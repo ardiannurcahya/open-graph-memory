@@ -102,22 +102,16 @@ def main() -> int:
             },
         )
     )
-    outsider_document = upload(
-        base, outsider_headers, outsider_dataset["id"], outsider_fixture
-    )
+    outsider_document = upload(base, outsider_headers, outsider_dataset["id"], outsider_fixture)
     document_ids = [item["id"] for item in documents]
     wait_indexed(base, headers, document_ids)
     wait_indexed(base, outsider_headers, [outsider_document["id"]])
     wait_graph(args.compose_file, document_ids)
     wait_graph(args.compose_file, [outsider_document["id"]])
 
-    alice = unique_entity(
-        base, headers, dataset["id"], "Alice Nguyen", entity_type="Person"
-    )
+    alice = unique_entity(base, headers, dataset["id"], "Alice Nguyen", entity_type="Person")
     atlas = unique_entity(base, headers, dataset["id"], "Atlas", entity_type="Product")
-    acme = unique_entity(
-        base, headers, dataset["id"], "Acme Labs", entity_type="Organization"
-    )
+    acme = unique_entity(base, headers, dataset["id"], "Acme Labs", entity_type="Organization")
     beacon = unique_entity(base, headers, dataset["id"], "Beacon", entity_type="Service")
     assert alice["canonical_name"] == "Alice Nguyen" and alice["entity_type"] == "Person", alice
     assert atlas["entity_type"] == "Product", atlas
@@ -173,9 +167,9 @@ def main() -> int:
         {"entity_id": alice["id"], "depth": 2, "node_limit": 10, "relation_limit": 6},
     )
     assert status == 200 and subgraph["root_entity_id"] == alice["id"], subgraph
-    assert {alice["id"], atlas["id"], acme["id"]} <= {
-        item["id"] for item in subgraph["nodes"]
-    }, subgraph
+    assert {alice["id"], atlas["id"], acme["id"]} <= {item["id"] for item in subgraph["nodes"]}, (
+        subgraph
+    )
     assert {"EMPLOYS", "LEADS", "BUILT_BY"} <= {
         item["relation_type"] for item in subgraph["relations"]
     }, subgraph
@@ -188,9 +182,7 @@ def main() -> int:
         "Acme Labs",
         entity_type="Organization",
     )
-    eve = unique_entity(
-        base, outsider_headers, outsider_dataset["id"], "Eve", entity_type="Person"
-    )
+    eve = unique_entity(base, outsider_headers, outsider_dataset["id"], "Eve", entity_type="Person")
     assert outsider_acme["id"] != acme["id"]
     status, primary_eve = get(
         base, f"/v1/datasets/{dataset['id']}/entities/search", headers, {"q": "Eve"}
@@ -206,16 +198,18 @@ def main() -> int:
         f"/v1/evidence/{evidence_id}",
     ]
     assert all(
-        request(base, "GET", item, headers=outsider_headers)[0] == 404
-        for item in primary_paths
+        request(base, "GET", item, headers=outsider_headers)[0] == 404 for item in primary_paths
     )
     assert get(base, f"/v1/entities/{eve['id']}", headers)[0] == 404
-    assert get(
-        base,
-        f"/v1/datasets/{dataset['id']}/graph/subgraph",
-        headers,
-        {"entity_id": alice["id"], "depth": 3},
-    )[0] == 422
+    assert (
+        get(
+            base,
+            f"/v1/datasets/{dataset['id']}/graph/subgraph",
+            headers,
+            {"entity_id": alice["id"], "depth": 3},
+        )[0]
+        == 422
+    )
 
     print(
         "structured graph gate passed: entity search, 2-hop path, bounded subgraph, "
