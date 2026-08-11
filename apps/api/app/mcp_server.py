@@ -49,9 +49,16 @@ MCP_TOOLS: list[MCPTool] = [
                 "kind": {
                     "type": "string",
                     "enum": [
-                        "observation", "message", "command",
-                        "command_output", "file", "code",
-                        "tool_call", "tool_result", "error", "event",
+                        "observation",
+                        "message",
+                        "command",
+                        "command_output",
+                        "file",
+                        "code",
+                        "tool_call",
+                        "tool_result",
+                        "error",
+                        "event",
                     ],
                 },
                 "observation": {
@@ -73,8 +80,15 @@ MCP_TOOLS: list[MCPTool] = [
                 "type": {
                     "type": "string",
                     "enum": [
-                        "bugfix", "decision", "preference", "procedure",
-                        "research", "trading", "learning", "fact", "custom",
+                        "bugfix",
+                        "decision",
+                        "preference",
+                        "procedure",
+                        "research",
+                        "trading",
+                        "learning",
+                        "fact",
+                        "custom",
                     ],
                 },
                 "content": {"type": "object"},
@@ -86,7 +100,11 @@ MCP_TOOLS: list[MCPTool] = [
                 "idempotency_key": {"type": "string"},
             },
             "required": [
-                "type", "content", "confidence", "episodes", "idempotency_key",
+                "type",
+                "content",
+                "confidence",
+                "episodes",
+                "idempotency_key",
             ],
         },
     ),
@@ -105,9 +123,7 @@ MCP_TOOLS: list[MCPTool] = [
     ),
     MCPTool(
         name="memory_feedback",
-        description=(
-            "Confirm, reject, correct, merge, supersede, stale, or verify a memory."
-        ),
+        description=("Confirm, reject, correct, merge, supersede, stale, or verify a memory."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -115,8 +131,13 @@ MCP_TOOLS: list[MCPTool] = [
                 "kind": {
                     "type": "string",
                     "enum": [
-                        "confirm", "reject", "correct", "supersede",
-                        "merge", "stale", "verified",
+                        "confirm",
+                        "reject",
+                        "correct",
+                        "supersede",
+                        "merge",
+                        "stale",
+                        "verified",
                     ],
                 },
                 "content": {"type": "object"},
@@ -129,9 +150,7 @@ MCP_TOOLS: list[MCPTool] = [
     ),
     MCPTool(
         name="memory_forget",
-        description=(
-            "Archive or invalidate by default; hard delete requires explicit mode."
-        ),
+        description=("Archive or invalidate by default; hard delete requires explicit mode."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -160,9 +179,7 @@ MCP_TOOLS: list[MCPTool] = [
 ]
 
 
-async def _authenticate(
-    db: AsyncSession, x_api_key: str, x_project_id: str
-) -> None:
+async def _authenticate(db: AsyncSession, x_api_key: str, x_project_id: str) -> None:
     digest = hashlib.sha256(x_api_key.encode()).hexdigest()
     key = await db.scalar(
         select(ApiKey).where(
@@ -252,9 +269,7 @@ async def execute_tool(
     if name == "memory_observe":
         idempotency_key = arguments.get("idempotency_key")
         if idempotency_key:
-            existing_id = await check_idempotency(
-                db, idempotency_key, project_id, "episode.create"
-            )
+            existing_id = await check_idempotency(db, idempotency_key, project_id, "episode.create")
             if existing_id:
                 existing = await db.get(AgentMemoryEpisode, existing_id)
                 if existing:
@@ -281,8 +296,11 @@ async def execute_tool(
 
         if idempotency_key:
             await store_idempotency(
-                db, idempotency_key, project_id,
-                "episode.create", episode.id,
+                db,
+                idempotency_key,
+                project_id,
+                "episode.create",
+                episode.id,
                 {"id": episode.id, "type": episode.type},
             )
 
@@ -296,9 +314,7 @@ async def execute_tool(
 
         idempotency_key = arguments.get("idempotency_key")
         if idempotency_key:
-            existing_id = await check_idempotency(
-                db, idempotency_key, project_id, "episode.create"
-            )
+            existing_id = await check_idempotency(db, idempotency_key, project_id, "episode.create")
             if existing_id:
                 existing = await db.get(AgentMemoryEpisode, existing_id)
                 if existing:
@@ -322,8 +338,11 @@ async def execute_tool(
 
         if idempotency_key:
             await store_idempotency(
-                db, idempotency_key, project_id,
-                "episode.create", episode.id,
+                db,
+                idempotency_key,
+                project_id,
+                "episode.create",
+                episode.id,
                 {"id": episode.id, "type": episode.type},
             )
 
@@ -331,9 +350,7 @@ async def execute_tool(
         return {"episode_id": episode.id, "status": "created"}
 
     if name == "memory_recall":
-        query = select(AgentMemoryEpisode).where(
-            AgentMemoryEpisode.project_id == project_id
-        )
+        query = select(AgentMemoryEpisode).where(AgentMemoryEpisode.project_id == project_id)
         limit = arguments.get("limit", 10)
         episodes = list(await db.scalars(query.limit(limit)))
         return {
@@ -363,7 +380,6 @@ async def execute_tool(
             "confidence": ep_obj.confidence,
             "status": ep_obj.status,
             "version": ep_obj.version,
-
         }
 
     return {"error": f"unknown tool: {name}"}

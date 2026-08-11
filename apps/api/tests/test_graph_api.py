@@ -119,21 +119,15 @@ def test_agent_graph_routes_publish_hard_bounds_and_structured_responses() -> No
     assert schema["paths"]["/v1/datasets/{dataset_id}/entities/search"]["get"]["responses"]["200"]
     path_parameters = {
         item["name"]: item["schema"]
-        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/path"]["get"][
-            "parameters"
-        ]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/path"]["get"]["parameters"]
     }
     subgraph_parameters = {
         item["name"]: item["schema"]
-        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/subgraph"]["get"][
-            "parameters"
-        ]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/subgraph"]["get"]["parameters"]
     }
     explorer_parameters = {
         item["name"]: item["schema"]
-        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/explorer"]["get"][
-            "parameters"
-        ]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/explorer"]["get"]["parameters"]
     }
     assert path_parameters["max_depth"]["maximum"] == MAX_PATH_DEPTH
     assert path_parameters["relation_limit"]["maximum"] == MAX_PATH_RELATIONS
@@ -155,21 +149,21 @@ def test_agent_graph_routes_publish_hard_bounds_and_structured_responses() -> No
     }
     node_page_parameters = {
         item["name"]: item["schema"]
-        for item in schema["paths"][
-            "/v1/datasets/{dataset_id}/graph/explorer/nodes"
-        ]["get"]["parameters"]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/explorer/nodes"]["get"][
+            "parameters"
+        ]
     }
     relation_page_parameters = {
         item["name"]: item["schema"]
-        for item in schema["paths"][
-            "/v1/datasets/{dataset_id}/graph/explorer/relations"
-        ]["get"]["parameters"]
+        for item in schema["paths"]["/v1/datasets/{dataset_id}/graph/explorer/relations"]["get"][
+            "parameters"
+        ]
     }
     assert node_page_parameters["limit"]["maximum"] == MAX_EXPLORER_NODES
     assert relation_page_parameters["limit"]["maximum"] == MAX_EXPLORER_RELATIONS
     assert node_page_parameters["cursor"]["anyOf"][0]["type"] == "string"
     assert relation_page_parameters["cursor"]["anyOf"][0]["type"] == "string"
-    assert schema["paths"][
-        "/v1/datasets/{dataset_id}/relations/{relation_id}/evidence"
-    ]["get"]["responses"]["200"]
+    assert schema["paths"]["/v1/datasets/{dataset_id}/relations/{relation_id}/evidence"]["get"][
+        "responses"
+    ]["200"]
     assert not any("community-report" in path for path in schema["paths"])

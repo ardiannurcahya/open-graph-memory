@@ -52,9 +52,7 @@ class ImportResult(BaseModel):
 async def export_project(project_id: str, project: Project, db: Db) -> StreamingResponse:
     episodes = list(
         await db.scalars(
-            select(AgentMemoryEpisode).where(
-                AgentMemoryEpisode.project_id == project.project_id
-            )
+            select(AgentMemoryEpisode).where(AgentMemoryEpisode.project_id == project.project_id)
         )
     )
 
@@ -115,8 +113,7 @@ async def export_project(project_id: str, project: Project, db: Db) -> Streaming
                 else None
             ),
             "evidence": [
-                {"id": e.id, "reference": e.reference, "metadata": e.metadata_}
-                for e in evidence
+                {"id": e.id, "reference": e.reference, "metadata": e.metadata_} for e in evidence
             ],
         }
         export_episodes.append(ep_data)

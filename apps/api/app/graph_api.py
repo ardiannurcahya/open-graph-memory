@@ -992,9 +992,7 @@ async def explorer(
     )
 
 
-@router.get(
-    "/datasets/{dataset_id}/graph/explorer/nodes", response_model=ExplorerNodePage
-)
+@router.get("/datasets/{dataset_id}/graph/explorer/nodes", response_model=ExplorerNodePage)
 async def explorer_nodes(
     dataset_id: str,
     project: Project,

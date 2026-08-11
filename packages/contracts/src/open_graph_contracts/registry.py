@@ -134,8 +134,7 @@ class PluginRegistry:
             ):
                 return
             raise PluginValidationError(
-                f"plugin '{metadata.name}' already registered for "
-                f"{metadata.capability.value}",
+                f"plugin '{metadata.name}' already registered for {metadata.capability.value}",
                 plugin_name=metadata.name,
             )
         entry = PluginEntry(
@@ -182,8 +181,7 @@ class PluginRegistry:
         """Validate that an instance satisfies a runtime-checkable protocol."""
         if not isinstance(instance, protocol):
             raise PluginValidationError(
-                f"instance does not satisfy protocol {protocol.__name__} "
-                f"for {capability.value}",
+                f"instance does not satisfy protocol {protocol.__name__} for {capability.value}",
             )
 
 

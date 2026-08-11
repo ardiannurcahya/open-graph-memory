@@ -3,6 +3,7 @@
 Level 0 is finest; level 2 is broadest. Each higher level partitions previous
 communities, never entities, so every child has exactly one parent.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -38,10 +39,10 @@ MAX_ANALYTICS_RELATIONS = 20_000
 
 
 def analytics_relation() -> ColumnElement[bool]:
-    """Return filter for non-rejected relations that have evidence."""
-    return (
-        (RelationAssertion.review_state != ReviewState.REJECTED)
-        & exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    """Return filter for non-rejected relations that have evidence or are approved."""
+    has_evidence = exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    return (RelationAssertion.review_state != ReviewState.REJECTED) & (
+        (RelationAssertion.review_state == ReviewState.APPROVED) | has_evidence
     )
 
 
@@ -72,10 +73,7 @@ class AnalyticsResult:
 
     @property
     def community_sizes(self) -> dict[str, int]:
-        return {
-            key: len(value.members)
-            for key, value in self.community_stats[0].items()
-        }
+        return {key: len(value.members) for key, value in self.community_stats[0].items()}
 
 
 def snapshot_hash(
@@ -94,17 +92,13 @@ def _id(snapshot: str, level: int, members: tuple[str, ...]) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:32]
 
 
-def _groups(
-    graph: nx.Graph[str], resolution: float
-) -> list[tuple[str, ...]]:
+def _groups(graph: nx.Graph[str], resolution: float) -> list[tuple[str, ...]]:
     if not graph:
         return []
     communities = nx.community.louvain_communities(
         graph, weight="weight", resolution=resolution, seed=LOUVAIN_SEED
     )
-    return sorted(
-        tuple(sorted(group)) for group in communities
-    )
+    return sorted(tuple(sorted(group)) for group in communities)
 
 
 def analyze_graph(
@@ -119,19 +113,13 @@ def analyze_graph(
         graph.add_edge(source, target, weight=existing + confidence)
 
     digest = snapshot_hash(entity_ids, relations)
-    level_groups: list[list[tuple[str, ...]]] = [
-        _groups(graph, HIERARCHY_RESOLUTIONS[0])
-    ]
+    level_groups: list[list[tuple[str, ...]]] = [_groups(graph, HIERARCHY_RESOLUTIONS[0])]
 
     for resolution in HIERARCHY_RESOLUTIONS[1:]:
         children = level_groups[-1]
         quotient: nx.Graph[int] = nx.Graph()
         quotient.add_nodes_from(range(len(children)))
-        entity_child = {
-            entity: index
-            for index, group in enumerate(children)
-            for entity in group
-        }
+        entity_child = {entity: index for index, group in enumerate(children) for entity in group}
         for source, target, data in graph.edges(data=True):
             left = entity_child[source]
             right = entity_child[target]
@@ -141,17 +129,15 @@ def analyze_graph(
 
         quotient_labels = cast(
             "nx.Graph[str]",
-            nx.relabel_nodes(
-                quotient, {index: str(index) for index in quotient.nodes}
-            ),
+            nx.relabel_nodes(quotient, {index: str(index) for index in quotient.nodes}),
         )
         parent_indexes = _groups(quotient_labels, resolution)
-        level_groups.append([
-            tuple(sorted(
-                entity for index in group for entity in children[int(index)]
-            ))
-            for group in parent_indexes
-        ])
+        level_groups.append(
+            [
+                tuple(sorted(entity for index in group for entity in children[int(index)]))
+                for group in parent_indexes
+            ]
+        )
 
     memberships: dict[int, dict[str, str]] = {}
     stats: dict[int, dict[str, CommunityStats]] = {}
@@ -162,40 +148,26 @@ def analyze_graph(
 
     for level, groups in enumerate(level_groups):
         memberships[level] = {
-            entity: ids_by_members[level][group]
-            for group in groups
-            for entity in group
+            entity: ids_by_members[level][group] for group in groups for entity in group
         }
 
-    total_weight = sum(
-        float(data["weight"]) for _, _, data in graph.edges(data=True)
-    )
+    total_weight = sum(float(data["weight"]) for _, _, data in graph.edges(data=True))
 
     for level, groups in enumerate(level_groups):
         stats[level] = {}
         for group in groups:
             members = set(group)
-            internal = sum(
-                1 for s, t in graph.edges if s in members and t in members
-            )
-            external = sum(
-                1 for s, t in graph.edges if (s in members) != (t in members)
-            )
+            internal = sum(1 for s, t in graph.edges if s in members and t in members)
+            external = sum(1 for s, t in graph.edges if (s in members) != (t in members))
             weight = sum(
                 float(data["weight"])
                 for s, t, data in graph.edges(data=True)
                 if s in members or t in members
             )
-            parent = (
-                None if level == 2 else memberships[level + 1][group[0]]
-            )
+            parent = None if level == 2 else memberships[level + 1][group[0]]
             size = len(group)
-            density = (
-                0.0 if size < 2 else 2 * internal / (size * (size - 1))
-            )
-            importance = (
-                0.0 if not total_weight else weight / (2 * total_weight)
-            )
+            density = 0.0 if size < 2 else 2 * internal / (size * (size - 1))
+            importance = 0.0 if not total_weight else weight / (2 * total_weight)
             community_id = ids_by_members[level][group]
             stats[level][community_id] = CommunityStats(
                 members=group,
@@ -208,8 +180,7 @@ def analyze_graph(
 
     degree = {entity: int(graph.degree(entity)) for entity in graph.nodes}
     weighted_degree = {
-        entity: float(graph.degree(entity, weight="weight"))
-        for entity in graph.nodes
+        entity: float(graph.degree(entity, weight="weight")) for entity in graph.nodes
     }
     total = sum(weighted_degree.values())
     importance_map: dict[str, float] = {}
@@ -227,7 +198,6 @@ def analyze_graph(
         importance=importance_map,
         relation_count=len(relations),
     )
-
 
 
 async def refresh_dataset_analytics(

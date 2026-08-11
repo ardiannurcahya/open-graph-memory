@@ -316,9 +316,7 @@ def main() -> int:
         int(
             sql(
                 args.compose_file,
-                "select count(*) from graph_evidence where document_id='"
-                + deleted_document
-                + "'",
+                "select count(*) from graph_evidence where document_id='" + deleted_document + "'",
             )
         )
         == 0

@@ -27,6 +27,6 @@ dist/
 coverage/
 /artifacts/
 *.log
-.idea/
-.vscode/
-.DS_Store
+/scratch/
+/data/
+

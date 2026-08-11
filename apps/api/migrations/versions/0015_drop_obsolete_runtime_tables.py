@@ -189,9 +189,7 @@ def downgrade() -> None:
             nullable=False,
         ),
         sa.Column("user_id", sa.String(40), sa.ForeignKey("memory_users.id", ondelete="CASCADE")),
-        sa.Column(
-            "agent_id", sa.String(40), sa.ForeignKey("memory_agents.id", ondelete="CASCADE")
-        ),
+        sa.Column("agent_id", sa.String(40), sa.ForeignKey("memory_agents.id", ondelete="CASCADE")),
         sa.Column(
             "session_id", sa.String(40), sa.ForeignKey("memory_sessions.id", ondelete="CASCADE")
         ),

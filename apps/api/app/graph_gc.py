@@ -76,9 +76,7 @@ async def cleanup_document_graph(
         if rel_ids:
             supported_rel_ids = set(
                 await db.scalars(
-                    select(GraphEvidence.relation_id).where(
-                        GraphEvidence.relation_id.in_(rel_ids)
-                    )
+                    select(GraphEvidence.relation_id).where(GraphEvidence.relation_id.in_(rel_ids))
                 )
             )
             for relation in relations:
@@ -90,13 +88,15 @@ async def cleanup_document_graph(
     #    Use a broader scope: affected entities + entities referenced by affected relations.
     candidate_entity_ids = set(affected_entity_ids)
     if affected_relation_ids:
-        for rel in (await db.scalars(
-            select(RelationAssertion).where(
-                RelationAssertion.project_id == project_id,
-                RelationAssertion.dataset_id == dataset_id,
-                RelationAssertion.id.in_(affected_relation_ids),
+        for rel in (
+            await db.scalars(
+                select(RelationAssertion).where(
+                    RelationAssertion.project_id == project_id,
+                    RelationAssertion.dataset_id == dataset_id,
+                    RelationAssertion.id.in_(affected_relation_ids),
+                )
             )
-        )).all():
+        ).all():
             candidate_entity_ids.add(rel.source_entity_id)
             candidate_entity_ids.add(rel.target_entity_id)
 
@@ -117,9 +117,7 @@ async def cleanup_document_graph(
     entity_ids_set = {e.id for e in entities}
     supported_entity_ids = set(
         await db.scalars(
-            select(GraphEvidence.entity_id).where(
-                GraphEvidence.entity_id.in_(entity_ids_set)
-            )
+            select(GraphEvidence.entity_id).where(GraphEvidence.entity_id.in_(entity_ids_set))
         )
     )
 
@@ -139,8 +137,7 @@ async def cleanup_document_graph(
     )
 
     unsupported = [
-        e for e in entities
-        if e.id not in supported_entity_ids and e.id not in related_entity_ids
+        e for e in entities if e.id not in supported_entity_ids and e.id not in related_entity_ids
     ]
     unsupported_ids = {entity.id for entity in unsupported}
     if not unsupported_ids:
@@ -160,8 +157,7 @@ async def cleanup_document_graph(
     removable_merges = [
         merge
         for merge in merges
-        if merge.source_entity_id in unsupported_ids
-        and merge.target_entity_id in unsupported_ids
+        if merge.source_entity_id in unsupported_ids and merge.target_entity_id in unsupported_ids
     ]
     protected_ids = {
         entity_id

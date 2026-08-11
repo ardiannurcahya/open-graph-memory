@@ -414,9 +414,7 @@ class OpenAICompatibleExtractor:
     def extract_with_context(self, context: ChunkExtractionContext) -> Extraction:
         return self.extract_batch([context])[0].extraction
 
-    def extract_batch(
-        self, contexts: list[ChunkExtractionContext]
-    ) -> list[BatchExtractionResult]:
+    def extract_batch(self, contexts: list[ChunkExtractionContext]) -> list[BatchExtractionResult]:
         results: list[BatchExtractionResult] = []
         remaining = list(contexts)
         while remaining:
@@ -472,9 +470,7 @@ class OpenAICompatibleExtractor:
                 "messages": [
                     {
                         "role": "system",
-                        "content": (
-                            self._system_prompt()
-                        ),
+                        "content": (self._system_prompt()),
                     },
                     {"role": "user", "content": user_content},
                 ],
@@ -568,7 +564,7 @@ def _batch_payload(contexts: list[ChunkExtractionContext]) -> dict[str, object]:
                 "target_chunk_only_factual_source": context.target_text,
             }
             for context in contexts
-        ]
+        ],
     }
 
 
@@ -581,9 +577,7 @@ def _fit_batch_contexts(
 ) -> list[ChunkExtractionContext]:
     selected = list(contexts)
     while _payload_chars(selected) > max_batch_chars:
-        references = [
-            reference for context in selected for reference in context.previous_chunks
-        ]
+        references = [reference for context in selected for reference in context.previous_chunks]
         if not references:
             if len(selected) == 1:
                 return selected

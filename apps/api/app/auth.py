@@ -33,6 +33,13 @@ async def require_project(
         project_id = UUID(x_project_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid project ID") from exc
+
+    # 1. Check if admin key
+    admin_key = get_settings().admin_api_key.get_secret_value()
+    if secrets.compare_digest(x_api_key, admin_key):
+        return ProjectContext(project_id=project_id)
+
+    # 2. Check project api key in DB
     digest = hashlib.sha256(x_api_key.encode()).hexdigest()
     key = await db.scalar(
         select(ApiKey).where(

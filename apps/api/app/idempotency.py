@@ -59,8 +59,6 @@ async def store_idempotency(
 
 async def cleanup_expired_keys(db: AsyncSession) -> int:
     cutoff = datetime.now(UTC) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
-    result = await db.execute(
-        delete(IdempotencyKey).where(IdempotencyKey.created_at < cutoff)
-    )
+    result = await db.execute(delete(IdempotencyKey).where(IdempotencyKey.created_at < cutoff))
     rowcount = getattr(result, "rowcount", 0)
     return cast(int, rowcount)

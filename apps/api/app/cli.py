@@ -85,15 +85,14 @@ def restore(from_file: str, apply: bool) -> None:
         if from_path.suffix == ".dump":
             pg_restore_cmd = [
                 "pg_restore",
-                "-d", db_url.replace("+asyncpg", "").replace("postgresql://", ""),
+                "-d",
+                db_url.replace("+asyncpg", "").replace("postgresql://", ""),
                 str(from_path),
             ]
             subprocess.run(pg_restore_cmd, capture_output=True, text=True, check=True)
         else:
             with open(from_path) as f:
-                subprocess.run(
-                    psql_cmd, stdin=f, capture_output=True, text=True, check=True
-                )
+                subprocess.run(psql_cmd, stdin=f, capture_output=True, text=True, check=True)
         click.echo("Restore completed")
     except subprocess.CalledProcessError as e:
         click.echo(f"Restore failed: {e.stderr}", err=True)
@@ -103,11 +102,13 @@ def restore(from_file: str, apply: bool) -> None:
 @cli.command()
 def integrity() -> None:
     """Check database integrity."""
+
     async def _check() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Checking foreign key constraints...")
-            result = await conn.execute(text("""
+            result = await conn.execute(
+                text("""
                 SELECT
                     tc.table_name,
                     kcu.column_name,
@@ -120,17 +121,20 @@ def integrity() -> None:
                     ON ccu.constraint_name = tc.constraint_name
                 WHERE tc.constraint_type = 'FOREIGN KEY'
                 ORDER BY tc.table_name;
-            """))
+            """)
+            )
             fk_count = getattr(result, "rowcount", 0)
             click.echo(f"Found {fk_count} foreign key constraints")
 
             click.echo("\nChecking for orphaned records...")
-            result = await conn.execute(text("""
+            result = await conn.execute(
+                text("""
                 SELECT COUNT(*) FROM agent_memory_episodes e
                 WHERE NOT EXISTS (
                     SELECT 1 FROM projects p WHERE p.id = e.project_id
                 );
-            """))
+            """)
+            )
             orphans = result.scalar() or 0
             if orphans > 0:
                 click.echo(f"WARNING: Found {orphans} orphaned episodes", err=True)
@@ -138,12 +142,14 @@ def integrity() -> None:
                 click.echo("No orphaned episodes found")
 
             click.echo("\nChecking indexes...")
-            result = await conn.execute(text("""
+            result = await conn.execute(
+                text("""
                 SELECT indexname, tablename
                 FROM pg_indexes
                 WHERE schemaname = 'public'
                 ORDER BY tablename, indexname;
-            """))
+            """)
+            )
             indexes = list(result)
             click.echo(f"Found {len(indexes)} indexes")
 
@@ -156,11 +162,13 @@ def integrity() -> None:
 @click.option("--apply", is_flag=True, help="Actually vacuum")
 def vacuum(apply: bool) -> None:
     """Vacuum database to reclaim space."""
+
     async def _vacuum() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             if not apply:
-                result = await conn.execute(text("""
+                result = await conn.execute(
+                    text("""
                     SELECT
                         relname,
                         n_dead_tup,
@@ -169,7 +177,8 @@ def vacuum(apply: bool) -> None:
                     FROM pg_stat_user_tables
                     WHERE n_dead_tup > 0
                     ORDER BY n_dead_tup DESC;
-                """))
+                """)
+                )
                 tables = list(result)
                 if tables:
                     click.echo("Tables with dead tuples:")
@@ -191,17 +200,20 @@ def vacuum(apply: bool) -> None:
 @cli.command()
 def fts_rebuild() -> None:
     """Rebuild full-text search indexes."""
+
     async def _rebuild() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Rebuilding FTS indexes...")
 
-            await conn.execute(text(
-                "UPDATE agent_memory_episodes "
-                "SET search_vector = to_tsvector('simple', "
-                "title || ' ' || goal || ' ' || problem_signature) "
-                "WHERE search_vector IS NULL;"
-            ))
+            await conn.execute(
+                text(
+                    "UPDATE agent_memory_episodes "
+                    "SET search_vector = to_tsvector('simple', "
+                    "title || ' ' || goal || ' ' || problem_signature) "
+                    "WHERE search_vector IS NULL;"
+                )
+            )
 
             await conn.execute(text("REINDEX INDEX ix_agent_memory_episodes_search;"))
 
@@ -213,6 +225,7 @@ def fts_rebuild() -> None:
 @cli.command()
 def checkpoint() -> None:
     """Truncate WAL (Write-Ahead Log)."""
+
     async def _checkpoint() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
@@ -220,7 +233,6 @@ def checkpoint() -> None:
             auto_conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
             await auto_conn.execute(text("CHECKPOINT;"))
             click.echo("Checkpoint completed")
-
 
     asyncio.run(_checkpoint())
 

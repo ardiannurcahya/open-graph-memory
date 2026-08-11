@@ -25,6 +25,20 @@ interface SeedResult {
   centers: Record<string, { x: number; y: number }>;
 }
 
+interface CanvasNodeData {
+  label?: string | null;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+}
+
+interface CanvasSettings {
+  labelSize?: number;
+  labelFont?: string;
+  labelWeight?: string;
+}
+
 function seedLayout(state: GraphState): SeedResult {
   const communityIds = [...state.communities.keys()];
   if (communityIds.length === 0) communityIds.push("default");
@@ -41,15 +55,15 @@ function seedLayout(state: GraphState): SeedResult {
   const branchRadii = new Map<string, number>();
   for (const [id, members] of nodesByCommunity) {
     communitySizes.set(id, members.length);
-    const sizeScale = members.length > 1500 ? 0.6 : 0.35;
-    branchRadii.set(id, 3 + Math.sqrt(Math.max(1, members.length)) * sizeScale);
+    const sizeScale = members.length > 1500 ? 0.3 : 0.2;
+    branchRadii.set(id, 2 + Math.sqrt(Math.max(1, members.length)) * sizeScale);
   }
 
   const sorted = [...communityIds].sort(
     (a, b) => (communitySizes.get(b) ?? 0) - (communitySizes.get(a) ?? 0),
   );
   const largestBranchRadius = branchRadii.get(sorted[0]) ?? 0;
-  const effectiveRadius = Math.max(15, largestBranchRadius + 8);
+  const effectiveRadius = Math.max(4, largestBranchRadius * 0.45);
 
   const centers: Record<string, { x: number; y: number }> = {};
   if (sorted.length > 0) centers[sorted[0]] = { x: 0, y: 0 };
@@ -230,37 +244,131 @@ export default function SigmaGraphCanvas({
     setLayoutPct(20);
     progressRef.current?.(20);
 
+    // Custom High-Contrast Regular Label Renderer
+    const drawLabel = (
+      context: CanvasRenderingContext2D,
+      data: CanvasNodeData,
+      settings: CanvasSettings,
+      isDark: boolean
+    ) => {
+      if (!data.label) return;
+      const size = settings.labelSize || 12;
+      const font = settings.labelFont || "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif";
+      const weight = settings.labelWeight || "600";
+
+      context.font = `${weight} ${size}px ${font}`;
+      context.fillStyle = isDark ? "#ffffff" : "#0f172a";
+      context.fillText(data.label, data.x + data.size + 4, data.y + size / 3);
+    };
+
+    // Custom High-Contrast macOS Hover & Selection Card Renderer
+    const drawHover = (
+      context: CanvasRenderingContext2D,
+      data: CanvasNodeData,
+      settings: CanvasSettings,
+      isDark: boolean
+    ) => {
+      const size = settings.labelSize || 12;
+      const font = settings.labelFont || "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif";
+      const weight = settings.labelWeight || "600";
+
+      context.font = `${weight} ${size}px ${font}`;
+      const label = data.label;
+      if (!label) return;
+
+      const textWidth = context.measureText(label).width;
+      const paddingX = 8;
+      const paddingY = 4;
+      const boxWidth = Math.round(textWidth + paddingX * 2);
+      const boxHeight = Math.round(size + paddingY * 2);
+      const radius = 6;
+
+      const nodeRadius = data.size || 5;
+      const boxX = Math.round(data.x + nodeRadius + 4);
+      const boxY = Math.round(data.y - boxHeight / 2);
+
+      // 1. Draw High-Contrast Background Box
+      context.save();
+      context.beginPath();
+
+      // Dark Mode: Flat GitHub Dark Card (#161b22) with border (#30363d)
+      // Light Mode: Pure White Card (#ffffff) with border (#cbd5e1)
+      context.fillStyle = isDark ? "#161b22" : "#ffffff";
+      context.strokeStyle = isDark ? "#30363d" : "#cbd5e1";
+      context.lineWidth = 1.5;
+
+      context.shadowColor = isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.12)";
+      context.shadowBlur = 6;
+      context.shadowOffsetX = 0;
+      context.shadowOffsetY = 2;
+
+      if (typeof context.roundRect === "function") {
+        context.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+      } else {
+        context.rect(boxX, boxY, boxWidth, boxHeight);
+      }
+      context.fill();
+
+      context.shadowColor = "transparent";
+      context.stroke();
+
+      // 2. Draw High-Contrast Text (Never matches background!)
+      // Dark Mode: Pure White (#ffffff) on Dark Card (#161b22)
+      // Light Mode: Deep Slate Black (#0f172a) on White Card (#ffffff)
+      context.fillStyle = isDark ? "#ffffff" : "#0f172a";
+      context.textBaseline = "middle";
+      context.fillText(label, boxX + paddingX, boxY + boxHeight / 2);
+      context.restore();
+    };
+
     // Create sigma
     const sigma = new Sigma(graph, container, {
       allowInvalidContainer: true,
       renderLabels: labelsRef.current,
       labelDensity: 1,
       labelRenderedSizeThreshold: 8,
-      labelFont: "ui-monospace, monospace",
-      labelSize: 11,
-      labelWeight: "400",
-      defaultEdgeColor: dark ? "#2a2a3a" : "#c8c6c0",
-      labelColor: { color: dark ? "#a8a8b8" : "#404050" },
+      labelFont: "-apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', sans-serif",
+      labelSize: 12,
+      labelWeight: "600",
+      defaultEdgeColor: dark ? "#38383a" : "#c8c6c0",
+      labelColor: { color: dark ? "#ffffff" : "#0f172a" },
+      defaultDrawNodeLabel: (context, data, settings) =>
+        drawLabel(context, data, settings, themeRef.current === "dark"),
+      defaultDrawNodeHover: (context, data, settings) =>
+        drawHover(context, data, settings, themeRef.current === "dark"),
       minCameraRatio: 0.05,
       maxCameraRatio: 10,
       nodeReducer: (node, data) => {
+        const isDark = themeRef.current === "dark";
         const filters = filtersRef.current;
         const sel = selectedNodeRef.current;
         const highlighted = highlightedRef.current;
         const isExpired = graph.getNodeAttribute(node, "isExpired") as boolean | undefined;
+
+        // When a node is selected: ONLY the selected node and its connected neighbors are displayed!
         if (sel) {
-          if (node === sel) return { ...data, highlighted: true };
-          if (highlighted.has(node)) return { ...data, highlighted: true };
-          return { ...data, color: dark ? "#1a1a2a" : "#d8d6d0", zIndex: 0 };
+          if (node === sel || highlighted.has(node)) {
+            return {
+              ...data,
+              highlighted: true,
+              forceLabel: true,
+              hidden: false,
+              zIndex: node === sel ? 2 : 1,
+            };
+          }
+          return { ...data, hidden: true, zIndex: 0 };
         }
+
+        // When no node is selected, apply community filters:
         if (filters.size > 0 && !filters.has(data.community as string)) {
-          return { ...data, color: dark ? "#1a1a2a" : "#d8d6d0", hidden: true, zIndex: 0 };
+          return { ...data, hidden: true, zIndex: 0 };
         }
         if (isExpired) {
-          return { ...data, color: dark ? "#2a2a3a" : "#b8b6b0", zIndex: 0 };
+          return { ...data, color: isDark ? "#2a2a3a" : "#b8b6b0", zIndex: 0 };
         }
         return data;
       },
+
       edgeReducer: (edge) => {
         const filters = filtersRef.current;
         const sel = selectedNodeRef.current;
@@ -270,14 +378,22 @@ export default function SigmaGraphCanvas({
         const tgtComm = graph.getNodeAttribute(tgt, "community") as string;
         const edgeData = graph.getEdgeAttributes(edge);
         const isExpired = edgeData.isExpired as boolean | undefined;
+
+        // When a node is selected: ONLY the connected edges are displayed!
         if (sel) {
-          if (src !== sel && tgt !== sel) {
-            return { color: dark ? "#292936" : "#d2d0ca", size: 0.15 };
+          if (src === sel || tgt === sel) {
+            return {
+              hidden: false,
+              size: 1.5,
+              color: isExpired ? (dark ? "#4a4a5a" : "#94a3b8") : undefined,
+            };
           }
-          return { hidden: false };
+          return { hidden: true };
         }
+
+        // When no node is selected, apply community filters:
         if (filters.size > 0 && !filters.has(srcComm) && !filters.has(tgtComm)) {
-          return { color: dark ? "#15151f" : "#e0ded8", hidden: true };
+          return { hidden: true };
         }
         if (isExpired) {
           return { color: dark ? "#1a1a2a" : "#d0cec8", hidden: false };
@@ -292,7 +408,14 @@ export default function SigmaGraphCanvas({
     // Run forceatlas2 if physics enabled or cache miss.
     const shouldRunPhysics = physicsRef.current || !loadCached(cacheKey);
     if (shouldRunPhysics) {
-      const settings = forceAtlas2.inferSettings(graph);
+      const baseSettings = forceAtlas2.inferSettings(graph);
+      const settings = {
+        ...baseSettings,
+        gravity: 2.5,
+        scalingRatio: 0.3,
+        strongGravityMode: true,
+        outboundAttractionDistribution: false,
+      };
       const totalIter = N > 1500 ? 60 : N > 500 ? 80 : 120;
       let iter = 0;
       const runChunk = () => {
@@ -507,8 +630,8 @@ export default function SigmaGraphCanvas({
       const info = state.communities.get(srcComm);
       graph.setEdgeAttribute(_id, "color", info?.color ?? "#78716c");
     });
-    sigma.setSetting("defaultEdgeColor", dark ? "#2a2a3a" : "#c8c6c0");
-    sigma.setSetting("labelColor", { color: dark ? "#a8a8b8" : "#404050" });
+    sigma.setSetting("defaultEdgeColor", dark ? "#38383a" : "#c8c6c0");
+    sigma.setSetting("labelColor", { color: dark ? "#ffffff" : "#0f172a" });
     sigma.refresh();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedTheme]);

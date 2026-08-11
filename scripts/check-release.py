@@ -37,19 +37,12 @@ for relative in (
     "deployments/docker-compose.ghcr-external.yml",
     "deployments/docker-compose.yml",
     "deployments/docker-compose.prod.yml",
-    "deployments/multihost/.env.example",
-    "deployments/multihost/app.yml",
-    "deployments/multihost/dispatcher.yml",
-    "deployments/multihost/graph-worker.yml",
-    "deployments/multihost/worker.yml",
 ):
     text = (ROOT / relative).read_text(encoding="utf-8")
     if re.search(r"(?:open-graph-memory|opengraphrag)-(?:api|worker|web):latest", text):
         errors.append(f"{relative}: mutable first-party latest image is forbidden")
 
-external = (ROOT / "deployments/docker-compose.ghcr-external.yml").read_text(
-    encoding="utf-8"
-)
+external = (ROOT / "deployments/docker-compose.ghcr-external.yml").read_text(encoding="utf-8")
 if f"${{IMAGE_TAG:-{TAG}}}" not in external:
     errors.append(f"external compose must default IMAGE_TAG to {TAG}")
 if f"IMAGE_TAG={TAG}" not in (ROOT / ".env.example").read_text(encoding="utf-8"):

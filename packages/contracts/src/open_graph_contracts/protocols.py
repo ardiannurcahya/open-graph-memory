@@ -1,4 +1,5 @@
 """Runtime-checkable protocols for graph ingestion and storage plugins."""
+
 from __future__ import annotations
 
 from typing import IO, TYPE_CHECKING, Protocol, runtime_checkable
@@ -41,4 +42,3 @@ class ObjectStore(Protocol):
     async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None: ...
     async def download(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
-

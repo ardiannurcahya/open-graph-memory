@@ -57,9 +57,7 @@ async def test_list_audit_logs(session: AsyncSession, project: Project, api_key:
     assert len(data["logs"]) == 5
 
 
-async def test_list_audit_logs_filter(
-    session: AsyncSession, project: Project, api_key: ApiKey
-):
+async def test_list_audit_logs_filter(session: AsyncSession, project: Project, api_key: ApiKey):
     for i in range(3):
         log = AuditLog(
             id=f"al_filter_{i:03d}",

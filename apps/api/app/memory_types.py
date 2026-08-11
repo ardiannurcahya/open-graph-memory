@@ -102,9 +102,7 @@ def validate_typed_content(memory_type: str, content: dict[str, Any]) -> None:
 
     if "verified" in content and memory_type == "bugfix":
         if content["verified"] and not content.get("verification_evidence"):
-            raise HTTPException(
-                400, "verified bugfix requires verification evidence"
-            )
+            raise HTTPException(400, "verified bugfix requires verification evidence")
 
 
 def get_type_schema(memory_type: str) -> dict[str, Any] | None:

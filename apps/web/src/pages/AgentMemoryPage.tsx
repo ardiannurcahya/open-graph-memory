@@ -4,6 +4,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import Sigma from "sigma";
 import { agentMemoryApi } from "../api/endpoints";
 import type { MemoryGraphView, MemoryGraphNode, MemoryEdgeType, MemoryNodeType } from "../api/types";
+import { useTheme } from "../themeState";
 
 const NODE_COLORS: Record<MemoryNodeType, string> = {
   episode: "#3b82f6",
@@ -27,6 +28,20 @@ const RESERVED_NODE_KEYS = new Set([
   "x", "y", "size", "color", "label", "nodeType", "status", "domain",
   "hidden", "highlighted", "forceLabel", "type", "zIndex",
 ]);
+
+interface CanvasNodeData {
+  label?: string | null;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+}
+
+interface CanvasSettings {
+  labelSize?: number;
+  labelFont?: string;
+  labelWeight?: string;
+}
 
 function seedPositions(nodes: MemoryGraphNode[]): Record<string, { x: number; y: number }> {
   const groups = new Map<string, MemoryGraphNode[]>();
@@ -82,7 +97,7 @@ function buildGraph(data: MemoryGraphView): Graph {
       x: pos.x,
       y: pos.y,
       label: node.label,
-      size: node.type === "episode" ? 14 : node.type === "pattern" ? 12 : node.type === "outcome" ? 10 : 6,
+      size: node.type === "episode" ? 14 : node.type === "pattern" ? 12 : node.type === "outcome" ? 10 : 7,
       color: NODE_COLORS[node.type] ?? "#6b7280",
       nodeType: node.type,
       status: node.status ?? "",
@@ -111,7 +126,30 @@ function getConnectedNodes(graph: Graph, nodeId: string): Set<string> {
   return connected;
 }
 
+function ToolbarButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      data-active={active}
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-1 text-xs font-medium transition-all shadow-sm ${
+        active
+          ? "border-mac-accent bg-mac-accent !text-white font-semibold"
+          : "border-mac bg-surface/90 text-foreground hover:bg-surface-subtle"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Stat({ value }: { value: string }) {
+  return <span className="px-2 py-1 font-mono text-[10px] text-foreground-muted">{value}</span>;
+}
+
 export default function AgentMemoryPage() {
+  const { resolvedTheme } = useTheme();
   const [data, setData] = useState<MemoryGraphView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +157,10 @@ export default function AgentMemoryPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selectedNode, setSelectedNode] = useState<MemoryGraphNode | null>(null);
   const [layoutPct, setLayoutPct] = useState(0);
+  const [showLegend, setShowLegend] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+  const [physicsEnabled, setPhysicsEnabled] = useState(true);
+  const [zoom, setZoom] = useState(1.0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -126,10 +168,8 @@ export default function AgentMemoryPage() {
   const highlightedRef = useRef<Set<string>>(new Set());
   const layoutFramesRef = useRef<Set<number>>(new Set());
   const dataRef = useRef<MemoryGraphView | null>(null);
-  const selectedNodeDataRef = useRef<MemoryGraphNode | null>(null);
 
   dataRef.current = data;
-  selectedNodeDataRef.current = selectedNode;
 
   const cancelLayoutFrames = useCallback(() => {
     for (const frame of layoutFramesRef.current) cancelAnimationFrame(frame);
@@ -176,6 +216,24 @@ export default function AgentMemoryPage() {
 
   const graph = useMemo(() => (data ? buildGraph(data) : null), [data]);
 
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (event.key === "Escape") {
+        selectedNodeRef.current = null;
+        highlightedRef.current = new Set();
+        sigmaRef.current?.refresh();
+        setSelectedNode(null);
+      } else if (event.key.toLowerCase() === "l") {
+        setShowLegend((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   // Sigma lifecycle: init, layout, cleanup
   useEffect(() => {
     const container = containerRef.current;
@@ -187,60 +245,153 @@ export default function AgentMemoryPage() {
     if (graph.order === 0) return;
 
     let disposed = false;
+    const dark = resolvedTheme === "dark";
+
+    // Custom High-Contrast Regular Label Renderer
+    const drawLabel = (
+      context: CanvasRenderingContext2D,
+      dataNode: CanvasNodeData,
+      settings: CanvasSettings,
+      isDark: boolean
+    ) => {
+      if (!dataNode.label) return;
+      const size = settings.labelSize || 12;
+      const font = settings.labelFont || "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif";
+      const weight = settings.labelWeight || "600";
+
+      context.font = `${weight} ${size}px ${font}`;
+      context.fillStyle = isDark ? "#ffffff" : "#0f172a";
+      context.fillText(dataNode.label, dataNode.x + dataNode.size + 4, dataNode.y + size / 3);
+    };
+
+    // Custom High-Contrast macOS Hover & Selection Card Renderer
+    const drawHover = (
+      context: CanvasRenderingContext2D,
+      dataNode: CanvasNodeData,
+      settings: CanvasSettings,
+      isDark: boolean
+    ) => {
+      const size = settings.labelSize || 12;
+      const font = settings.labelFont || "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif";
+      const weight = settings.labelWeight || "600";
+
+      context.font = `${weight} ${size}px ${font}`;
+      const label = dataNode.label;
+      if (!label) return;
+
+      const textWidth = context.measureText(label).width;
+      const paddingX = 8;
+      const paddingY = 4;
+      const boxWidth = Math.round(textWidth + paddingX * 2);
+      const boxHeight = Math.round(size + paddingY * 2);
+      const radius = 6;
+
+      const nodeRadius = dataNode.size || 5;
+      const boxX = Math.round(dataNode.x + nodeRadius + 4);
+      const boxY = Math.round(dataNode.y - boxHeight / 2);
+
+      context.save();
+      context.beginPath();
+      context.fillStyle = isDark ? "#161b22" : "#ffffff";
+      context.strokeStyle = isDark ? "#30363d" : "#cbd5e1";
+      context.lineWidth = 1.5;
+      context.shadowColor = isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.12)";
+      context.shadowBlur = 6;
+      context.shadowOffsetX = 0;
+      context.shadowOffsetY = 2;
+
+      if (typeof context.roundRect === "function") {
+        context.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+      } else {
+        context.rect(boxX, boxY, boxWidth, boxHeight);
+      }
+      context.fill();
+      context.shadowColor = "transparent";
+      context.stroke();
+
+      context.fillStyle = isDark ? "#ffffff" : "#0f172a";
+      context.textBaseline = "middle";
+      context.fillText(label, boxX + paddingX, boxY + boxHeight / 2);
+      context.restore();
+    };
 
     try {
       const N = graph.order;
-      const dark = document.documentElement.classList.contains("dark");
-
       const sigma = new Sigma(graph, container, {
         allowInvalidContainer: true,
-        renderEdgeLabels: false,
+        renderLabels: showLabels,
+        labelDensity: 1,
         labelRenderedSizeThreshold: 6,
-        defaultEdgeColor: dark ? "#2a2a3a" : "#c8c6c0",
-        labelColor: { color: dark ? "#a8a8b8" : "#404050" },
+        labelFont: "-apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', sans-serif",
+        labelSize: 12,
+        labelWeight: "600",
+        defaultEdgeColor: dark ? "#38383a" : "#c8c6c0",
+        labelColor: { color: dark ? "#ffffff" : "#0f172a" },
+        defaultDrawNodeLabel: (context, data, settings) =>
+          drawLabel(context, data, settings, dark),
+        defaultDrawNodeHover: (context, data, settings) =>
+          drawHover(context, data, settings, dark),
         minCameraRatio: 0.05,
         maxCameraRatio: 10,
-        nodeReducer: (_node, data) => {
+        nodeReducer: (_node, nodeData) => {
           const sel = selectedNodeRef.current;
           const highlighted = highlightedRef.current;
           if (sel) {
-            if (_node === sel) return { ...data, highlighted: true };
-            if (highlighted.has(_node)) return { ...data, highlighted: true };
-            return { ...data, color: dark ? "#1a1a2a" : "#d8d6d0", zIndex: 0 };
+            if (_node === sel || highlighted.has(_node)) {
+              return {
+                ...nodeData,
+                highlighted: true,
+                forceLabel: true,
+                hidden: false,
+                zIndex: _node === sel ? 2 : 1,
+              };
+            }
+            return { ...nodeData, hidden: true, zIndex: 0 };
           }
-          return data;
+          return nodeData;
         },
         edgeReducer: (edge) => {
           const sel = selectedNodeRef.current;
           if (!sel) return {};
           const src = graph.source(edge);
           const tgt = graph.target(edge);
-          if (src !== sel && tgt !== sel) {
-            return { color: dark ? "#292936" : "#d2d0ca", size: 0.15 };
+          if (src === sel || tgt === sel) {
+            return { hidden: false, size: 2 };
           }
-          return {};
+          return { hidden: true };
         },
       });
       sigmaRef.current = sigma;
 
       // Chunked async ForceAtlas2
-      const settings = forceAtlas2.inferSettings(graph);
-      const totalIter = N > 500 ? 60 : N > 100 ? 80 : 120;
-      let iter = 0;
-      const runChunk = () => {
-        if (disposed) return;
-        const remaining = totalIter - iter;
-        if (remaining <= 0) {
-          setLayoutPct(100);
-          return;
-        }
-        forceAtlas2.assign(graph, { iterations: Math.min(5, remaining), settings });
-        iter += Math.min(5, remaining);
-        setLayoutPct(20 + Math.floor((iter / totalIter) * 75));
-        sigma.refresh();
+      if (physicsEnabled) {
+        const settings = forceAtlas2.inferSettings(graph);
+        const totalIter = N > 500 ? 60 : N > 100 ? 80 : 120;
+        let iter = 0;
+        const runChunk = () => {
+          if (disposed) return;
+          const remaining = totalIter - iter;
+          if (remaining <= 0) {
+            setLayoutPct(100);
+            return;
+          }
+          forceAtlas2.assign(graph, { iterations: Math.min(5, remaining), settings });
+          iter += Math.min(5, remaining);
+          setLayoutPct(20 + Math.floor((iter / totalIter) * 75));
+          sigma.refresh();
+          scheduleLayoutFrame(runChunk);
+        };
         scheduleLayoutFrame(runChunk);
-      };
-      scheduleLayoutFrame(runChunk);
+      } else {
+        setLayoutPct(100);
+      }
+
+      // Camera tracker
+      const cam = sigma.getCamera();
+      cam.on("updated", (camState) => {
+        setZoom(1 / camState.ratio);
+      });
+      setZoom(1 / cam.getState().ratio);
 
       // Click interactions
       sigma.on("clickNode", ({ node }) => {
@@ -273,7 +424,7 @@ export default function AgentMemoryPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initialize graph renderer");
     }
-  }, [graph, cancelLayoutFrames, scheduleLayoutFrame]);
+  }, [graph, cancelLayoutFrames, scheduleLayoutFrame, resolvedTheme, physicsEnabled, showLabels]);
 
   const handleRefresh = useCallback(() => {
     void fetchGraph();
@@ -286,59 +437,75 @@ export default function AgentMemoryPage() {
     setSelectedNode(null);
   }, []);
 
+  const handleFit = () => {
+    sigmaRef.current?.getCamera().animatedReset({ duration: 300 });
+  };
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-ui-border bg-ui-surface px-4 py-2">
-        <h2 className="text-lg font-semibold text-ui-text">Agent Memory</h2>
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            value={domainFilter}
-            onChange={(e) => setDomainFilter(e.target.value)}
-            className="rounded-md border border-ui-border bg-ui-surface px-2 py-1 text-sm text-ui-text"
-          >
-            <option value="">All Domains</option>
-            <option value="engineering">Engineering</option>
-            <option value="research">Research</option>
-            <option value="trading">Trading</option>
-            <option value="operations">Operations</option>
-            <option value="custom">Custom</option>
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border border-ui-border bg-ui-surface px-2 py-1 text-sm text-ui-text"
-          >
-            <option value="">All Status</option>
-            <option value="open">Open</option>
-            <option value="active">Active</option>
-            <option value="degraded">Degraded</option>
-            <option value="superseded">Superseded</option>
-            <option value="rejected">Rejected</option>
-          </select>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={loading}
-            className="rounded-md border border-stone-200 px-3 py-1 text-xs text-stone-600 disabled:opacity-40"
-          >
-            Refresh
-          </button>
+    <div className="relative h-screen min-h-[640px] overflow-hidden bg-ui-canvas">
+      {/* Floating macOS Top Toolbar */}
+      <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-mac bg-surface/90 px-3 py-2 shadow-xl backdrop-blur-md text-foreground">
+        <div className="flex items-center gap-2 font-semibold text-sm mr-2 text-foreground">
+          <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse" />
+          Agent Memory Playground
         </div>
+
+        {/* Domain Filter */}
+        <select
+          value={domainFilter}
+          onChange={(e) => setDomainFilter(e.target.value)}
+          className="min-w-36 rounded-lg border border-mac bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle shadow-sm transition-colors"
+        >
+          <option value="">All Domains</option>
+          <option value="engineering">Engineering</option>
+          <option value="research">Research</option>
+          <option value="trading">Trading</option>
+          <option value="operations">Operations</option>
+          <option value="custom">Custom</option>
+        </select>
+
+        {/* Status Filter */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="min-w-32 rounded-lg border border-mac bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle shadow-sm transition-colors"
+        >
+          <option value="">All Status</option>
+          <option value="open">Open</option>
+          <option value="active">Active</option>
+          <option value="degraded">Degraded</option>
+          <option value="superseded">Superseded</option>
+          <option value="rejected">Rejected</option>
+        </select>
+
+        <ToolbarButton active={showLegend} onClick={() => setShowLegend((v) => !v)}>
+          Legend
+        </ToolbarButton>
+
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={loading}
+          className="rounded-lg border border-mac bg-surface/90 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle disabled:opacity-40 shadow-sm ml-auto"
+        >
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
-      <div className="relative flex min-h-0 flex-1">
+      {/* Main Canvas Area */}
+      <div className="relative h-full w-full">
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-ui-canvas/80">
-            <span className="text-sm text-ui-subdued">Loading Agent Memory graph...</span>
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-ui-canvas/80 backdrop-blur-sm">
+            <span className="text-sm text-foreground-muted font-medium">Loading Agent Memory graph...</span>
           </div>
         )}
         {error && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-ui-canvas/80">
-            <span className="text-sm text-red-500">{error}</span>
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-ui-canvas/80 backdrop-blur-sm">
+            <span className="text-sm text-red-500 font-medium">{error}</span>
             <button
               type="button"
               onClick={handleRefresh}
-              className="rounded-md border border-ui-border px-3 py-1 text-xs text-ui-text hover:bg-ui-muted"
+              className="rounded-xl bg-mac-accent px-3 py-1 text-xs font-semibold !text-white shadow-sm"
             >
               Retry
             </button>
@@ -346,84 +513,136 @@ export default function AgentMemoryPage() {
         )}
         {!loading && !error && data && data.nodes.length === 0 && (
           <div className="absolute inset-0 z-10 flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-sm text-ui-subdued">No Agent Memory episodes found.</p>
-              <p className="mt-1 text-xs text-ui-subdued">
-                Create episodes using the OGM MCP tools or API.
+            <div className="text-center p-6 rounded-2xl border border-mac bg-surface shadow-xl">
+              <p className="text-sm font-semibold text-foreground">No Agent Memory episodes found.</p>
+              <p className="mt-1 text-xs text-foreground-muted">
+                Create episodes using OGM MCP tools (<code className="font-mono text-mac-accent">ogm_memory_create_episode</code>).
               </p>
             </div>
           </div>
         )}
 
-        <div ref={containerRef} className="absolute inset-0 h-full w-full bg-ui-canvas" />
+        <div ref={containerRef} id="agent-memory-canvas" className="absolute inset-0 h-full w-full bg-ui-canvas" />
 
+        {/* Floating macOS Camera Toolbar */}
+        {data && data.nodes.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-10 flex flex-wrap items-center gap-1 rounded-2xl border border-mac bg-surface/90 p-1.5 shadow-xl backdrop-blur-md text-foreground">
+            <Stat value={`${data.nodes.length} nodes`} />
+            <Stat value={`${data.edges.length} edges`} />
+            <Stat value={`${zoom.toFixed(1)}x`} />
+            <button
+              type="button"
+              onClick={handleFit}
+              className="rounded-lg px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle transition-colors"
+            >
+              Fit
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhysicsEnabled((v) => !v)}
+              className={`rounded-lg px-2 py-1 text-xs font-medium transition-all ${
+                physicsEnabled
+                  ? "bg-mac-accent !text-white font-semibold shadow-sm"
+                  : "text-foreground-muted hover:bg-surface-subtle"
+              }`}
+            >
+              Physics {physicsEnabled ? "on" : "off"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLabels((v) => !v)}
+              className="rounded-lg px-2 py-1 text-xs font-medium text-foreground-muted hover:bg-surface-subtle transition-colors"
+            >
+              Labels {showLabels ? "on" : "off"}
+            </button>
+          </div>
+        )}
+
+        {/* Floating macOS Inspector Drawer */}
         {selectedNode && (
-          <div className="absolute right-0 top-0 z-20 h-full w-80 overflow-y-auto border-l border-ui-border bg-ui-surface p-4 shadow-lg">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-ui-text">Inspector</h3>
+          <div className="absolute right-3 top-16 z-20 flex max-h-[calc(100vh-5rem)] w-[min(26rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-mac bg-surface/95 shadow-2xl backdrop-blur-md text-foreground animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-mac p-4">
+              <div className="flex items-center gap-2">
+                <span
+                  className="rounded-full px-2.5 py-0.5 text-xs font-semibold text-white shadow-sm"
+                  style={{ backgroundColor: NODE_COLORS[selectedNode.type] }}
+                >
+                  {selectedNode.type}
+                </span>
+                {selectedNode.domain && (
+                  <span className="text-xs font-medium text-foreground-muted">
+                    {selectedNode.domain}
+                  </span>
+                )}
+                {selectedNode.status && (
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-foreground-muted border border-mac">
+                    {selectedNode.status}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={handleCloseInspector}
-                className="rounded p-1 text-ui-subdued hover:bg-ui-muted"
+                className="rounded-lg p-1.5 text-foreground-muted hover:bg-surface-subtle hover:text-foreground transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <div className="mb-3">
-              <span
-                className="inline-block rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                style={{ backgroundColor: NODE_COLORS[selectedNode.type] }}
-              >
-                {selectedNode.type}
-              </span>
-              {selectedNode.status && (
-                <span className="ml-2 text-xs text-ui-subdued">{selectedNode.status}</span>
-              )}
-              {selectedNode.domain && (
-                <span className="ml-2 text-xs text-ui-subdued">({selectedNode.domain})</span>
+            <div className="space-y-3 overflow-y-auto p-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-wider text-foreground-muted">Memory Node</div>
+                <h4 className="mt-0.5 text-sm font-semibold text-foreground leading-snug">{selectedNode.label}</h4>
+                <div className="mt-1 font-mono text-[10px] text-foreground-muted">{selectedNode.id}</div>
+              </div>
+
+              {Object.entries(selectedNode.metadata ?? {}).length > 0 && (
+                <div className="space-y-2 border-t border-mac pt-3">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-foreground-muted">Metadata & Attributes</div>
+                  <dl className="space-y-2 text-xs">
+                    {Object.entries(selectedNode.metadata ?? {}).map(([key, value]) => (
+                      <div key={key} className="rounded-xl border border-mac bg-surface-subtle p-2.5">
+                        <dt className="font-semibold text-foreground">{key}</dt>
+                        <dd className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-foreground-muted">
+                          {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "")}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
               )}
             </div>
-
-            <h4 className="mb-2 text-sm font-medium text-ui-text">{selectedNode.label}</h4>
-
-            <dl className="space-y-2 text-xs">
-              {Object.entries(selectedNode.metadata ?? {}).map(([key, value]) => (
-                <div key={key}>
-                  <dt className="font-medium text-ui-subdued">{key}</dt>
-                  <dd className="mt-0.5 whitespace-pre-wrap text-ui-text">
-                    {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "")}
-                  </dd>
-                </div>
-              ))}
-            </dl>
           </div>
         )}
 
-        {data && data.nodes.length > 0 && (
-          <div className="absolute bottom-2 left-2 z-10 rounded-lg border border-ui-border bg-ui-surface/95 p-3 shadow-sm">
-            <div className="mb-2 text-xs font-medium text-ui-subdued">Node Types</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+        {/* Floating macOS Legend Panel */}
+        {showLegend && data && data.nodes.length > 0 && (
+          <div className="absolute bottom-3 right-3 z-10 min-w-48 rounded-2xl border border-mac bg-surface/95 p-3.5 shadow-xl backdrop-blur-md text-foreground">
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+              Memory Types ({data.nodes.length})
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               {(Object.entries(NODE_COLORS) as [MemoryNodeType, string][]).map(([type, color]) => (
-                <div key={type} className="flex items-center gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                  <span className="text-xs text-ui-text capitalize">{type}</span>
+                <div key={type} className="flex items-center gap-2 text-xs font-medium text-foreground">
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: color }} />
+                  <span className="capitalize">{type}</span>
                 </div>
               ))}
             </div>
             {data.stats && (
-              <div className="mt-2 border-t border-ui-border pt-2 text-xs text-ui-subdued">
-                {data.stats.episodes} episodes, {data.stats.attempts} attempts, {data.stats.patterns} patterns
+              <div className="mt-2.5 border-t border-mac pt-2 font-mono text-[10px] text-foreground-muted">
+                {data.stats.episodes} eps · {data.stats.attempts} att · {data.stats.patterns} pat
               </div>
             )}
           </div>
         )}
 
+        {/* ForceAtlas2 Progress Bar */}
         {layoutPct > 0 && layoutPct < 100 && (
-          <div className="pointer-events-none absolute inset-0 z-5 flex flex-col items-center justify-center">
-            <div className="font-mono text-[11px] text-ui-subdued">Computing layout...</div>
-            <div className="mt-2.5 h-0.5 w-40 overflow-hidden rounded bg-ui-border">
-              <div className="h-full bg-amber-500 transition-[width] duration-150" style={{ width: `${layoutPct}%` }} />
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-ui-canvas/50 backdrop-blur-xs">
+            <div className="font-mono text-[11px] text-foreground-muted font-medium">Computing memory layout…</div>
+            <div className="mt-2.5 h-1 w-44 overflow-hidden rounded-full bg-muted border border-mac">
+              <div className="h-full bg-mac-accent transition-[width] duration-150" style={{ width: `${layoutPct}%` }} />
             </div>
           </div>
         )}

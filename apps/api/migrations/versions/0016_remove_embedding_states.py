@@ -44,10 +44,7 @@ def replace_enum(
         value = f"{column}::text"
         if remap_embedding:
             value = f"CASE WHEN {value} = 'EMBEDDING' THEN 'PERSISTING' ELSE {value} END"
-        op.execute(
-            f"ALTER TABLE {table} ALTER COLUMN {column} TYPE {name} "
-            f"USING ({value})::{name}"
-        )
+        op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE {name} USING ({value})::{name}")
     op.execute(f"DROP TYPE {old_name}")
 
 

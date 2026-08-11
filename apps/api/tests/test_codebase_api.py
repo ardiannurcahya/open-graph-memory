@@ -31,7 +31,6 @@ async def test_codebase_ingest_and_file_sync(
         "    return a - b\n"
     )
 
-
     # Batch Ingest
     response = client.post(
         "/v1/codebase/ingest",
