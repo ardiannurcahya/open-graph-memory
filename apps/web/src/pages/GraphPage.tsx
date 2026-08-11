@@ -274,41 +274,53 @@ export default function GraphPage() {
         <button
           type="button"
           onClick={() => setPanelOpen((value) => !value)}
-          className="rounded-md border border-stone-900 bg-stone-900 px-3 py-1 text-xs text-ui-inverse"
+          aria-pressed={panelOpen}
+          className={`rounded-lg border px-3 py-1 text-xs font-medium transition-all ${
+            panelOpen
+              ? "border-mac-accent bg-mac-accent !text-white shadow-sm"
+              : "border-mac bg-surface/90 text-foreground hover:bg-surface-subtle"
+          }`}
         >
-          {panelOpen ? "Hide tools" : "Show tools"}
+          {panelOpen ? "Hide tools" : "Tools"}
         </button>
         <button
           type="button"
           onClick={() => setCmdOpen(true)}
           disabled={!graphState}
-          className="ml-auto rounded-md border border-stone-200 px-3 py-1 text-xs text-stone-600 disabled:opacity-40"
+          className="ml-auto rounded-lg border border-mac bg-surface/90 px-3 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle disabled:opacity-40 shadow-sm"
         >
-          Visible search <kbd className="ml-1 rounded bg-stone-100 px-1">Ctrl+K</kbd>
+          Search <kbd className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-foreground-muted border border-mac">Ctrl+K</kbd>
         </button>
-        <ToolbarButton active={showFilters || activeFilters.size > 0} onClick={() => setShowFilters((value) => !value)}>Filters{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}</ToolbarButton>
-        <ToolbarButton active={showLegend} onClick={() => setShowLegend((value) => !value)}>Legend</ToolbarButton>
+        <ToolbarButton active={showFilters || activeFilters.size > 0} onClick={() => setShowFilters((value) => !value)}>
+          Filters{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""}
+        </ToolbarButton>
+        <ToolbarButton active={showLegend} onClick={() => setShowLegend((value) => !value)}>
+          Legend
+        </ToolbarButton>
         <button
           type="button"
           aria-label="Refresh graph analytics"
           onClick={() => void handleRefresh()}
           disabled={!datasetId || refreshing}
-          className="rounded-md border border-stone-200 px-2 py-1 text-xs text-stone-600 disabled:opacity-40"
+          className="rounded-lg border border-mac bg-surface/90 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle disabled:opacity-40 shadow-sm"
         >
           {refreshing ? "..." : "Refresh"}
         </button>
       </div>
 
       {panelOpen && (
-        <section className="absolute left-3 top-16 z-10 flex max-h-[calc(100vh-5rem)] w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-stone-200 bg-white/95 shadow-lg backdrop-blur">
-          <div className="flex gap-1 overflow-x-auto border-b border-stone-200 p-2">
+        <section className="absolute left-3 top-16 z-10 flex max-h-[calc(100vh-5rem)] w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-mac bg-surface/95 shadow-xl backdrop-blur-md text-foreground">
+          {/* macOS Segmented Control Tabs */}
+          <div className="flex gap-1 overflow-x-auto border-b border-mac bg-muted/50 p-1.5">
             {TOOLS.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setTool(item.id)}
-                className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                  tool === item.id ? "bg-amber-600 text-ui-inverse" : "text-stone-600 hover:bg-stone-100"
+                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                  tool === item.id
+                    ? "bg-mac-accent !text-white shadow-sm font-semibold"
+                    : "text-foreground-muted hover:bg-surface hover:text-foreground"
                 }`}
               >
                 {item.label}
@@ -337,29 +349,29 @@ export default function GraphPage() {
               <button
                 type="submit"
                 disabled={!datasetId || loading || !toolReady(tool, { query, entityId, sourceId, targetId, subgraphEntityId, relationId })}
-                className="w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-ui-inverse disabled:opacity-40"
+                className="w-full rounded-xl bg-mac-accent hover:opacity-90 px-3 py-2 text-sm font-semibold !text-white shadow-sm transition-all disabled:opacity-40"
               >
                 {loading ? "Running..." : `Run ${TOOLS.find((item) => item.id === tool)?.label}`}
               </button>
             )}
-            {error && <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+            {error && <div role="alert" className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-500 font-medium">{error}</div>}
             {tool === "search" && searchResults.length > 0 && (
-              <div className="space-y-1 border-t border-stone-200 pt-3">
+              <div className="space-y-1 border-t border-mac pt-3">
                 {searchResults.map((entity) => (
                   <button
                     key={entity.id}
                     type="button"
                     onClick={() => setEntityId(entity.id)}
-                    className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-stone-100"
+                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface-subtle"
                   >
-                    <span className="text-sm font-medium text-stone-800">{entity.canonical_name}</span>
-                    <span className="font-mono text-[10px] text-stone-400">{entity.entity_type} · {entity.id}</span>
+                    <span className="text-sm font-medium text-foreground">{entity.canonical_name}</span>
+                    <span className="font-mono text-[10px] text-foreground-muted">{entity.entity_type} · {entity.id}</span>
                   </button>
                 ))}
               </div>
             )}
             {(tool === "json" || tool === "evidence") && (
-              <pre aria-label="Raw JSON result" className="max-h-80 overflow-auto rounded-md bg-stone-950 p-3 text-xs text-stone-100">
+              <pre aria-label="Raw JSON result" className="max-h-80 overflow-auto rounded-xl bg-surface-subtle border border-mac p-3 font-mono text-xs text-foreground">
                 {payload === null ? "No response yet." : JSON.stringify(payload, null, 2)}
               </pre>
             )}
@@ -388,20 +400,29 @@ export default function GraphPage() {
       )}
 
       {showLegend && graphState && (
-        <div className="absolute bottom-3 right-3 z-10 min-w-44 rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-stone-400">Groups</div>
-          {[...graphState.communities.values()].map((community) => (
-            <div key={community.id} className="flex items-center gap-2 py-0.5 text-xs text-stone-600">
-              <span className="h-2 w-2 rounded-full" style={{ background: community.color }} />
-              {community.name}
-            </div>
-          ))}
+        <div className="absolute bottom-3 right-3 z-10 min-w-44 rounded-2xl border border-mac bg-surface/95 p-3 shadow-xl backdrop-blur-md text-foreground">
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">Groups ({graphState.communities.size})</div>
+          <div className="max-h-60 overflow-y-auto space-y-1">
+            {[...graphState.communities.values()].map((community) => (
+              <div key={community.id} className="flex items-center gap-2 py-0.5 text-xs text-foreground font-medium">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm" style={{ background: community.color }} />
+                <span className="truncate">{community.name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
        {showFilters && graphState && (
-         <div className="absolute right-3 top-16 z-10 flex flex-col gap-1">
-           <button type="button" onClick={() => setActiveFilters(new Set())} disabled={activeFilters.size === 0} className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600 disabled:opacity-40">Clear filters</button>
+         <div className="absolute right-3 top-16 z-10 flex flex-col gap-1.5 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-mac bg-surface/95 p-3 shadow-xl backdrop-blur-md">
+           <button
+             type="button"
+             onClick={() => setActiveFilters(new Set())}
+             disabled={activeFilters.size === 0}
+             className="rounded-lg border border-mac bg-surface px-3 py-1 text-xs font-medium text-foreground hover:bg-surface-subtle disabled:opacity-40 shadow-sm"
+           >
+             Clear filters
+           </button>
            {[...graphState.communities.values()].map((community) => (
             <button
               key={community.id}
@@ -409,7 +430,11 @@ export default function GraphPage() {
               onClick={() => toggleFilter(community.id)}
               aria-pressed={activeFilters.has(community.id)}
               data-active={activeFilters.has(community.id)}
-              className={`rounded-full border px-3 py-1 text-xs ${activeFilters.has(community.id) ? "border-stone-900 bg-stone-900 text-ui-inverse" : "border-stone-200 bg-white text-stone-600"}`}
+              className={`rounded-lg border px-3 py-1 text-xs font-medium transition-all ${
+                activeFilters.has(community.id)
+                  ? "border-mac-accent bg-mac-accent !text-white shadow-sm"
+                  : "border-mac bg-surface text-foreground hover:bg-surface-subtle"
+              }`}
             >
               {community.name}
             </button>
@@ -491,7 +516,17 @@ async function loadAllExplorerRelations(datasetId: string, signal: AbortSignal) 
 
 function ToolbarButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" aria-pressed={active} data-active={active} onClick={onClick} className={`rounded-md border px-2 py-1 text-xs ${active ? "border-stone-900 bg-stone-900 text-ui-inverse" : "border-stone-200 text-stone-600"}`}>
+    <button
+      type="button"
+      aria-pressed={active}
+      data-active={active}
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-1 text-xs font-medium transition-all shadow-sm ${
+        active
+          ? "border-mac-accent bg-mac-accent !text-white font-semibold"
+          : "border-mac bg-surface/90 text-foreground hover:bg-surface-subtle"
+      }`}
+    >
       {children}
     </button>
   );

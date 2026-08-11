@@ -528,6 +528,37 @@ async def search(
             )
         ).all()
     )
+
+    # Fallback to fuzzy substring / ILIKE if strict tsquery returned no results
+    if not rows:
+        from sqlalchemy import or_
+        keywords = [w.strip() for w in q.split() if len(w.strip()) > 1]
+        if keywords:
+            ilike_clauses = [
+                or_(
+                    AgentMemoryEpisode.title.ilike(f"%{kw}%"),
+                    AgentMemoryEpisode.goal.ilike(f"%{kw}%"),
+                    AgentMemoryEpisode.problem_signature.ilike(f"%{kw}%"),
+                )
+                for kw in keywords[:5]
+            ]
+            fallback_stmt = (
+                select(AgentMemoryEpisode, AgentMemoryPattern)
+                .outerjoin(AgentMemoryOutcome, AgentMemoryOutcome.episode_id == AgentMemoryEpisode.id)
+                .outerjoin(
+                    AgentMemoryPattern,
+                    (AgentMemoryPattern.project_id == AgentMemoryEpisode.project_id)
+                    & (AgentMemoryPattern.pattern_key == AgentMemoryOutcome.pattern_key),
+                )
+                .where(
+                    AgentMemoryEpisode.project_id == project.project_id,
+                    or_(*ilike_clauses),
+                )
+            )
+            if not include_inactive:
+                fallback_stmt = fallback_stmt.where(AgentMemoryEpisode.status.not_in(["superseded", "rejected"]))
+            rows = list((await db.execute(fallback_stmt.order_by(desc(AgentMemoryEpisode.created_at)).limit(limit))).all())
+
     episode_ids = [episode.id for episode, _pattern in rows]
     outcomes = {
         item.episode_id: item
