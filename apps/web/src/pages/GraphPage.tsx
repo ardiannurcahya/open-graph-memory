@@ -277,7 +277,7 @@ export default function GraphPage() {
           aria-pressed={panelOpen}
           className={`rounded-lg border px-3 py-1 text-xs font-medium transition-all ${
             panelOpen
-              ? "border-mac-accent bg-mac-accent !text-white shadow-sm"
+              ? "border-mac-accent bg-mac-accent text-ui-inverse !text-white shadow-sm"
               : "border-mac bg-surface/90 text-foreground hover:bg-surface-subtle"
           }`}
         >
@@ -319,7 +319,7 @@ export default function GraphPage() {
                 onClick={() => setTool(item.id)}
                 className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                   tool === item.id
-                    ? "bg-mac-accent !text-white shadow-sm font-semibold"
+                    ? "bg-mac-accent text-ui-inverse !text-white shadow-sm font-semibold"
                     : "text-foreground-muted hover:bg-surface hover:text-foreground"
                 }`}
               >

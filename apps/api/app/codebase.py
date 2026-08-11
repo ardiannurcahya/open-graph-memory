@@ -24,13 +24,13 @@ DbDep = Annotated[AsyncSession, Depends(get_session)]
 class FileIngestItem(BaseModel):
     file_path: str = Field(..., min_length=1, max_length=500)
     code: str = Field(..., min_length=1)
-    language: str | None = Field(None, max_length=50)
+    language: str | None = Field(default=None, max_length=50)
 
 
 class CodebaseIngestRequest(BaseModel):
     dataset_id: str = Field(..., min_length=1, max_length=100)
-    dataset_name: str | None = Field(None, max_length=255)
-    description: str | None = Field(None, max_length=1000)
+    dataset_name: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
     files: list[FileIngestItem] = Field(..., min_length=1, max_length=1000)
 
 
@@ -38,7 +38,7 @@ class SingleFileSyncRequest(BaseModel):
     dataset_id: str = Field(..., min_length=1, max_length=100)
     file_path: str = Field(..., min_length=1, max_length=500)
     code: str = Field(..., min_length=1)
-    language: str | None = Field(None, max_length=50)
+    language: str | None = Field(default=None, max_length=50)
 
 
 class CodebaseIngestResponse(BaseModel):

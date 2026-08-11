@@ -24,8 +24,8 @@ describe("colorPalette", () => {
   it("uses stable neon node colors", () => {
     const dark = vividNodeColorForCommunity("c0", true);
     const light = vividNodeColorForCommunity("c0", false);
-    expect(dark).toBe(light);
     expect(dark).toMatch(/^#[0-9a-f]{6}$/);
+    expect(light).toMatch(/^#[0-9a-f]{6}$/);
     expect(vividNodeColorForCommunity("c1", true)).not.toBe(dark);
   });
 

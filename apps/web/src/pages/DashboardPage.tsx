@@ -77,18 +77,18 @@ export default function DashboardPage() {
             badge="Explorer"
           />
           <FeatureCard
-            title="Datasets & Ingestion"
+            title="Datasets"
             desc="Manage datasets, code files, and documents. Trigger AST indexing and refresh analytics."
             to="/datasets"
             icon={Database}
-            badge="Datasets"
+            badge="Storage"
           />
           <FeatureCard
-            title="Agent Memory"
+            title="Agent Experience"
             desc="Persistent operational memory for AI agents. Track fix patterns and outcome feedback."
             to="/memory"
             icon={Brain}
-            badge="Memory"
+            badge="Operational"
           />
         </div>
       </div>

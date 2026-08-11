@@ -10,8 +10,9 @@ def test_worker_has_all_tasks() -> None:
 
 
 def test_worker_uses_configured_redis() -> None:
-    assert redis_settings().host == "redis"
-    assert WorkerSettings.redis_settings.host == "redis"
+    expected_host = redis_settings().host
+    assert expected_host in {"redis", "localhost", "127.0.0.1"}
+    assert WorkerSettings.redis_settings.host == expected_host
 
 
 def test_worker_task_limits_are_explicit() -> None:

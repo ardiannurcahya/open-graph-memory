@@ -65,9 +65,9 @@ export default function LoginPage() {
         <div className="flex items-center justify-between border-b border-mac pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5 mr-1">
-              <span className="h-3 w-3 rounded-full bg-[#ff5f56] inline-block"></span>
-              <span className="h-3 w-3 rounded-full bg-[#ffbd2e] inline-block"></span>
-              <span className="h-3 w-3 rounded-full bg-[#27c93f] inline-block"></span>
+              <span className="h-3 w-3 rounded-full bg-[#ff5f56] inline-block" />
+              <span className="h-3 w-3 rounded-full bg-[#ffbd2e] inline-block" />
+              <span className="h-3 w-3 rounded-full bg-[#27c93f] inline-block" />
             </div>
             <span className="text-sm font-bold text-main">OpenGraphMemory</span>
           </div>
@@ -77,7 +77,7 @@ export default function LoginPage() {
         <div className="mt-5 space-y-1">
           <h1 className="text-xl font-bold text-main">Connect Workspace</h1>
           <p className="text-xs text-subdued">
-            Enter project credentials to access the Knowledge Graph dashboard.
+            Enter project credentials to access the dashboard.
           </p>
         </div>
 
@@ -120,7 +120,7 @@ export default function LoginPage() {
                 : "text-subdued hover:text-main"
             }`}
           >
-            Create New Project
+            Create New
           </button>
         </div>
 
@@ -162,7 +162,7 @@ export default function LoginPage() {
               type="submit"
               className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-mac-accent px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all"
             >
-              <span>Connect Workspace</span>
+              <span>Sign In</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </form>
@@ -170,7 +170,7 @@ export default function LoginPage() {
           /* Create Form */
           <form onSubmit={handleCreate} className="mt-5 space-y-3.5">
             <Field
-              label="Admin Secret Key"
+              label="Admin Key"
               value={adminKey}
               onChange={setAdminKeyState}
               type="password"
@@ -178,10 +178,10 @@ export default function LoginPage() {
               icon={Shield}
             />
             <Field
-              label="New Project Name"
+              label="Project Name"
               value={projectName}
               onChange={setProjectName}
-              placeholder="e.g. My Codebase Graph"
+              placeholder="e.g. demo"
               icon={Layers}
             />
 

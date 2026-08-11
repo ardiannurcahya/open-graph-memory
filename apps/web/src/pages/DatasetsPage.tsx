@@ -1,36 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { 
-  Database, 
-  UploadCloud, 
-  Trash2, 
-  FileText, 
-  Network, 
-  FolderPlus,
-  FileCode,
-  HardDrive
-} from "lucide-react";
+import { Database, Network, UploadCloud, Trash2, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { datasetsApi, documentsApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { Dataset, Document } from "../api/types";
-import { ACCEPTED_EXTENSIONS, hasActiveDocuments } from "../lib/documentStatus";
-import { StatusBadge } from "../components/StatusBadge";
 
+const ACCEPTED_EXTENSIONS = [".txt", ".md", ".html", ".json", ".pdf", ".csv"];
 const POLL_INTERVAL_MS = 2000;
+
+function hasActiveDocuments(statuses: string[]) {
+  return statuses.some((status) => ["queued", "uploaded", "processing", "indexing"].includes(status));
+}
 
 export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -41,11 +34,6 @@ export default function DatasetsPage() {
     try {
       const list = await datasetsApi.list();
       setDatasets(list);
-      if (list.length > 0 && !selectedIdRef.current) {
-        // Auto-select dataset with data or the first dataset
-        const codebase = list.find((d) => d.id === "ds_019fefae-9745-7c1e-b544-aa1e7c0a3cff" || d.name.includes("Codebase")) ?? list[0];
-        setSelectedId(codebase.id);
-      }
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "failed to load datasets");
     } finally {
@@ -91,9 +79,8 @@ export default function DatasetsPage() {
       setNewName("");
       setNewDescription("");
       setSelectedId(created.id);
-      setShowCreateForm(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "failed to create dataset");
+      setError(err instanceof ApiError ? err.detail : "dataset creation failed");
     } finally {
       setCreating(false);
     }
@@ -106,7 +93,10 @@ export default function DatasetsPage() {
     try {
       await datasetsApi.delete(datasetId);
       setDatasets((prev) => prev.filter((d) => d.id !== datasetId));
-      if (selectedId === datasetId) setSelectedId(null);
+      if (selectedId === datasetId) {
+        setSelectedId(null);
+        setDocuments([]);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "failed to delete dataset");
     } finally {
@@ -150,29 +140,14 @@ export default function DatasetsPage() {
 
   return (
     <div className="px-6 py-8 sm:px-10 max-w-6xl mx-auto space-y-6 text-main antialiased selection:bg-mac-accent selection:text-white">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-mac pb-5 gap-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-muted border border-mac px-2.5 py-0.5 text-xs font-semibold text-subdued mb-1.5">
-            <Database className="h-3.5 w-3.5 text-mac-accent" />
-            <span>Dataset Manager</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-main flex items-center gap-2">
-            Datasets & Source Files
-          </h1>
-          <p className="text-xs text-subdued mt-0.5">
-            Manage codebase datasets, documents, and trigger AST knowledge graph ingestion.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowCreateForm((prev) => !prev)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-mac-accent px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all self-start sm:self-auto"
-        >
-          <FolderPlus className="h-4 w-4" />
-          <span>New Dataset</span>
-        </button>
+      {/* macOS Header */}
+      <div className="border-b border-mac pb-4">
+        <h1 className="text-2xl font-bold tracking-tight text-main flex items-center gap-2">
+          Datasets
+        </h1>
+        <p className="text-xs text-subdued mt-0.5">
+          Manage codebase datasets, documents, and trigger AST knowledge graph ingestion.
+        </p>
       </div>
 
       {/* Error Alert */}
@@ -182,104 +157,73 @@ export default function DatasetsPage() {
         </div>
       )}
 
-      {/* Create Dataset Form Modal Card */}
-      {showCreateForm && (
-        <form onSubmit={handleCreate} className="rounded-2xl border border-mac bg-surface p-5 shadow-lg space-y-3.5">
-          <div className="flex items-center justify-between border-b border-mac pb-2.5">
-            <h3 className="text-sm font-bold text-main flex items-center gap-2">
-              <FolderPlus className="h-4 w-4 text-mac-accent" />
-              Create New Dataset
-            </h3>
-            <button
-              type="button"
-              onClick={() => setShowCreateForm(false)}
-              className="text-xs text-subdued hover:text-main"
-            >
-              Cancel
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block space-y-1 text-xs font-semibold text-main">
-              <span>Dataset Name</span>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. My Codebase Graph"
-                className="block w-full rounded-lg border border-mac bg-canvas px-3 py-2 text-xs text-main placeholder-subdued"
-              />
-            </label>
-            <label className="block space-y-1 text-xs font-semibold text-main">
-              <span>Description (Optional)</span>
-              <input
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="e.g. Python backend service AST"
-                className="block w-full rounded-lg border border-mac bg-canvas px-3 py-2 text-xs text-main placeholder-subdued"
-              />
-            </label>
-          </div>
-          <button
-            type="submit"
-            disabled={creating || !newName.trim()}
-            className="rounded-lg bg-mac-accent px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-40"
-          >
-            {creating ? "Creating…" : "Save Dataset"}
-          </button>
-        </form>
-      )}
-
       {/* Main Workspace Layout (Sidebar + Finder Panel) */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left Sidebar: Dataset List */}
-        <div className="space-y-3">
+        {/* Left Sidebar: New Dataset Form + Dataset List */}
+        <div className="space-y-4">
+          <form onSubmit={handleCreate} className="space-y-3 rounded-2xl border border-mac bg-surface p-4 shadow-sm">
+            <h3 className="font-semibold text-main text-xs uppercase tracking-wider">New Dataset</h3>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Dataset name"
+              className="block w-full rounded-lg border border-mac bg-canvas px-3 py-2 text-xs text-main placeholder-subdued focus:border-mac-accent focus:outline-none"
+            />
+            <textarea
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Description (optional)"
+              rows={2}
+              className="block w-full rounded-lg border border-mac bg-canvas px-3 py-2 text-xs text-main placeholder-subdued focus:border-mac-accent focus:outline-none resize-none"
+            />
+            <button
+              type="submit"
+              disabled={creating || !newName.trim()}
+              className="w-full rounded-lg bg-mac-accent px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-40 active:scale-95 transition-all"
+            >
+              {creating ? "Creating…" : "Create Dataset"}
+            </button>
+          </form>
+
           <div className="rounded-2xl border border-mac bg-surface shadow-sm overflow-hidden">
             <div className="border-b border-mac bg-muted px-4 py-3 text-xs font-bold uppercase tracking-wider text-subdued flex items-center justify-between">
-              <span>Datasets ({datasets.length})</span>
-              {loading && <span className="font-mono text-[10px] animate-pulse">Loading…</span>}
+              <span>Datasets {loading && "· loading…"}</span>
             </div>
 
             <ul className="divide-y divide-mac">
               {datasets.map((d) => (
-                <li key={d.id}>
+                <li
+                  key={d.id}
+                  className={`transition-colors flex items-center justify-between group ${
+                    selected?.id === d.id
+                      ? "bg-mac-accent/10 border-l-4 border-mac-accent"
+                      : "hover:bg-muted/60"
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setSelectedId(d.id)}
-                    disabled={deletingId === d.id}
-                    className={`group flex w-full items-center justify-between px-4 py-3 text-left transition-colors ${
-                      selectedId === d.id
-                        ? "bg-mac-accent !text-white font-bold"
-                        : "hover:bg-muted text-main"
-                    }`}
+                    className="w-full px-4 py-3 text-left min-w-0 flex-1"
                   >
-                    <div className="min-w-0 flex-1 pr-2">
-                      <div className={`truncate text-xs font-semibold ${selectedId === d.id ? "!text-white" : "text-main"}`}>
-                        {d.name}
-                      </div>
-                      <div className={`font-mono text-[10px] truncate mt-0.5 ${selectedId === d.id ? "!text-slate-200" : "text-subdued"}`}>
-                        {d.id}
-                      </div>
-                    </div>
+                    <p className="text-xs font-bold text-main truncate">{d.name}</p>
+                    <p className="text-[10px] text-subdued font-mono truncate">{d.id}</p>
+                  </button>
 
-                    <button
-                      type="button"
-                      aria-label="Delete Dataset"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteDataset(d.id);
-                      }}
-                      className={`p-1 rounded hover:bg-rose-500/20 text-subdued hover:text-rose-500 transition-colors ${
-                        selectedId === d.id ? "hover:text-white" : ""
-                      }`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                  <button
+                    type="button"
+                    aria-label="Delete dataset"
+                    disabled={deletingId === d.id}
+                    onClick={() => void handleDeleteDataset(d.id)}
+                    className="mr-3 p-1 rounded hover:bg-rose-500/20 text-subdued hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </li>
               ))}
 
               {!loading && datasets.length === 0 && (
                 <li className="px-4 py-6 text-center text-xs text-subdued italic">
-                  No datasets created yet. Click "New Dataset" to start.
+                  No datasets yet.
                 </li>
               )}
             </ul>
@@ -293,10 +237,10 @@ export default function DatasetsPage() {
               {/* Dataset Header Bar */}
               <div className="flex flex-wrap items-center justify-between border-b border-mac bg-muted px-5 py-4 gap-3">
                 <div>
-                  <h2 className="text-base font-bold text-main flex items-center gap-2">
+                  <h3 className="text-base font-bold text-main flex items-center gap-2">
                     <Database className="h-4 w-4 text-mac-accent" />
                     {selected.name}
-                  </h2>
+                  </h3>
                   <p className="text-xs text-subdued mt-0.5 font-mono">
                     ID: {selected.id}
                   </p>
@@ -318,12 +262,12 @@ export default function DatasetsPage() {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-mac-accent px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
                   >
                     <UploadCloud className="h-4 w-4" />
-                    <span>{uploading ? "Uploading…" : "Upload File"}</span>
+                    <span>{uploading ? "Uploading…" : "Upload"}</span>
                   </button>
                   <input
                     ref={fileInput}
                     type="file"
-                    aria-label="Upload document file"
+                    aria-label="Select document to upload"
                     accept={ACCEPTED_EXTENSIONS.join(",")}
                     onChange={handleUpload}
                     disabled={uploading}
@@ -338,42 +282,34 @@ export default function DatasetsPage() {
                   <div key={doc.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-muted/50 transition-colors">
                     <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted border border-mac text-mac-accent flex-shrink-0">
-                        {doc.filename.endsWith(".py") || doc.filename.endsWith(".json") ? (
-                          <FileCode className="h-4 w-4" />
-                        ) : (
-                          <FileText className="h-4 w-4" />
-                        )}
+                        <UploadCloud className="h-4 w-4" />
                       </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-bold text-main flex items-center gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-main truncate flex items-center gap-1.5">
                           <span>{doc.filename}</span>
                           {doc.duplicate && (
-                            <span className="rounded bg-muted border border-mac px-1.5 py-0.2 text-[10px] font-mono text-subdued">
+                            <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.2 text-[10px] font-semibold">
                               duplicate
                             </span>
                           )}
-                        </div>
-                        <div className="font-mono text-[10px] text-subdued mt-0.5 flex items-center gap-2">
-                          <span>{(doc.size_bytes / 1024).toFixed(1)} KB</span>
-                          <span>·</span>
-                          <span>{doc.mime_type}</span>
-                        </div>
+                        </p>
+                        <p className="text-[11px] text-subdued mt-0.5">
+                          {(doc.size_bytes / 1024).toFixed(1)} KB · <span className="font-mono">{doc.mime_type}</span>
+                        </p>
                         {doc.error_message && (
-                          <p className="text-[11px] text-rose-600 mt-0.5">{doc.error_message}</p>
+                          <p className="text-xs text-rose-500 mt-1">{doc.error_message}</p>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="flex items-center gap-3">
                       <StatusBadge status={doc.status} />
-
                       <button
                         type="button"
-                        aria-label="Delete document"
                         onClick={() => void handleDeleteDocument(doc.id)}
                         disabled={deletingDocId === doc.id}
-                        className="p-1.5 rounded hover:bg-rose-500/20 text-subdued hover:text-rose-500 transition-colors disabled:opacity-50"
+                        className="p-1.5 rounded-lg hover:bg-rose-500/20 text-subdued hover:text-rose-500 transition-colors"
+                        title="Delete Document"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -398,7 +334,7 @@ export default function DatasetsPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-80 rounded-2xl border border-dashed border-mac bg-surface p-8 text-center space-y-3">
-              <HardDrive className="h-10 w-10 text-subdued" />
+              <Database className="h-10 w-10 text-subdued" />
               <div>
                 <p className="text-sm font-bold text-main">Select or Create a Dataset</p>
                 <p className="text-xs text-subdued mt-1">
@@ -410,5 +346,30 @@ export default function DatasetsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "indexed" || status === "active" || status === "complete") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+        <CheckCircle2 className="h-3 w-3" />
+        indexed
+      </span>
+    );
+  }
+  if (status === "failed" || status === "error") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 border border-rose-500/20">
+        <AlertCircle className="h-3 w-3" />
+        failed
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-bold text-sky-600 dark:text-sky-400 border border-sky-500/20">
+      <Clock className="h-3 w-3 animate-spin" />
+      {status}
+    </span>
   );
 }

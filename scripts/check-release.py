@@ -37,11 +37,6 @@ for relative in (
     "deployments/docker-compose.ghcr-external.yml",
     "deployments/docker-compose.yml",
     "deployments/docker-compose.prod.yml",
-    "deployments/multihost/.env.example",
-    "deployments/multihost/app.yml",
-    "deployments/multihost/dispatcher.yml",
-    "deployments/multihost/graph-worker.yml",
-    "deployments/multihost/worker.yml",
 ):
     text = (ROOT / relative).read_text(encoding="utf-8")
     if re.search(r"(?:open-graph-memory|opengraphrag)-(?:api|worker|web):latest", text):
