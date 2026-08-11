@@ -41,15 +41,15 @@ function seedLayout(state: GraphState): SeedResult {
   const branchRadii = new Map<string, number>();
   for (const [id, members] of nodesByCommunity) {
     communitySizes.set(id, members.length);
-    const sizeScale = members.length > 1500 ? 0.6 : 0.35;
-    branchRadii.set(id, 3 + Math.sqrt(Math.max(1, members.length)) * sizeScale);
+    const sizeScale = members.length > 1500 ? 0.3 : 0.2;
+    branchRadii.set(id, 2 + Math.sqrt(Math.max(1, members.length)) * sizeScale);
   }
 
   const sorted = [...communityIds].sort(
     (a, b) => (communitySizes.get(b) ?? 0) - (communitySizes.get(a) ?? 0),
   );
   const largestBranchRadius = branchRadii.get(sorted[0]) ?? 0;
-  const effectiveRadius = Math.max(15, largestBranchRadius + 8);
+  const effectiveRadius = Math.max(4, largestBranchRadius * 0.45);
 
   const centers: Record<string, { x: number; y: number }> = {};
   if (sorted.length > 0) centers[sorted[0]] = { x: 0, y: 0 };
@@ -236,11 +236,11 @@ export default function SigmaGraphCanvas({
       renderLabels: labelsRef.current,
       labelDensity: 1,
       labelRenderedSizeThreshold: 8,
-      labelFont: "ui-monospace, monospace",
-      labelSize: 11,
-      labelWeight: "400",
-      defaultEdgeColor: dark ? "#2a2a3a" : "#c8c6c0",
-      labelColor: { color: dark ? "#a8a8b8" : "#404050" },
+      labelFont: "-apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', sans-serif",
+      labelSize: 12,
+      labelWeight: "600",
+      defaultEdgeColor: dark ? "#38383a" : "#c8c6c0",
+      labelColor: { color: dark ? "#ffffff" : "#1d1d1f" },
       minCameraRatio: 0.05,
       maxCameraRatio: 10,
       nodeReducer: (node, data) => {
@@ -249,8 +249,8 @@ export default function SigmaGraphCanvas({
         const highlighted = highlightedRef.current;
         const isExpired = graph.getNodeAttribute(node, "isExpired") as boolean | undefined;
         if (sel) {
-          if (node === sel) return { ...data, highlighted: true };
-          if (highlighted.has(node)) return { ...data, highlighted: true };
+          if (node === sel) return { ...data, highlighted: true, labelColor: "#000000" };
+          if (highlighted.has(node)) return { ...data, highlighted: true, labelColor: "#000000" };
           return { ...data, color: dark ? "#1a1a2a" : "#d8d6d0", zIndex: 0 };
         }
         if (filters.size > 0 && !filters.has(data.community as string)) {
@@ -292,7 +292,14 @@ export default function SigmaGraphCanvas({
     // Run forceatlas2 if physics enabled or cache miss.
     const shouldRunPhysics = physicsRef.current || !loadCached(cacheKey);
     if (shouldRunPhysics) {
-      const settings = forceAtlas2.inferSettings(graph);
+      const baseSettings = forceAtlas2.inferSettings(graph);
+      const settings = {
+        ...baseSettings,
+        gravity: 2.5,
+        scalingRatio: 0.3,
+        strongGravityMode: true,
+        outboundAttractionDistribution: false,
+      };
       const totalIter = N > 1500 ? 60 : N > 500 ? 80 : 120;
       let iter = 0;
       const runChunk = () => {

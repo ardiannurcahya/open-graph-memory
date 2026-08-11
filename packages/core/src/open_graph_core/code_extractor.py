@@ -465,7 +465,48 @@ class CodeExtractor:
                         )
                     )
 
-            # --- Go ---
+                elif node_type == "call_expression":
+                    fn_node = node.child_by_field_name("function")
+                    if fn_node:
+                        fn_name = node_text(fn_node).strip()
+                        if fn_name and current_parent_id != file_entity_id:
+                            target_sym_id = canonical_symbol_id(
+                                language, file_path, fn_name, "function"
+                            )
+                            relations.append(
+                                CodeRelation(
+                                    id=f"rel_calls_{current_parent_id}_{node.start_byte}",
+                                    source_id=current_parent_id,
+                                    target_id=target_sym_id,
+                                    kind=CodeRelationKind.CALLS,
+                                    file_path=file_path,
+                                    line_number=node.start_point[0] + 1,
+                                    quote=fn_name[:100],
+                                )
+                            )
+
+                elif node_type in {"jsx_element", "jsx_self_closing_element"}:
+                    open_node = node.child_by_field_name("open_tag") if node_type == "jsx_element" else node
+                    if open_node:
+                        tag_node = open_node.child_by_field_name("name")
+                        if tag_node:
+                            tag_name = node_text(tag_node).strip()
+                            # If Component name starts with Uppercase (React Custom Component)
+                            if tag_name and tag_name[0].isupper() and current_parent_id != file_entity_id:
+                                target_sym_id = canonical_symbol_id(
+                                    language, file_path, tag_name, "function"
+                                )
+                                relations.append(
+                                    CodeRelation(
+                                        id=f"rel_calls_{current_parent_id}_{node.start_byte}",
+                                        source_id=current_parent_id,
+                                        target_id=target_sym_id,
+                                        kind=CodeRelationKind.CALLS,
+                                        file_path=file_path,
+                                        line_number=node.start_point[0] + 1,
+                                        quote=tag_name[:100],
+                                    )
+                                )
             elif language == "go":
                 if node_type in {"function_declaration", "method_declaration"}:
                     name_node = node.child_by_field_name("name")
@@ -541,6 +582,58 @@ class CodeExtractor:
                             line_number=node.start_point[0] + 1,
                         )
                     )
+
+                elif node_type == "import_spec":
+                    imp_text = node_text(node).strip()
+                    imp_id = canonical_symbol_id(
+                        language, file_path, f"import_{node.start_byte}", "import"
+                    )
+                    entities.append(
+                        CodeEntity(
+                            id=imp_id,
+                            file_path=file_path,
+                            name=imp_text.strip('"')[:50],
+                            kind=CodeSymbolKind.IMPORT,
+                            language=language,
+                            start_line=node.start_point[0] + 1,
+                            end_line=node.end_point[0] + 1,
+                            start_byte=node.start_byte,
+                            end_byte=node.end_byte,
+                            signature=imp_text,
+                            parent_id=file_entity_id,
+                        )
+                    )
+                    relations.append(
+                        CodeRelation(
+                            id=f"rel_imports_{file_entity_id}_{imp_id}",
+                            source_id=file_entity_id,
+                            target_id=imp_id,
+                            kind=CodeRelationKind.IMPORTS,
+                            file_path=file_path,
+                            line_number=node.start_point[0] + 1,
+                            quote=imp_text,
+                        )
+                    )
+
+                elif node_type == "call_expression":
+                    fn_node = node.child_by_field_name("function")
+                    if fn_node:
+                        fn_name = node_text(fn_node).strip()
+                        if fn_name and current_parent_id != file_entity_id:
+                            target_sym_id = canonical_symbol_id(
+                                language, file_path, fn_name, "function"
+                            )
+                            relations.append(
+                                CodeRelation(
+                                    id=f"rel_calls_{current_parent_id}_{node.start_byte}",
+                                    source_id=current_parent_id,
+                                    target_id=target_sym_id,
+                                    kind=CodeRelationKind.CALLS,
+                                    file_path=file_path,
+                                    line_number=node.start_point[0] + 1,
+                                    quote=fn_name[:100],
+                                )
+                            )
 
             # --- Rust ---
             elif language == "rust":

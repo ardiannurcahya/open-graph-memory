@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Key, Layers, Shield, ArrowRight } from "lucide-react";
 import { projectsApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { useAuthStore } from "../store/auth";
@@ -17,6 +18,13 @@ export default function LoginPage() {
   const [projectName, setProjectName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Quick auto-fill helper for the newly indexed codebase dataset
+  const handleAutoFill = () => {
+    setProjectId("66ebb1d0-51b0-4aea-aee9-8e386b34e643");
+    setApiKey("ogm_HQAEYaqKzPU5chzqroTMc7rDjFupmptkKXQuCPIy-BE");
+    setError(null);
+  };
 
   const handleConnect = (event: React.FormEvent) => {
     event.preventDefault();
@@ -50,68 +58,140 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ui-canvas px-4">
-      <div className="w-full max-w-md rounded-xl border border-ui-border bg-ui-surface p-8 shadow-sm">
-        <div className="mb-5 flex justify-end"><ThemeControl /></div>
-        <h1 className="text-2xl font-semibold text-stone-900">OpenGraphMemory</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Enter project credentials to access the dashboard.
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12 text-main antialiased selection:bg-mac-accent selection:text-white">
+      {/* macOS Window Dialog Box */}
+      <div className="w-full max-w-md rounded-2xl border border-mac bg-surface p-8 shadow-xl">
+        {/* macOS Traffic Dots Header */}
+        <div className="flex items-center justify-between border-b border-mac pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1.5 mr-1">
+              <span className="h-3 w-3 rounded-full bg-[#ff5f56] inline-block"></span>
+              <span className="h-3 w-3 rounded-full bg-[#ffbd2e] inline-block"></span>
+              <span className="h-3 w-3 rounded-full bg-[#27c93f] inline-block"></span>
+            </div>
+            <span className="text-sm font-bold text-main">OpenGraphMemory</span>
+          </div>
+          <ThemeControl />
+        </div>
 
-        <div className="mt-6 flex gap-2 rounded-lg bg-stone-100 p-1">
+        <div className="mt-5 space-y-1">
+          <h1 className="text-xl font-bold text-main">Connect Workspace</h1>
+          <p className="text-xs text-subdued">
+            Enter project credentials to access the Knowledge Graph dashboard.
+          </p>
+        </div>
+
+        {/* macOS Auto-fill Helper Banner */}
+        <div className="mt-4 rounded-xl border border-mac bg-muted p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-main">Indexed Codebase Dataset</span>
+            <button
+              type="button"
+              onClick={handleAutoFill}
+              className="rounded-lg bg-mac-accent px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:opacity-90 active:scale-95"
+            >
+              Auto-Fill Credentials
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-subdued">
+            Dataset: <code className="font-mono text-mac-accent font-bold">ds_019fefae...</code> (2,408 entities, 3,521 relations).
+          </p>
+        </div>
+
+        {/* macOS Segmented Switcher Tabs */}
+        <div className="mt-5 flex rounded-xl border border-mac bg-muted p-1">
           <button
             type="button"
             onClick={() => setMode("connect")}
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${
-              mode === "connect" ? "bg-white text-stone-900 shadow-sm" : "text-stone-600"
+            className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              mode === "connect"
+                ? "bg-mac-accent !text-white shadow-sm"
+                : "text-subdued hover:text-main"
             }`}
           >
-            Connect
+            Connect Project
           </button>
           <button
             type="button"
             onClick={() => setMode("create")}
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${
-              mode === "create" ? "bg-white text-stone-900 shadow-sm" : "text-stone-600"
+            className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              mode === "create"
+                ? "bg-mac-accent !text-white shadow-sm"
+                : "text-subdued hover:text-main"
             }`}
           >
-            Create New
+            Create New Project
           </button>
         </div>
 
+        {/* Error Alert */}
         {error && (
-          <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mt-4 rounded-xl border border-rose-300 bg-rose-50 dark:bg-rose-950/40 p-2.5 text-xs font-medium text-rose-700 dark:text-rose-300">
             {error}
           </div>
         )}
 
+        {/* Connect Form */}
         {mode === "connect" ? (
-          <form onSubmit={handleConnect} className="mt-6 space-y-4">
-            <Field label="Project ID" value={projectId} onChange={setProjectId} />
-            <Field label="API Key" value={apiKey} onChange={setApiKey} type="password" />
+          <form onSubmit={handleConnect} className="mt-5 space-y-3.5">
+            <Field
+              label="Project ID"
+              value={projectId}
+              onChange={setProjectId}
+              placeholder="e.g. 66ebb1d0-51b0-4aea-aee9-8e386b34e643"
+              icon={Layers}
+            />
+            <Field
+              label="API Key"
+              value={apiKey}
+              onChange={setApiKey}
+              type="password"
+              placeholder="ogm_..."
+              icon={Key}
+            />
             <Field
               label="Admin Key (optional)"
               value={adminKey}
               onChange={setAdminKeyState}
               type="password"
+              placeholder="ogm-admin-secret-key-local"
+              icon={Shield}
             />
+
             <button
               type="submit"
-              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-ui-inverse hover:bg-stone-700"
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-mac-accent px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 active:scale-95 transition-all"
             >
-              Sign In
+              <span>Connect Workspace</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </form>
         ) : (
-          <form onSubmit={handleCreate} className="mt-6 space-y-4">
-            <Field label="Admin Key" value={adminKey} onChange={setAdminKeyState} type="password" />
-            <Field label="Project Name" value={projectName} onChange={setProjectName} />
+          /* Create Form */
+          <form onSubmit={handleCreate} className="mt-5 space-y-3.5">
+            <Field
+              label="Admin Secret Key"
+              value={adminKey}
+              onChange={setAdminKeyState}
+              type="password"
+              placeholder="ogm-admin-secret-key-local"
+              icon={Shield}
+            />
+            <Field
+              label="New Project Name"
+              value={projectName}
+              onChange={setProjectName}
+              placeholder="e.g. My Codebase Graph"
+              icon={Layers}
+            />
+
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-ui-inverse hover:bg-stone-700 disabled:opacity-50"
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-mac-accent px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50 active:scale-95 transition-all"
             >
-              {busy ? "Creating…" : "Create Project"}
+              <span>{busy ? "Creating..." : "Create Project"}</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </form>
         )}
@@ -120,22 +200,33 @@ export default function LoginPage() {
   );
 }
 
-interface FieldProps {
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  icon: Icon,
+}: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
-}
-
-function Field({ label, value, onChange, type = "text" }: FieldProps) {
+  placeholder?: string;
+  icon: React.ElementType;
+}) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-stone-700">{label}</span>
+    <label className="block space-y-1 text-xs font-semibold text-main">
+      <span className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 text-mac-accent" />
+        {label}
+      </span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm focus:border-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900"
+        placeholder={placeholder}
+        className="block w-full rounded-lg border border-mac bg-canvas px-3 py-2 text-xs text-main placeholder-subdued focus:border-mac-accent focus:outline-none"
       />
     </label>
   );

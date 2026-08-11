@@ -1,26 +1,11 @@
 import type { CommunityInfo } from "./graphTypes";
 
-const NEON_NODE_COLORS = [
-  "#00f5ff",
-  "#ff00e5",
-  "#39ff14",
-  "#ffe600",
-  "#8a2bff",
-  "#ff5f1f",
-  "#00ff9d",
-  "#ff1744",
-  "#00b0ff",
-  "#d7ff00",
-  "#ff2d95",
-  "#7cff00",
-] as const;
-
 function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    hash = (hash * 31 + str.charCodeAt(i)) % 360;
+    hash = (hash * 31 + str.charCodeAt(i)) & 0x7fffffff;
   }
-  return Math.abs(hash);
+  return hash;
 }
 
 export function hslToHex(h: number, s: number, l: number): string {
@@ -45,10 +30,20 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+/**
+ * Generates maximally distinct, vibrant hues using Golden Ratio angle distribution (137.508°)
+ */
+export function vividNodeColorForCommunity(communityId: string, darkBackground: boolean): string {
+  const hash = hashString(communityId);
+  const hue = (hash * 137.508) % 360;
+  const saturation = darkBackground ? 85 : 70;
+  const lightness = darkBackground ? 62 : 44;
+  return hslToHex(hue, saturation, lightness);
+}
+
 export function colorForCommunity(communityId: string): CommunityInfo {
-  const hue = hashString(communityId) % 360;
-  const color = hslToHex(hue, 48, 58);
-  const darkColor = hslToHex(hue, 38, 32);
+  const color = vividNodeColorForCommunity(communityId, true);
+  const darkColor = vividNodeColorForCommunity(communityId, false);
   return {
     id: communityId,
     name: communityId,
@@ -57,28 +52,13 @@ export function colorForCommunity(communityId: string): CommunityInfo {
   };
 }
 
-export function vividNodeColorForCommunity(communityId: string, _darkBackground: boolean): string {
-  return NEON_NODE_COLORS[hashString(communityId) % NEON_NODE_COLORS.length];
-}
-
 export function buildCommunityPalette(
   communityIds: string[],
   names?: Map<string, string>,
 ): Map<string, CommunityInfo> {
   const palette = new Map<string, CommunityInfo>();
-  const usedHues: number[] = [];
   for (const id of communityIds) {
-    let hue = hashString(id) % 360;
-    // Spread hues to avoid near-duplicates
-    let attempts = 0;
-    while (attempts < 36 && usedHues.some((h) => Math.abs(h - hue) < 30)) {
-      hue = (hue + 37) % 360;
-      attempts += 1;
-    }
-    usedHues.push(hue);
     const info = colorForCommunity(id);
-    info.color = hslToHex(hue, 48, 58);
-    info.darkColor = hslToHex(hue, 38, 32);
     if (names && names.has(id)) info.name = names.get(id) as string;
     palette.set(id, info);
   }
