@@ -29,11 +29,11 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas sm:flex-row text-main antialiased selection:bg-mac-accent selection:text-white">
-      {/* macOS Sidebar Navigation */}
+      {/* Sidebar Navigation */}
       <aside className="flex w-full flex-col border-b border-mac bg-sidebar sm:w-60 sm:border-b-0 sm:border-r">
-        {/* macOS Window Titlebar Header with Traffic Dots */}
+        {/* Window Titlebar Header */}
         <div className="border-b border-mac px-4 py-3.5 space-y-3">
-          {/* macOS Traffic Dots */}
+          {/* Status Indicators */}
           <div className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-full bg-[#ff5f56] border border-[#e0443e]/50 inline-block"></span>
             <span className="h-3 w-3 rounded-full bg-[#ffbd2e] border border-[#dea123]/50 inline-block"></span>
@@ -49,7 +49,7 @@ export default function Layout() {
                 OpenGraphMemory
               </h1>
               <p className="text-[10px] font-semibold text-subdued">
-                macOS App Engine
+                Knowledge Graph Engine
               </p>
             </div>
           </div>

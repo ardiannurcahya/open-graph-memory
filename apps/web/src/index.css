@@ -5,38 +5,38 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   🍏 macOS Design System Theme Tokens (Apple HIG / macOS Clean Light & Dark)
+   Design System Theme Tokens (Clean Light & Dark)
    ========================================================================== */
 
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
   
-  /* macOS Clean Light Mode */
-  --mac-canvas: #f5f5f7;       /* macOS Window Canvas */
-  --mac-sidebar: #eef0f3;      /* macOS Translucent Sidebar */
-  --mac-surface: #ffffff;      /* macOS Card & Panel */
-  --mac-muted: #e4e7eb;        /* macOS Segmented Control / Input */
-  --mac-border: #d2d2d7;       /* macOS Subtle Hairline Border */
-  --mac-text: #1d1d1f;         /* macOS Primary Text */
-  --mac-subtext: #6e6e73;      /* macOS Secondary Text */
-  --mac-accent: #007aff;       /* macOS System Blue Accent */
+  /* Clean Light Mode */
+  --mac-canvas: #f5f5f7;       /* Window Canvas */
+  --mac-sidebar: #eef0f3;      /* Translucent Sidebar */
+  --mac-surface: #ffffff;      /* Card & Panel */
+  --mac-muted: #e4e7eb;        /* Segmented Control / Input */
+  --mac-border: #d2d2d7;       /* Subtle Hairline Border */
+  --mac-text: #1d1d1f;         /* Primary Text */
+  --mac-subtext: #6e6e73;      /* Secondary Text */
+  --mac-accent: #007aff;       /* System Blue Accent */
   --mac-accent-text: #ffffff;  /* Pure White Text on Active Pills */
-  --mac-code-bg: #f2f2f7;      /* macOS Code Block */
+  --mac-code-bg: #f2f2f7;      /* Code Block */
 }
 
 html.dark {
-  /* macOS Clean Dark Mode (Xcode / Finder Dark Aesthetic) */
-  --mac-canvas: #1e1e1e;       /* macOS Dark Window Canvas */
-  --mac-sidebar: #252526;      /* macOS Dark Sidebar */
-  --mac-surface: #2d2d2d;      /* macOS Dark Card / Grouped Table */
-  --mac-muted: #3a3a3c;        /* macOS Dark Input / Segment */
-  --mac-border: #38383a;       /* macOS Subtle Dark Hairline Border */
-  --mac-text: #f5f5f7;         /* macOS Dark Primary Crisp Text */
-  --mac-subtext: #a1a1a6;      /* macOS Dark Secondary Text */
-  --mac-accent: #0a84ff;       /* macOS Dark Blue Accent */
+  /* Clean Dark Mode */
+  --mac-canvas: #1e1e1e;       /* Dark Window Canvas */
+  --mac-sidebar: #252526;      /* Dark Sidebar */
+  --mac-surface: #2d2d2d;      /* Dark Card / Grouped Table */
+  --mac-muted: #3a3a3c;        /* Dark Input / Segment */
+  --mac-border: #38383a;       /* Subtle Dark Hairline Border */
+  --mac-text: #f5f5f7;         /* Dark Primary Crisp Text */
+  --mac-subtext: #a1a1a6;      /* Dark Secondary Text */
+  --mac-accent: #0a84ff;       /* Dark Blue Accent */
   --mac-accent-text: #ffffff;  /* Pure White Text on Active Pills */
-  --mac-code-bg: #1e1e1e;      /* macOS Dark Code Block */
+  --mac-code-bg: #1e1e1e;      /* Dark Code Block */
 }
 
 html, body {
@@ -50,7 +50,7 @@ html, body {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* macOS User Selection */
+/* User Selection */
 ::selection {
   background-color: #007aff !important;
   color: #ffffff !important;
@@ -65,7 +65,7 @@ code, pre, .font-mono {
   font-family: var(--font-mono);
 }
 
-/* macOS Minimalist Scrollbar */
+/* Minimalist Scrollbar */
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
@@ -81,7 +81,7 @@ code, pre, .font-mono {
   background: rgba(120, 120, 128, 0.5);
 }
 
-/* macOS Utility Classes */
+/* Theme Utility Classes */
 .bg-canvas { background-color: var(--mac-canvas) !important; }
 .bg-sidebar { background-color: var(--mac-sidebar) !important; }
 .bg-surface { background-color: var(--mac-surface) !important; }
@@ -99,21 +99,23 @@ html:not(.dark) [class*="bg-gray-"] {
   background-color: var(--mac-canvas);
 }
 
-html.dark [class*="bg-white"],
-html.dark [class*="bg-stone-"],
-html.dark [class*="bg-slate-"],
-html.dark [class*="bg-gray-"] {
-  background-color: var(--mac-surface);
+html:not(.dark) [class*="text-stone-900"], 
+html:not(.dark) [class*="text-slate-900"], 
+html:not(.dark) [class*="text-gray-900"] {
+  color: var(--mac-text);
 }
 
-html.dark [class*="border-stone-"],
-html.dark [class*="border-slate-"],
-html.dark [class*="border-gray-"] {
+html:not(.dark) [class*="text-stone-500"], 
+html:not(.dark) [class*="text-slate-500"], 
+html:not(.dark) [class*="text-gray-500"],
+html:not(.dark) [class*="text-stone-600"], 
+html:not(.dark) [class*="text-slate-600"], 
+html:not(.dark) [class*="text-gray-600"] {
+  color: var(--mac-subtext);
+}
+
+html:not(.dark) [class*="border-stone-"], 
+html:not(.dark) [class*="border-slate-"], 
+html:not(.dark) [class*="border-gray-"] {
   border-color: var(--mac-border);
-}
-
-html.dark [class*="text-stone-"],
-html.dark [class*="text-slate-"],
-html.dark [class*="text-gray-"] {
-  color: #f5f5f7 !important;
 }

@@ -59,9 +59,9 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12 text-main antialiased selection:bg-mac-accent selection:text-white">
-      {/* macOS Window Dialog Box */}
+      {/* Dialog Box */}
       <div className="w-full max-w-md rounded-2xl border border-mac bg-surface p-8 shadow-xl">
-        {/* macOS Traffic Dots Header */}
+        {/* Window Header */}
         <div className="flex items-center justify-between border-b border-mac pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5 mr-1">
@@ -81,7 +81,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* macOS Auto-fill Helper Banner */}
+        {/* Auto-fill Helper Banner */}
         <div className="mt-4 rounded-xl border border-mac bg-muted p-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-main">Indexed Codebase Dataset</span>
@@ -98,7 +98,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* macOS Segmented Switcher Tabs */}
+        {/* Segmented Switcher Tabs */}
         <div className="mt-5 flex rounded-xl border border-mac bg-muted p-1">
           <button
             type="button"
