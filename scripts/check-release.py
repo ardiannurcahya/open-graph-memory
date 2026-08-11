@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TAG = f"v{VERSION}"
 
 errors: list[str] = []
@@ -56,10 +56,10 @@ if 'tags: ["v*"]' not in workflow or "type=ref,event=tag" not in workflow:
     errors.append("GHCR workflow must publish v* tags")
 
 readme = (ROOT / "README.md").read_text(encoding="utf-8")
-if '"ogm-agent-bridge==0.1.7"' not in readme:
+if '"ogm-mcp-skills==0.1.8"' not in readme and '"ogm-agent-bridge==0.1.7"' not in readme:
     errors.append("README must pin the compatible bridge release")
 
 if errors:
     print("\n".join(f"ERROR: {item}" for item in errors), file=sys.stderr)
     raise SystemExit(1)
-print(f"release metadata ok: {TAG}, versioned first-party images, bridge 0.1.7")
+print(f"release metadata ok: {TAG}, versioned first-party images, bridge 0.1.8")

@@ -213,14 +213,14 @@ POST   /v1/agent-memory/patterns/{pattern_key}/supersede  # Supersede pattern
 
 ### MCP Integration
 
-OpenGraphMemory exposes Agent Memory through the [OGM Agent Bridge](https://github.com/ardiannurcahya/ogm-agent-bridge) MCP server for Claude Code, OpenCode, and Hermes:
+OpenGraphMemory exposes Agent Memory through the [OGM MCP Skills](https://github.com/ardiannurcahya/ogm-mcp-skills) MCP server for Claude Code, OpenCode, and Hermes:
 
 ```json
 {
   "mcp": {
     "ogm": {
       "type": "local",
-      "command": ["uvx", "ogm-agent-bridge==0.1.7"],
+      "command": ["uvx", "ogm-mcp-skills==0.1.8"],
       "environment": {
         "OGM_BASE_URL": "https://your-instance.example.com",
         "OGM_API_KEY": "<project-api-key>",

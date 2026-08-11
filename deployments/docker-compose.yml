@@ -24,19 +24,19 @@ services:
     restart: "no"
     volumes: [./rustfs/bootstrap.sh:/bootstrap/bootstrap.sh:ro]
   migrate:
-    image: opengraphrag-api:v0.1.0
+    image: opengraphrag-api:v0.2.0
     command: alembic upgrade head
     env_file: [{path: ../.env, required: false}]
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"
   api:
-    image: opengraphrag-api:v0.1.0
+    image: opengraphrag-api:v0.2.0
     build: {context: .., dockerfile: apps/api/Dockerfile}
     env_file: [{path: ../.env, required: false}]
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}, bucket-init: {condition: service_completed_successfully}, migrate: {condition: service_completed_successfully}}
     healthcheck: {test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://localhost:8000/ready')"], interval: 10s, timeout: 5s, retries: 8}
   worker:
-    image: opengraphrag-worker:v0.1.0
+    image: opengraphrag-worker:v0.2.0
     build: {context: .., dockerfile: apps/worker/Dockerfile}
     command: [arq, app.arq_worker.WorkerSettings]
     env_file: [{path: ../.env, required: false}]
