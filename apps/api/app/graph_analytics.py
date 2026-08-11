@@ -38,10 +38,10 @@ MAX_ANALYTICS_RELATIONS = 20_000
 
 
 def analytics_relation() -> ColumnElement[bool]:
-    """Return filter for non-rejected relations that have evidence."""
-    return (
-        (RelationAssertion.review_state != ReviewState.REJECTED)
-        & exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    """Return filter for non-rejected relations that have evidence or are approved."""
+    has_evidence = exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    return (RelationAssertion.review_state != ReviewState.REJECTED) & (
+        (RelationAssertion.review_state == ReviewState.APPROVED) | has_evidence
     )
 
 

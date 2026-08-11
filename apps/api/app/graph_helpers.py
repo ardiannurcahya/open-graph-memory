@@ -12,25 +12,28 @@ from app.graph_models import (
 
 
 def supported_relation() -> ColumnElement[bool]:
-    """Relation needs authoritative citation and must not be rejected."""
-    return (RelationAssertion.review_state != ReviewState.REJECTED) & exists().where(
-        GraphEvidence.relation_id == RelationAssertion.id
+    """Relation needs authoritative citation or approved review state."""
+    has_evidence = exists().where(GraphEvidence.relation_id == RelationAssertion.id)
+    return (RelationAssertion.review_state != ReviewState.REJECTED) & (
+        (RelationAssertion.review_state == ReviewState.APPROVED) | has_evidence
     )
 
 
 def supported_entity() -> ColumnElement[bool]:
-    """Entity needs direct evidence or endpoint of cited relation."""
-    cited_endpoint = exists().where(
-        GraphEvidence.relation_id == RelationAssertion.id,
-        RelationAssertion.review_state != ReviewState.REJECTED,
-        or_(
-            RelationAssertion.source_entity_id == CanonicalEntity.id,
-            RelationAssertion.target_entity_id == CanonicalEntity.id,
+    """Entity needs direct evidence, cited relation endpoint, or approved review state."""
+    has_evidence = or_(
+        exists().where(GraphEvidence.entity_id == CanonicalEntity.id),
+        exists().where(
+            GraphEvidence.relation_id == RelationAssertion.id,
+            RelationAssertion.review_state != ReviewState.REJECTED,
+            or_(
+                RelationAssertion.source_entity_id == CanonicalEntity.id,
+                RelationAssertion.target_entity_id == CanonicalEntity.id,
+            ),
         ),
     )
-    return or_(
-        exists().where(GraphEvidence.entity_id == CanonicalEntity.id),
-        cited_endpoint,
+    return (CanonicalEntity.review_state != ReviewState.REJECTED) & (
+        (CanonicalEntity.review_state == ReviewState.APPROVED) | has_evidence
     )
 
 

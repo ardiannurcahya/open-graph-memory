@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from open_graph_core.code_extractor import CodeExtractor
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
@@ -57,7 +57,6 @@ async def ingest_codebase(
     ctx: ProjectDep,
     db: DbDep,
 ) -> CodebaseIngestResponse:
-
     """Batch ingest codebase files into Knowledge Graph with AST parsing."""
     project_id = ctx.project_id
     dataset_id = payload.dataset_id
@@ -66,35 +65,20 @@ async def ingest_codebase(
     total_relations = 0
     now = datetime.now(UTC)
 
+    # Phase 1: Insert / update canonical entities parsed from AST
     for item in payload.files:
         result = extractor.extract(
             code=item.code, file_path=item.file_path, language=item.language
         )
-
-        # Insert or update canonical entities
         for entity in result.entities:
+            entity_id = _short_id("ce", entity.id)
             normalized_name = f"{item.file_path}::{entity.name}".lower()[:500]
             kind_val = entity.kind.value if hasattr(entity.kind, "value") else entity.kind
             entity_type = f"code.{kind_val}"
 
-
-            existing = await db.scalar(
-                select(CanonicalEntity).where(
-                    CanonicalEntity.project_id == project_id,
-                    CanonicalEntity.dataset_id == dataset_id,
-                    CanonicalEntity.normalized_name == normalized_name,
-                    CanonicalEntity.entity_type == entity_type,
-                )
-            )
-
-            if existing:
-                existing.canonical_name = entity.name
-                existing.version += 1
-                existing.valid_until = None
-                existing.updated_at = now
-            else:
-                entity_id = _short_id("ce", entity.id)
-                c_entity = CanonicalEntity(
+            stmt = (
+                pg_insert(CanonicalEntity)
+                .values(
                     id=entity_id,
                     project_id=project_id,
                     dataset_id=dataset_id,
@@ -106,31 +90,64 @@ async def ingest_codebase(
                     created_at=now,
                     updated_at=now,
                 )
-                db.add(c_entity)
+                .on_conflict_do_nothing()
+            )
+            await db.execute(stmt)
             total_entities += 1
 
-        # Insert relations
+    await db.flush()
+
+    # Phase 2: Ensure stub Canonical Entities for any external target/source references
+    for item in payload.files:
+        result = extractor.extract(
+            code=item.code, file_path=item.file_path, language=item.language
+        )
+        for rel in result.relations:
+            for raw_id in (rel.source_id, rel.target_id):
+                eid = _short_id("ce", raw_id)
+                stmt = (
+                    pg_insert(CanonicalEntity)
+                    .values(
+                        id=eid,
+                        project_id=project_id,
+                        dataset_id=dataset_id,
+                        canonical_name=raw_id,
+                        normalized_name=f"ref::{raw_id}".lower()[:500],
+                        entity_type="code.symbol",
+                        confidence=1.0,
+                        review_state=ReviewState.APPROVED,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    .on_conflict_do_nothing()
+                )
+                await db.execute(stmt)
+
+    await db.flush()
+
+    # Phase 3: Insert Relation Assertions (guaranteed foreign keys exist, skipping self-loops)
+    for item in payload.files:
+        result = extractor.extract(
+            code=item.code, file_path=item.file_path, language=item.language
+        )
         for rel in result.relations:
             rel_kind = rel.kind.value if hasattr(rel.kind, "value") else str(rel.kind)
             relation_id = _short_id("rel", f"{rel.source_id}_{rel_kind}_{rel.target_id}")
 
-            existing_rel = await db.scalar(
-                select(RelationAssertion).where(
-                    RelationAssertion.id == relation_id,
-                    RelationAssertion.project_id == project_id,
-                    RelationAssertion.dataset_id == dataset_id,
-                )
-            )
-            if existing_rel:
-                existing_rel.valid_until = None
-                existing_rel.updated_at = now
-            else:
-                r_assertion = RelationAssertion(
+            source_entity_id = _short_id("ce", rel.source_id)
+            target_entity_id = _short_id("ce", rel.target_id)
+
+            if source_entity_id == target_entity_id:
+                continue
+
+            stmt = (
+                pg_insert(RelationAssertion)
+                .values(
                     id=relation_id,
                     project_id=project_id,
                     dataset_id=dataset_id,
-                    source_entity_id=_short_id("ce", rel.source_id),
-                    target_entity_id=_short_id("ce", rel.target_id),
+                    source_entity_id=source_entity_id,
+                    target_entity_id=target_entity_id,
                     relation_type=rel_kind,
                     extractor_version="1.0.0",
                     confidence=rel.confidence if hasattr(rel, "confidence") else 1.0,
@@ -138,10 +155,10 @@ async def ingest_codebase(
                     created_at=now,
                     updated_at=now,
                 )
-                db.add(r_assertion)
+                .on_conflict_do_nothing()
+            )
+            await db.execute(stmt)
             total_relations += 1
-
-
 
     await db.commit()
 
@@ -170,4 +187,3 @@ async def sync_codebase_file(
         files=[file_item],
     )
     return await ingest_codebase(payload=ingest_req, ctx=ctx, db=db)
-
