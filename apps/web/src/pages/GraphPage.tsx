@@ -310,7 +310,7 @@ export default function GraphPage() {
 
       {panelOpen && (
         <section className="absolute left-3 top-16 z-10 flex max-h-[calc(100vh-5rem)] w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-mac bg-surface/95 shadow-xl backdrop-blur-md text-foreground">
-          {/* macOS Segmented Control Tabs */}
+          {/* Segmented Control Tabs */}
           <div className="flex gap-1 overflow-x-auto border-b border-mac bg-muted/50 p-1.5">
             {TOOLS.map((item) => (
               <button

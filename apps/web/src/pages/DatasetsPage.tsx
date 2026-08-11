@@ -140,7 +140,7 @@ export default function DatasetsPage() {
 
   return (
     <div className="px-6 py-8 sm:px-10 max-w-6xl mx-auto space-y-6 text-main antialiased selection:bg-mac-accent selection:text-white">
-      {/* macOS Header */}
+      {/* Header */}
       <div className="border-b border-mac pb-4">
         <h1 className="text-2xl font-bold tracking-tight text-main flex items-center gap-2">
           Datasets
@@ -230,7 +230,7 @@ export default function DatasetsPage() {
           </div>
         </div>
 
-        {/* Right Panel: macOS Finder Document Manager */}
+        {/* Right Panel: Document Manager */}
         <div className="lg:col-span-2">
           {selected ? (
             <div className="rounded-2xl border border-mac bg-surface shadow-sm overflow-hidden space-y-0">

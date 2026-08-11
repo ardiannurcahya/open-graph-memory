@@ -264,7 +264,7 @@ export default function AgentMemoryPage() {
       context.fillText(dataNode.label, dataNode.x + dataNode.size + 4, dataNode.y + size / 3);
     };
 
-    // Custom High-Contrast macOS Hover & Selection Card Renderer
+    // Custom High-Contrast Hover & Selection Card Renderer
     const drawHover = (
       context: CanvasRenderingContext2D,
       dataNode: CanvasNodeData,
@@ -443,7 +443,7 @@ export default function AgentMemoryPage() {
 
   return (
     <div className="relative h-screen min-h-[640px] overflow-hidden bg-ui-canvas">
-      {/* Floating macOS Top Toolbar */}
+      {/* Floating Top Toolbar */}
       <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-mac bg-surface/90 px-3 py-2 shadow-xl backdrop-blur-md text-foreground">
         <div className="flex items-center gap-2 font-semibold text-sm mr-2 text-foreground">
           <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse" />
@@ -524,7 +524,7 @@ export default function AgentMemoryPage() {
 
         <div ref={containerRef} id="agent-memory-canvas" className="absolute inset-0 h-full w-full bg-ui-canvas" />
 
-        {/* Floating macOS Camera Toolbar */}
+        {/* Floating Camera Toolbar */}
         {data && data.nodes.length > 0 && (
           <div className="absolute bottom-3 left-3 z-10 flex flex-wrap items-center gap-1 rounded-2xl border border-mac bg-surface/90 p-1.5 shadow-xl backdrop-blur-md text-foreground">
             <Stat value={`${data.nodes.length} nodes`} />
@@ -558,7 +558,7 @@ export default function AgentMemoryPage() {
           </div>
         )}
 
-        {/* Floating macOS Inspector Drawer */}
+        {/* Floating Inspector Drawer */}
         {selectedNode && (
           <div className="absolute right-3 top-16 z-20 flex max-h-[calc(100vh-5rem)] w-[min(26rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-mac bg-surface/95 shadow-2xl backdrop-blur-md text-foreground animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-mac p-4">
@@ -615,7 +615,7 @@ export default function AgentMemoryPage() {
           </div>
         )}
 
-        {/* Floating macOS Legend Panel */}
+        {/* Floating Legend Panel */}
         {showLegend && data && data.nodes.length > 0 && (
           <div className="absolute bottom-3 right-3 z-10 min-w-48 rounded-2xl border border-mac bg-surface/95 p-3.5 shadow-xl backdrop-blur-md text-foreground">
             <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">

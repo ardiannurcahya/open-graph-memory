@@ -2,6 +2,40 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] - 2026-08-11
+
+### Added
+
+- **Codebase Knowledge Graph & AST Ingestion**:
+  - Continuous codebase AST symbol parsing across Python, TypeScript, Go, and Rust via tree-sitter.
+  - Endpoints for batch ingestion (`POST /v1/codebase/ingest`), single-file live sync (`POST /v1/codebase/sync-file`), and directory indexing (`POST /v1/codebase/index-directory`).
+  - Automatic Louvain hierarchical community detection on parsed codebase call-graphs and relationships.
+- **Agent Memory Workspace**:
+  - Interactive Agent Memory 2D graph view with domain filters, status chips, camera controls, legend, and connected node isolation.
+  - Glassmorphism inspector drawer displaying episode telemetry, attempts, triggers, outcomes, feedback scores, and pattern supersession chains.
+- **Documentation**:
+  - Realistic token efficiency and agent economics benchmark documentation in `README.md`.
+
+### Changed
+
+- **UI/UX Consistency**:
+  - Redesigned `AgentMemoryPage.tsx` to unify layout, top floating toolbar, and controls with `GraphPage.tsx`.
+  - Harmonized Dark/Light theme text contrast, tool selector styling, and canvas rendering.
+  - Migrated `ThemeControl.tsx` to an accessible segmented control with full test harness compatibility.
+
+### Fixed
+
+- **Type Safety & Linting**:
+  - Eliminated all TypeScript `any` types in `SigmaGraphCanvas.tsx` and `AgentMemoryPage.tsx` with strongly typed node and canvas settings interfaces.
+  - Formatted API schemas and code extractor modules to satisfy Ruff linting and line-length constraints (`<= 100` chars).
+  - Added explicit `default=None` field definitions in Pydantic models for strict `mypy` type checking.
+- **CI / CD & Deployments**:
+  - Restored missing container configurations (`deployments/Caddyfile` and `deployments/rustfs/bootstrap.sh`).
+  - Corrected `scripts/check-release.py` to validate active deployment compose files.
+  - Resolved frontend unit test selectors and assertions across all 11 Vitest test suites.
+
+---
+
 ## [0.1.0] - 2026-08-02
 
 ### Added

@@ -17,7 +17,7 @@ export default function DashboardPage() {
 
   return (
     <div className="px-6 py-8 sm:px-10 max-w-6xl mx-auto space-y-8">
-      {/* macOS Clean Header */}
+      {/* Header */}
       <div className="border-b border-mac pb-6 space-y-2">
         <div className="inline-flex items-center gap-1.5 rounded-full bg-muted text-main px-3 py-1 text-xs font-semibold border border-mac">
           <span>AST Codebase Knowledge Graph</span>
@@ -30,7 +30,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* macOS Engine Metrics */}
+      {/* Engine Metrics */}
       <div>
         <h2 className="text-xs font-bold uppercase tracking-wider text-subdued mb-3 flex items-center gap-2">
           <Activity className="h-4 w-4 text-mac-accent" /> Engine Metrics
@@ -63,7 +63,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* macOS Workspaces */}
+      {/* Workspaces */}
       <div>
         <h2 className="text-xs font-bold uppercase tracking-wider text-subdued mb-3 flex items-center gap-2">
           <Cpu className="h-4 w-4 text-mac-accent" /> Workspaces

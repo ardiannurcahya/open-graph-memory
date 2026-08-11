@@ -261,7 +261,7 @@ export default function SigmaGraphCanvas({
       context.fillText(data.label, data.x + data.size + 4, data.y + size / 3);
     };
 
-    // Custom High-Contrast macOS Hover & Selection Card Renderer
+    // Custom High-Contrast Hover & Selection Card Renderer
     const drawHover = (
       context: CanvasRenderingContext2D,
       data: CanvasNodeData,
