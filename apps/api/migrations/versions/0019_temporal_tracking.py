@@ -15,9 +15,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
-    entity_columns = {
-        column["name"] for column in inspector.get_columns("canonical_entities")
-    }
+    entity_columns = {column["name"] for column in inspector.get_columns("canonical_entities")}
     if "valid_from" not in entity_columns:
         op.add_column(
             "canonical_entities",
@@ -34,9 +32,7 @@ def upgrade() -> None:
             sa.Column("superseded_by", sa.String(length=64), nullable=True),
         )
 
-    relation_columns = {
-        column["name"] for column in inspector.get_columns("relation_assertions")
-    }
+    relation_columns = {column["name"] for column in inspector.get_columns("relation_assertions")}
     if "valid_from" not in relation_columns:
         op.add_column(
             "relation_assertions",
@@ -53,9 +49,7 @@ def upgrade() -> None:
             sa.Column("superseded_by", sa.String(length=64), nullable=True),
         )
 
-    entity_indexes = {
-        index["name"] for index in inspector.get_indexes("canonical_entities")
-    }
+    entity_indexes = {index["name"] for index in inspector.get_indexes("canonical_entities")}
     if "ix_entities_temporal" not in entity_indexes:
         op.create_index(
             "ix_entities_temporal",
@@ -64,9 +58,7 @@ def upgrade() -> None:
             postgresql_where=sa.text("valid_until IS NULL"),
         )
 
-    relation_indexes = {
-        index["name"] for index in inspector.get_indexes("relation_assertions")
-    }
+    relation_indexes = {index["name"] for index in inspector.get_indexes("relation_assertions")}
     if "ix_relations_temporal" not in relation_indexes:
         op.create_index(
             "ix_relations_temporal",

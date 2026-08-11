@@ -41,7 +41,6 @@ def audit_id() -> str:
 
 
 async def create_audit_log(
-
     db: AsyncSession,
     project_id: str | UUID,
     actor_type: str,
@@ -55,7 +54,6 @@ async def create_audit_log(
     log = AuditLog(
         id=audit_id(),
         project_id=p_uuid,
-
         actor_type=actor_type,
         actor_id=actor_id,
         operation=operation,

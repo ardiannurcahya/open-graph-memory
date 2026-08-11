@@ -50,9 +50,7 @@ class S3ObjectStore:
             aws_access_key_id=access_key,
             aws_secret_access_key=config.require_secret("secret_key").get(),
             region_name=region,
-            config=Config(
-                s3={"addressing_style": "path" if force_path_style else "virtual"}
-            ),
+            config=Config(s3={"addressing_style": "path" if force_path_style else "virtual"}),
         )
         return instance
 
@@ -79,7 +77,6 @@ class S3ObjectStore:
 
 
 class LocalObjectStore:
-
     def __init__(self, base_dir: str | Path) -> None:
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
@@ -133,4 +130,3 @@ def get_object_store() -> ObjectStore:
             {"secret_key": SecretValue(settings.s3_secret_key.get_secret_value())},
         ),
     )
-

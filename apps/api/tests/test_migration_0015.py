@@ -30,7 +30,7 @@ def test_migration_0015_has_linear_lineage_and_preserves_graph_analytics() -> No
         "community_reports",
         "community_report_evidence",
     )
-    assert "op.drop_table(\"graph_analytics" not in source
+    assert 'op.drop_table("graph_analytics' not in source
 
 
 def test_migration_0015_uses_dependency_ordered_drops() -> None:
@@ -49,7 +49,7 @@ def test_migration_0015_uses_dependency_ordered_drops() -> None:
         "query_logs",
     ]
 
-    positions = [upgrade.index(f'op.drop_table(\"{table}\")') for table in expected]
+    positions = [upgrade.index(f'op.drop_table("{table}")') for table in expected]
     assert positions == sorted(positions)
     assert "CREATE TABLE" not in upgrade
 

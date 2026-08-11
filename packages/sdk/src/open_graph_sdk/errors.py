@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -14,15 +13,34 @@ class OGMError(Exception):
 
 
 class TransportError(OGMError): ...
+
+
 class ValidationError(OGMError): ...
+
+
 class AuthenticationError(OGMError): ...
+
+
 class NotFoundError(OGMError): ...
+
+
 class ConflictError(OGMError): ...
+
+
 class PayloadTooLargeError(OGMError): ...
+
+
 class UnsupportedMediaTypeError(OGMError): ...
+
+
 class BadGatewayError(OGMError): ...
+
+
 class ServiceUnavailableError(OGMError): ...
+
+
 class ServerError(OGMError): ...
+
 
 _STATUS_ERRORS: dict[int, type[OGMError]] = {
     400: ValidationError,

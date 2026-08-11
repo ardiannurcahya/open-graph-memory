@@ -62,16 +62,19 @@ async def ingest_codebase(
     db: DbDep,
 ) -> CodebaseIngestResponse:
     """Batch ingest codebase files into Knowledge Graph with AST parsing and Louvain analytics."""
-    from app.models import Dataset, DatasetStatus
-    from app.graph_analytics import refresh_dataset_analytics
     from sqlalchemy import select
+
+    from app.graph_analytics import refresh_dataset_analytics
+    from app.models import Dataset, DatasetStatus
 
     project_id = ctx.project_id
     dataset_id = payload.dataset_id
     dataset_name = payload.dataset_name or dataset_id
 
     # 1. Ensure dataset exists
-    existing_ds = await db.scalar(select(Dataset).where(Dataset.project_id == project_id, Dataset.id == dataset_id))
+    existing_ds = await db.scalar(
+        select(Dataset).where(Dataset.project_id == project_id, Dataset.id == dataset_id)
+    )
     if not existing_ds:
         ds = Dataset(
             id=dataset_id,
@@ -102,7 +105,8 @@ async def ingest_codebase(
 
     # 2. Insert canonical entities
     for entity, entity_id in extracted_entities:
-        normalized_name = f"{entity.file_path if hasattr(entity, 'file_path') else ''}::{entity.name}::{entity.start_line}".lower()[:500]
+        fp = entity.file_path if hasattr(entity, "file_path") else ""
+        normalized_name = f"{fp}::{entity.name}::{entity.start_line}".lower()[:500]
         kind_val = entity.kind.value if hasattr(entity.kind, "value") else entity.kind
         entity_type = f"code.{kind_val}"
 
@@ -129,19 +133,21 @@ async def ingest_codebase(
 
     await db.commit()
 
-    db_entity_ids = set(await db.scalars(
-        select(CanonicalEntity.id).where(
-            CanonicalEntity.project_id == project_id,
-            CanonicalEntity.dataset_id == dataset_id
+    db_entity_ids = set(
+        await db.scalars(
+            select(CanonicalEntity.id).where(
+                CanonicalEntity.project_id == project_id, CanonicalEntity.dataset_id == dataset_id
+            )
         )
-    ))
+    )
 
     # 3. Insert cross-file relations
     total_relations = 0
     seen_rel_keys = set()
 
     for rel in extracted_relations:
-        source_id = raw_entity_map.get(rel.source_id) or _short_id("ce", f"{dataset_id}:{rel.source_id}")
+        raw_src = raw_entity_map.get(rel.source_id)
+        source_id = raw_src or _short_id("ce", f"{dataset_id}:{rel.source_id}")
         if source_id not in db_entity_ids:
             continue
 
@@ -212,7 +218,6 @@ async def ingest_codebase(
     )
 
 
-
 class DirectoryIndexRequest(BaseModel):
     directory_path: str = Field(..., min_length=1, max_length=1000)
     dataset_id: str | None = Field(None, max_length=100)
@@ -250,7 +255,11 @@ async def sync_codebase_file(
     return await ingest_codebase(payload=ingest_req, ctx=ctx, db=db)
 
 
-@router.post("/index-directory", response_model=DirectoryIndexResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/index-directory",
+    response_model=DirectoryIndexResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def index_directory(
     payload: DirectoryIndexRequest,
     ctx: ProjectDep,
@@ -259,17 +268,20 @@ async def index_directory(
     """Scan and index an entire local codebase directory into an isolated dataset in seconds."""
     import time
     from pathlib import Path
-    from app.models import Dataset, DatasetStatus
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
     from app.graph_analytics import refresh_dataset_analytics
-    from sqlalchemy import select, delete
+    from app.models import Dataset, DatasetStatus
 
     start_time = time.perf_counter()
     project_id = ctx.project_id
     dir_path = Path(payload.directory_path)
 
     if not dir_path.exists() or not dir_path.is_dir():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=f"Directory '{payload.directory_path}' does not exist on server.")
+        msg = f"Directory '{payload.directory_path}' does not exist on server."
+        raise HTTPException(status_code=400, detail=msg)
 
     dir_stem = dir_path.name.lower().replace("-", "_").replace(" ", "_")
     dataset_id = payload.dataset_id or f"ds_{dir_stem}"
@@ -277,7 +289,9 @@ async def index_directory(
     dataset_desc = payload.description or f"AST Knowledge Graph for {dir_path.name}"
 
     # 1. Ensure clean dataset record
-    existing_ds = await db.scalar(select(Dataset).where(Dataset.project_id == project_id, Dataset.id == dataset_id))
+    existing_ds = await db.scalar(
+        select(Dataset).where(Dataset.project_id == project_id, Dataset.id == dataset_id)
+    )
     if not existing_ds:
         ds = Dataset(
             id=dataset_id,
@@ -290,8 +304,34 @@ async def index_directory(
         await db.commit()
 
     # 2. Scan source files
-    valid_exts = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".c", ".cpp", ".h", ".hpp"}
-    ignore_dirs = {".venv", "venv", ".git", "__pycache__", "build", "dist", "node_modules", "out", ".next", "generated", ".prisma"}
+    valid_exts = {
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".py",
+        ".go",
+        ".rs",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+    }
+    ignore_dirs = {
+        ".venv",
+        "venv",
+        ".git",
+        "__pycache__",
+        "build",
+        "dist",
+        "node_modules",
+        "out",
+        ".next",
+        "generated",
+        ".prisma",
+    }
 
     code_items = []
     total_loc = 0
@@ -333,7 +373,8 @@ async def index_directory(
 
     # 3. Insert canonical entities
     for entity, entity_id in extracted_entities:
-        normalized_name = f"{entity.file_path if hasattr(entity, 'file_path') else ''}::{entity.name}::{entity.start_line}".lower()[:500]
+        fp = entity.file_path if hasattr(entity, "file_path") else ""
+        normalized_name = f"{fp}::{entity.name}::{entity.start_line}".lower()[:500]
         kind_val = entity.kind.value if hasattr(entity.kind, "value") else entity.kind
         entity_type = f"code.{kind_val}"
 
@@ -360,19 +401,21 @@ async def index_directory(
 
     await db.commit()
 
-    db_entity_ids = set(await db.scalars(
-        select(CanonicalEntity.id).where(
-            CanonicalEntity.project_id == project_id,
-            CanonicalEntity.dataset_id == dataset_id
+    db_entity_ids = set(
+        await db.scalars(
+            select(CanonicalEntity.id).where(
+                CanonicalEntity.project_id == project_id, CanonicalEntity.dataset_id == dataset_id
+            )
         )
-    ))
+    )
 
     # 4. Insert cross-file relations
     total_relations = 0
     seen_rel_keys = set()
 
     for rel in extracted_relations:
-        source_id = raw_entity_map.get(rel.source_id) or _short_id("ce", f"{dataset_id}:{rel.source_id}")
+        raw_src = raw_entity_map.get(rel.source_id)
+        source_id = raw_src or _short_id("ce", f"{dataset_id}:{rel.source_id}")
         if source_id not in db_entity_ids:
             continue
 
@@ -445,4 +488,3 @@ async def index_directory(
         communities_count=communities_count,
         duration_seconds=round(duration, 3),
     )
-

@@ -123,4 +123,3 @@ async def test_delete_legal_hold(session: AsyncSession, project: Project, api_ke
     session.expire_all()
     deleted = await session.get(LegalHold, "lh_test_del")
     assert deleted is None
-

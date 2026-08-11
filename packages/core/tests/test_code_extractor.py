@@ -41,7 +41,7 @@ class UserAuth(BaseManager):
 
 def test_typescript_extraction():
     extractor = CodeExtractor()
-    code = '''
+    code = """
 import { useState } from 'react';
 
 export interface UserProfile {
@@ -54,7 +54,7 @@ export class UserService {
         return { id, name: "Alice" };
     }
 }
-'''
+"""
     result = extractor.extract_file("src/services/userService.ts", code)
     assert result.language == "typescript"
     names = {e.name for e in result.entities}
@@ -65,7 +65,7 @@ export class UserService {
 
 def test_go_extraction():
     extractor = CodeExtractor()
-    code = '''
+    code = """
 package main
 
 import "fmt"
@@ -78,7 +78,7 @@ func (s *Server) Start() error {
     fmt.Println("Starting")
     return nil
 }
-'''
+"""
     result = extractor.extract_file("pkg/server/server.go", code)
     assert result.language == "go"
     names = {e.name for e in result.entities}
@@ -88,7 +88,7 @@ func (s *Server) Start() error {
 
 def test_rust_extraction():
     extractor = CodeExtractor()
-    code = '''
+    code = """
 use std::sync::Arc;
 
 pub struct Config {
@@ -98,7 +98,7 @@ pub struct Config {
 pub fn run_server(config: Config) {
     println!("Running");
 }
-'''
+"""
     result = extractor.extract_file("src/main.rs", code)
     assert result.language == "rust"
     names = {e.name for e in result.entities}
@@ -108,10 +108,10 @@ pub fn run_server(config: Config) {
 
 def test_fallback_extraction():
     extractor = CodeExtractor()
-    code = '''
+    code = """
 def unknown_func():
     pass
-'''
+"""
     result = extractor.extract_file("unknown_script.xyz", code)
     assert result.language == "generic"
     assert len(result.entities) >= 1

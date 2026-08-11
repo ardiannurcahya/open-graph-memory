@@ -4,38 +4,55 @@ import re
 from typing import Any, cast
 
 PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("assignment", re.compile(
-        r"(?i)(\b(?:authorization|credential|cookie|private[_-]?key|ssh[_-]?key|"
-        r"access[_-]?key|api[_-]?key|access[_-]?token|auth[_-]?token|password|"
-        r"passwd|pwd|secret)\b\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
-    )),
-    ("header", re.compile(
-        r"(?i)(\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)"
-        r"\s*:\s*)[^\r\n]+"
-    )),
-    ("auth", re.compile(
-        r"(?i)(\b(?:Basic|Bearer)\s+)[A-Za-z0-9._~+/=-]+"
-    )),
-    ("credential", re.compile(
-        r"\b(?:ogm|rfr)_[A-Za-z0-9_-]+\b"
-    )),
-    ("pem", re.compile(
-        r"(?s)-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----.*?"
-        r"-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----"
-    )),
-    ("dsn", re.compile(
-        r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp(?:s)?)://[^\s\"']+"
-    )),
-    ("url_userinfo", re.compile(
-        r"(?i)\bhttps?://[^\s/@:]+:[^\s/@]+@[^\s\"']+"
-    )),
+    (
+        "assignment",
+        re.compile(
+            r"(?i)(\b(?:authorization|credential|cookie|private[_-]?key|ssh[_-]?key|"
+            r"access[_-]?key|api[_-]?key|access[_-]?token|auth[_-]?token|password|"
+            r"passwd|pwd|secret)\b\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+        ),
+    ),
+    (
+        "header",
+        re.compile(
+            r"(?i)(\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)"
+            r"\s*:\s*)[^\r\n]+"
+        ),
+    ),
+    ("auth", re.compile(r"(?i)(\b(?:Basic|Bearer)\s+)[A-Za-z0-9._~+/=-]+")),
+    ("credential", re.compile(r"\b(?:ogm|rfr)_[A-Za-z0-9_-]+\b")),
+    (
+        "pem",
+        re.compile(
+            r"(?s)-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----.*?"
+            r"-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----"
+        ),
+    ),
+    (
+        "dsn",
+        re.compile(
+            r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp(?:s)?)://[^\s\"']+"
+        ),
+    ),
+    ("url_userinfo", re.compile(r"(?i)\bhttps?://[^\s/@:]+:[^\s/@]+@[^\s\"']+")),
 ]
 
 REDACTED = "[REDACTED]"
 
 SENSITIVE_KEYS = {
-    "authorization", "credential", "cookie", "password", "passwd", "secret",
-    "privatekey", "sshkey", "accesskey", "accesstoken", "authtoken", "apikey", "token",
+    "authorization",
+    "credential",
+    "cookie",
+    "password",
+    "passwd",
+    "secret",
+    "privatekey",
+    "sshkey",
+    "accesskey",
+    "accesstoken",
+    "authtoken",
+    "apikey",
+    "token",
 }
 
 
@@ -63,8 +80,7 @@ def redact_string(value: str) -> str:
 def redact_value(value: Any, parent_key: str = "") -> Any:
     if isinstance(value, dict):
         return {
-            k: REDACTED if is_sensitive_key(k) else redact_value(v, k)
-            for k, v in value.items()
+            k: REDACTED if is_sensitive_key(k) else redact_value(v, k) for k, v in value.items()
         }
     elif isinstance(value, list):
         return [redact_value(item, parent_key) for item in value]
@@ -97,7 +113,6 @@ def contains_secret(value: Any, parent_key: str = "") -> bool:
 
 def sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], redact_value(data))
-
 
 
 def validate_no_secrets(data: dict[str, Any]) -> None:

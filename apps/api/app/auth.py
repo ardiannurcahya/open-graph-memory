@@ -52,4 +52,3 @@ async def require_project(
     if key is None:
         raise HTTPException(status_code=401, detail="invalid project API key")
     return ProjectContext(project_id=project_id)
-

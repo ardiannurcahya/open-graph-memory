@@ -57,4 +57,3 @@ def test_traversal_filters_seed_relations_and_frontier_endpoints() -> None:
     assert source.index("if entity_id not in supported_endpoints:") < source.index(
         "relation_ids.add(relation.id)"
     )
-

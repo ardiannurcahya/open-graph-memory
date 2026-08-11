@@ -29,6 +29,7 @@ async def create_redis_pool() -> ArqRedis:
 
 # --- Tasks ---
 
+
 async def task_index_document(ctx: dict[str, Any], job_id: str) -> str:
     from app.ingestion import run_ingestion
 
@@ -148,6 +149,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 # --- Helpers ---
+
 
 async def _dispatch_pending_indexing(redis: ArqRedis, limit: int = 100) -> int:
     from sqlalchemy import select
@@ -285,6 +287,7 @@ async def _reconcile_indexing_jobs(limit: int = 100) -> int:
 
 # --- Enqueue helpers (for use by other modules) ---
 
+
 async def enqueue_index_document(job_id: str) -> None:
     pool = await create_redis_pool()
     try:
@@ -302,6 +305,7 @@ async def enqueue_extract_graph(job_id: str) -> None:
 
 
 # --- Worker settings ---
+
 
 class WorkerSettings:
     functions = [

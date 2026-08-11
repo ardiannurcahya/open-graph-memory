@@ -36,8 +36,15 @@ Project = Annotated[ProjectContext, Depends(require_project)]
 Db = Annotated[AsyncSession, Depends(get_session)]
 Domain = Literal["engineering", "trading", "research", "operations", "custom"]
 MemoryType = Literal[
-    "bugfix", "decision", "preference", "procedure",
-    "research", "trading", "learning", "fact", "custom",
+    "bugfix",
+    "decision",
+    "preference",
+    "procedure",
+    "research",
+    "trading",
+    "learning",
+    "fact",
+    "custom",
 ]
 EpisodeStatus = Literal["open", "active", "degraded", "superseded", "rejected", "archived"]
 OutcomeStatus = Literal["success", "failed", "partial", "cancelled"]
@@ -308,8 +315,12 @@ async def create_episode(body: EpisodeInput, project: Project, db: Db) -> Episod
 
     if body.idempotency_key:
         await store_idempotency(
-            db, body.idempotency_key, str(project.project_id), "episode.create", item.id,
-            {"id": item.id, "type": item.type}
+            db,
+            body.idempotency_key,
+            str(project.project_id),
+            "episode.create",
+            item.id,
+            {"id": item.id, "type": item.type},
         )
 
     await db.commit()
@@ -532,6 +543,7 @@ async def search(
     # Fallback to fuzzy substring / ILIKE if strict tsquery returned no results
     if not rows:
         from sqlalchemy import or_
+
         keywords = [w.strip() for w in q.split() if len(w.strip()) > 1]
         if keywords:
             ilike_clauses = [
@@ -544,7 +556,10 @@ async def search(
             ]
             fallback_stmt = (
                 select(AgentMemoryEpisode, AgentMemoryPattern)
-                .outerjoin(AgentMemoryOutcome, AgentMemoryOutcome.episode_id == AgentMemoryEpisode.id)
+                .outerjoin(
+                    AgentMemoryOutcome,
+                    AgentMemoryOutcome.episode_id == AgentMemoryEpisode.id,
+                )
                 .outerjoin(
                     AgentMemoryPattern,
                     (AgentMemoryPattern.project_id == AgentMemoryEpisode.project_id)
@@ -556,8 +571,13 @@ async def search(
                 )
             )
             if not include_inactive:
-                fallback_stmt = fallback_stmt.where(AgentMemoryEpisode.status.not_in(["superseded", "rejected"]))
-            rows = list((await db.execute(fallback_stmt.order_by(desc(AgentMemoryEpisode.created_at)).limit(limit))).all())
+                fallback_stmt = fallback_stmt.where(
+                    AgentMemoryEpisode.status.not_in(["superseded", "rejected"])
+                )
+            fallback_exec = await db.execute(
+                fallback_stmt.order_by(desc(AgentMemoryEpisode.created_at)).limit(limit)
+            )
+            rows = list(fallback_exec.all())
 
     episode_ids = [episode.id for episode, _pattern in rows]
     outcomes = {
@@ -680,10 +700,12 @@ async def supersede_pattern(
         .with_for_update()
     )
     replacement = await db.scalar(
-        select(AgentMemoryPattern).where(
+        select(AgentMemoryPattern)
+        .where(
             AgentMemoryPattern.project_id == project.project_id,
             AgentMemoryPattern.pattern_key == body.superseding_pattern_key,
-        ).with_for_update()
+        )
+        .with_for_update()
     )
     if pattern is None or replacement is None:
         raise HTTPException(404, "agent memory pattern not found")
@@ -698,10 +720,12 @@ async def supersede_pattern(
         if not cursor.superseded_by_key:
             break
         next_cursor = await db.scalar(
-            select(AgentMemoryPattern).where(
+            select(AgentMemoryPattern)
+            .where(
                 AgentMemoryPattern.project_id == project.project_id,
                 AgentMemoryPattern.pattern_key == cursor.superseded_by_key,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if next_cursor is None:
             raise HTTPException(409, "pattern supersession chain is invalid")
@@ -849,9 +873,7 @@ async def memory_graph(
 
     outcomes = (
         await db.scalars(
-            select(AgentMemoryOutcome).where(
-                AgentMemoryOutcome.episode_id.in_(episode_ids)
-            )
+            select(AgentMemoryOutcome).where(AgentMemoryOutcome.episode_id.in_(episode_ids))
         )
     ).all()
     pattern_keys: set[str] = set()
@@ -927,9 +949,7 @@ async def memory_graph(
     if outcome_ids:
         verifiers = (
             await db.scalars(
-                select(AgentMemoryVerifier).where(
-                    AgentMemoryVerifier.outcome_id.in_(outcome_ids)
-                )
+                select(AgentMemoryVerifier).where(AgentMemoryVerifier.outcome_id.in_(outcome_ids))
             )
         ).all()
         for ver in verifiers:
@@ -962,9 +982,7 @@ async def memory_graph(
 
     evidence = (
         await db.scalars(
-            select(AgentMemoryEvidence).where(
-                AgentMemoryEvidence.episode_id.in_(episode_ids)
-            )
+            select(AgentMemoryEvidence).where(AgentMemoryEvidence.episode_id.in_(episode_ids))
         )
     ).all()
     for ev in evidence:

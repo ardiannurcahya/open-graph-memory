@@ -34,6 +34,7 @@ from open_graph_contracts.registry import _reset_registry
 # Error taxonomy
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "exc_cls",
     [
@@ -81,6 +82,7 @@ def test_errors_can_be_raised_and_caught_as_base() -> None:
 # ---------------------------------------------------------------------------
 # Config / SecretValue
 # ---------------------------------------------------------------------------
+
 
 def test_secret_value_repr_does_not_leak() -> None:
     sv = SecretValue("super-secret-token")
@@ -139,6 +141,7 @@ def test_plugin_config_with_overrides() -> None:
 # Metadata
 # ---------------------------------------------------------------------------
 
+
 def test_plugin_version_str() -> None:
     assert str(PluginVersion(1, 2, 3)) == "1.2.3"
 
@@ -185,6 +188,7 @@ def test_plugin_metadata_properties() -> None:
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 
 def _meta(name: str, cap: Capability, version: PluginVersion | None = None) -> PluginMetadata:
     return PluginMetadata(
@@ -330,6 +334,7 @@ def test_registry_reset() -> None:
 # Protocols are runtime-checkable
 # ---------------------------------------------------------------------------
 
+
 def test_protocols_are_runtime_checkable() -> None:
     from open_graph_contracts.protocols import (
         Chunker,
@@ -344,7 +349,6 @@ def test_protocols_are_runtime_checkable() -> None:
             or getattr(proto, "_is_runtime_protocol", False)
             or hasattr(proto, "__protocol_attrs__")
         ), f"{proto.__name__} not a Protocol"
-
 
 
 def test_extractor_protocol_isinstance() -> None:
@@ -378,6 +382,7 @@ def test_old_extraction_imports_valid() -> None:
         Extractor,
         OpenAICompatibleExtractor,
     )
+
     assert DeterministicExtractor is not None
     assert OpenAICompatibleExtractor is not None
     assert Extraction is not None

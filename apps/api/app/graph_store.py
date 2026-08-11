@@ -155,9 +155,7 @@ class GraphStore:
                     )
                 )
                 seed_entity_ids.update(item.entity_id for item in seed_evidence if item.entity_id)
-                seed_relation_ids = {
-                    item.relation_id for item in seed_evidence if item.relation_id
-                }
+                seed_relation_ids = {item.relation_id for item in seed_evidence if item.relation_id}
                 if seed_relation_ids:
                     relations = list(
                         await db.scalars(

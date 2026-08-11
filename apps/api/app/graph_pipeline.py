@@ -291,9 +291,7 @@ def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
         yield chunks[start : start + size]
 
 
-def _request_batches(
-    batches: list[list[Chunk]], size: int
-) -> Iterator[list[list[Chunk]]]:
+def _request_batches(batches: list[list[Chunk]], size: int) -> Iterator[list[list[Chunk]]]:
     for start in range(0, len(batches), size):
         yield batches[start : start + size]
 
@@ -358,15 +356,15 @@ async def _extract_batch(
     batched = getattr(extractor, "extract_batch", None)
     if callable(batched):
         try:
-            outputs = await to_thread(cast(_BatchExtractor, extractor).extract_batch, [
-                selected_contexts[chunk.id] for chunk in chunks
-            ])
+            outputs = await to_thread(
+                cast(_BatchExtractor, extractor).extract_batch,
+                [selected_contexts[chunk.id] for chunk in chunks],
+            )
             by_chunk_id = {item.chunk_id: item for item in outputs}
             if set(by_chunk_id) != {chunk.id for chunk in chunks}:
                 raise ValueError("batch extractor returned incomplete chunk results")
             return [
-                ChunkExtractionResult(chunk, by_chunk_id[chunk.id].extraction)
-                for chunk in chunks
+                ChunkExtractionResult(chunk, by_chunk_id[chunk.id].extraction) for chunk in chunks
             ], None
         except BaseException as exc:
             return [], exc

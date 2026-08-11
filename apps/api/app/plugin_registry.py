@@ -117,8 +117,5 @@ def create_extractor(name: str, config: PluginConfig) -> Extractor:
 def create_object_store(config: PluginConfig, provider: str = "s3") -> ObjectStore:
     return cast(
         ObjectStore,
-        register_builtin_plugins().create(
-            Capability.OBJECT_STORE, provider, config=config
-        ),
+        register_builtin_plugins().create(Capability.OBJECT_STORE, provider, config=config),
     )
-

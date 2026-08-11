@@ -29,6 +29,20 @@ const RESERVED_NODE_KEYS = new Set([
   "hidden", "highlighted", "forceLabel", "type", "zIndex",
 ]);
 
+interface CanvasNodeData {
+  label?: string | null;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+}
+
+interface CanvasSettings {
+  labelSize?: number;
+  labelFont?: string;
+  labelWeight?: string;
+}
+
 function seedPositions(nodes: MemoryGraphNode[]): Record<string, { x: number; y: number }> {
   const groups = new Map<string, MemoryGraphNode[]>();
   for (const node of nodes) {
@@ -236,8 +250,8 @@ export default function AgentMemoryPage() {
     // Custom High-Contrast Regular Label Renderer
     const drawLabel = (
       context: CanvasRenderingContext2D,
-      dataNode: { label?: string; x: number; y: number; size: number; color: string; [key: string]: unknown },
-      settings: { labelSize?: number; labelFont?: string; labelWeight?: string; [key: string]: unknown },
+      dataNode: CanvasNodeData,
+      settings: CanvasSettings,
       isDark: boolean
     ) => {
       if (!dataNode.label) return;
@@ -253,8 +267,8 @@ export default function AgentMemoryPage() {
     // Custom High-Contrast macOS Hover & Selection Card Renderer
     const drawHover = (
       context: CanvasRenderingContext2D,
-      dataNode: { label?: string; x: number; y: number; size: number; color: string; [key: string]: unknown },
-      settings: { labelSize?: number; labelFont?: string; labelWeight?: string; [key: string]: unknown },
+      dataNode: CanvasNodeData,
+      settings: CanvasSettings,
       isDark: boolean
     ) => {
       const size = settings.labelSize || 12;
@@ -313,10 +327,10 @@ export default function AgentMemoryPage() {
         labelWeight: "600",
         defaultEdgeColor: dark ? "#38383a" : "#c8c6c0",
         labelColor: { color: dark ? "#ffffff" : "#0f172a" },
-        defaultDrawNodeLabel: (context: CanvasRenderingContext2D, dataNode: any, settings: any) =>
-          drawLabel(context, dataNode, settings, dark),
-        defaultDrawNodeHover: (context: CanvasRenderingContext2D, dataNode: any, settings: any) =>
-          drawHover(context, dataNode, settings, dark),
+        defaultDrawNodeLabel: (context, data, settings) =>
+          drawLabel(context, data, settings, dark),
+        defaultDrawNodeHover: (context, data, settings) =>
+          drawHover(context, data, settings, dark),
         minCameraRatio: 0.05,
         maxCameraRatio: 10,
         nodeReducer: (_node, nodeData) => {

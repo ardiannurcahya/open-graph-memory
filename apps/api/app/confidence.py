@@ -128,8 +128,7 @@ async def merge_memories(
 
     source.content = content or target.content
     source.confidence = (
-        confidence if confidence is not None
-        else max(source.confidence, target.confidence)
+        confidence if confidence is not None else max(source.confidence, target.confidence)
     )
     source.version += 1
     source.updated_at = now
@@ -163,9 +162,7 @@ async def supersede_memory(
     return current
 
 
-async def get_version_history(
-    db: AsyncSession, episode_id: str
-) -> list[AgentMemoryVersion]:
+async def get_version_history(db: AsyncSession, episode_id: str) -> list[AgentMemoryVersion]:
     result = await db.scalars(
         select(AgentMemoryVersion)
         .where(AgentMemoryVersion.episode_id == episode_id)

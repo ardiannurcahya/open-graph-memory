@@ -52,9 +52,7 @@ def test_json_parser_normalizes_structured_document() -> None:
 def test_json_array_chunks_preserve_record_paths_and_unicode() -> None:
     parsed = default_registry().parse(
         "application/json",
-        '[{"id":"a","name":"München"},{"id":"b","body":"'.encode()
-        + b"x" * 100
-        + b'"}]',
+        '[{"id":"a","name":"München"},{"id":"b","body":"'.encode() + b"x" * 100 + b'"}]',
         "records.json",
     )
     chunks = RecursiveTextChunker(size=40, overlap=5).split_document("doc", parsed)
@@ -358,7 +356,8 @@ def test_liteparse_disabled_ocr_does_not_probe_or_fallback() -> None:
 
     with pytest.raises(RuntimeError, match="parse failed"):
         LiteParsePdfParser(
-            ocr_mode="disabled", parser_factory=FailingLiteParse  # type: ignore[arg-type]
+            ocr_mode="disabled",
+            parser_factory=FailingLiteParse,  # type: ignore[arg-type]
         ).parse(b"pdf")
 
 

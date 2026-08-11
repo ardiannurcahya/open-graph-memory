@@ -77,9 +77,7 @@ async def test_import_project(session: AsyncSession, project: Project, api_key: 
                     "summary": "Completed",
                     "pattern_key": "import-sig-2",
                 },
-                "evidence": [
-                    {"id": "ev_import_001", "reference": "test.log"}
-                ],
+                "evidence": [{"id": "ev_import_001", "reference": "test.log"}],
             },
         ],
     }
@@ -103,9 +101,7 @@ async def test_import_project(session: AsyncSession, project: Project, api_key: 
         assert str(ep.project_id) == str(project.id)
 
 
-async def test_import_duplicate_skipped(
-    session: AsyncSession, project: Project, api_key: ApiKey
-):
+async def test_import_duplicate_skipped(session: AsyncSession, project: Project, api_key: ApiKey):
     episode = AgentMemoryEpisode(
         id="mem_dup_001",
         project_id=project.id,

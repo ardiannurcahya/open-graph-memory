@@ -174,9 +174,7 @@ class CanonicalEntity(ScopeMixin, Base):
     confidence: Mapped[float] = mapped_column(Float)
     version: Mapped[int] = mapped_column(default=1)
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
-    valid_from: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -274,9 +272,7 @@ class RelationAssertion(ScopeMixin, Base):
     confidence: Mapped[float] = mapped_column(Float)
     extractor_version: Mapped[str] = mapped_column(String(100))
     review_state: Mapped[ReviewState] = mapped_column(Enum(ReviewState, name="graph_review_state"))
-    valid_from: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

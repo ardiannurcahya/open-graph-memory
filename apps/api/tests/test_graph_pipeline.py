@@ -413,9 +413,7 @@ async def test_exact_entities_connect_correlated_documents_in_one_dataset() -> N
             Extractor(Extraction(entities=entities, relations=[relation])),
         )
 
-    persisted_entities = [
-        row for row in db.rows.values() if isinstance(row, CanonicalEntity)
-    ]
+    persisted_entities = [row for row in db.rows.values() if isinstance(row, CanonicalEntity)]
     relations = [row for row in db.rows.values() if isinstance(row, RelationAssertion)]
     graph_mem = next(row for row in persisted_entities if row.canonical_name == "GraphMem")
     graph_mem_evidence = [
@@ -592,7 +590,6 @@ async def test_persistence_logs_artifact_loss(
     log_output = caplog.text + capsys.readouterr().out
     assert "skipped_entities=1" in log_output
     assert "raw_relations=0" in log_output
-
 
 
 @pytest.mark.asyncio

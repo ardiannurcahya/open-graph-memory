@@ -25,7 +25,6 @@ def compile_tsvector_sqlite(type_, compiler, **kw):
     return "TEXT"
 
 
-
 @pytest_asyncio.fixture
 async def session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -36,11 +35,8 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
             "to_tsvector", 2, lambda lang, text: text or "", deterministic=True
         )
 
-
-
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with session_factory() as session:
@@ -52,7 +48,6 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
         app.dependency_overrides[get_session] = _override_get_session
         yield session
         app.dependency_overrides.clear()
-
 
     await engine.dispose()
 
@@ -84,4 +79,3 @@ async def api_key(session: AsyncSession, project: Project) -> ApiKey:
     await session.commit()
     await session.refresh(item)
     return item
-

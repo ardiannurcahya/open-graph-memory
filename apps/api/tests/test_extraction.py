@@ -311,9 +311,7 @@ def test_openai_extractor_batches_target_results_with_fixed_previous_references(
     assert [result.chunk_id for result in results] == ["two", "three"]
     assert results[0].extraction.entities[0].name == "Bob"
     payload = json.loads(request["messages"][1]["content"])
-    assert payload["previous_chunks_reference_only"] == [
-        {"chunk_id": "two", "text": "Bob"}
-    ]
+    assert payload["previous_chunks_reference_only"] == [{"chunk_id": "two", "text": "Bob"}]
     assert "cannot own entities" in request["messages"][0]["content"]
     schema = request["response_format"]["json_schema"]["schema"]
     assert "$defs" in schema
@@ -390,9 +388,9 @@ def test_openai_single_target_batch_accepts_unwrapped_provider_payload(monkeypat
         "correlation-chunk",
     )
 
-    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch(
-        [context]
-    )[0]
+    result = OpenAICompatibleExtractor("http://provider", "key", "model").extract_batch([context])[
+        0
+    ]
 
     assert result.chunk_id == "correlation-chunk"
     assert result.extraction.relations[0].type == "INVERSELY_CORRELATED_WITH"
@@ -465,9 +463,10 @@ def test_openai_batch_guard_trims_oldest_references_then_reduces_targets(monkeyp
 
     assert [result.chunk_id for result in results] == ["one", "two"]
     assert requests[0]["previous_chunks_reference_only"] == []
-    assert [
-        target["chunk_id"] for request in requests for target in request["targets"]
-    ] == ["one", "two"]
+    assert [target["chunk_id"] for request in requests for target in request["targets"]] == [
+        "one",
+        "two",
+    ]
 
 
 def test_openai_extractor_falls_back_for_malformed_or_empty_sse(monkeypatch) -> None:

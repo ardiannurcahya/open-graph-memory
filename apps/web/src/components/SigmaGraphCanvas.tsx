@@ -25,6 +25,20 @@ interface SeedResult {
   centers: Record<string, { x: number; y: number }>;
 }
 
+interface CanvasNodeData {
+  label?: string | null;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+}
+
+interface CanvasSettings {
+  labelSize?: number;
+  labelFont?: string;
+  labelWeight?: string;
+}
+
 function seedLayout(state: GraphState): SeedResult {
   const communityIds = [...state.communities.keys()];
   if (communityIds.length === 0) communityIds.push("default");
@@ -233,8 +247,8 @@ export default function SigmaGraphCanvas({
     // Custom High-Contrast Regular Label Renderer
     const drawLabel = (
       context: CanvasRenderingContext2D,
-      data: { label?: string; x: number; y: number; size: number; color: string; [key: string]: unknown },
-      settings: { labelSize?: number; labelFont?: string; labelWeight?: string; [key: string]: unknown },
+      data: CanvasNodeData,
+      settings: CanvasSettings,
       isDark: boolean
     ) => {
       if (!data.label) return;
@@ -250,8 +264,8 @@ export default function SigmaGraphCanvas({
     // Custom High-Contrast macOS Hover & Selection Card Renderer
     const drawHover = (
       context: CanvasRenderingContext2D,
-      data: { label?: string; x: number; y: number; size: number; color: string; [key: string]: unknown },
-      settings: { labelSize?: number; labelFont?: string; labelWeight?: string; [key: string]: unknown },
+      data: CanvasNodeData,
+      settings: CanvasSettings,
       isDark: boolean
     ) => {
       const size = settings.labelSize || 12;
@@ -318,9 +332,9 @@ export default function SigmaGraphCanvas({
       labelWeight: "600",
       defaultEdgeColor: dark ? "#38383a" : "#c8c6c0",
       labelColor: { color: dark ? "#ffffff" : "#0f172a" },
-      defaultDrawNodeLabel: (context: CanvasRenderingContext2D, data: any, settings: any) =>
+      defaultDrawNodeLabel: (context, data, settings) =>
         drawLabel(context, data, settings, themeRef.current === "dark"),
-      defaultDrawNodeHover: (context: CanvasRenderingContext2D, data: any, settings: any) =>
+      defaultDrawNodeHover: (context, data, settings) =>
         drawHover(context, data, settings, themeRef.current === "dark"),
       minCameraRatio: 0.05,
       maxCameraRatio: 10,
