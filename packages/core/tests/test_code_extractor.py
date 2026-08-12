@@ -54,6 +54,11 @@ export class UserService {
         return { id, name: "Alice" };
     }
 }
+
+export const handleAutoFill = () => {
+    const items = [1, 2, 3];
+    items.map((x) => x * 2);
+};
 """
     result = extractor.extract_file("src/services/userService.ts", code)
     assert result.language == "typescript"
@@ -61,6 +66,8 @@ export class UserService {
     assert "UserProfile" in names
     assert "UserService" in names
     assert "getUser" in names
+    assert "handleAutoFill" in names
+    assert "anonymous" not in names
 
 
 def test_go_extraction():

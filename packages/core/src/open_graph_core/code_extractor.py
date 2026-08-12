@@ -185,8 +185,75 @@ class CodeExtractor:
         relations: list[CodeRelation] = []
 
         def node_text(node: Any) -> str:
-
             return code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+        def infer_symbol_name(node: Any) -> str | None:
+            """Extract direct symbol name or infer it from parent declaration/assignment."""
+            name_node = node.child_by_field_name("name")
+            if name_node:
+                name = node_text(name_node).strip()
+                if name:
+                    return name
+
+            parent = node.parent
+            if not parent:
+                return None
+
+            # JS/TS variable declarator: const foo = () => {} or let foo = function() {}
+            if parent.type == "variable_declarator":
+                p_name = parent.child_by_field_name("name")
+                if p_name:
+                    return node_text(p_name).strip()
+
+            # Assignment: foo = () => {} or foo = lambda x: x
+            if parent.type in {
+                "assignment_expression",
+                "assignment",
+                "assignment_statement",
+                "short_var_declaration",
+            }:
+                p_left = parent.child_by_field_name("left") or (
+                    parent.children[0] if parent.children else None
+                )
+                if p_left:
+                    return node_text(p_left).strip()
+
+            # JS/TS object property or class field: foo: () => {}
+            if parent.type in {
+                "pair",
+                "property_definition",
+                "field_definition",
+                "method_definition",
+            }:
+                p_key = parent.child_by_field_name("key") or parent.child_by_field_name("name")
+                if p_key:
+                    return node_text(p_key).strip()
+
+            # Go var spec: var foo = func() {}
+            if parent.type == "var_spec":
+                p_name = parent.child_by_field_name("name") or (
+                    parent.children[0] if parent.children else None
+                )
+                if p_name:
+                    return node_text(p_name).strip()
+
+            # Rust let declaration: let foo = || {};
+            if parent.type == "let_declaration":
+                p_pattern = parent.child_by_field_name("pattern")
+                if p_pattern:
+                    return node_text(p_pattern).strip()
+
+            # C/C++ typedef: typedef struct { int x; } Point;
+            if parent.type == "type_definition":
+                p_declarator = parent.child_by_field_name("declarator")
+                if p_declarator:
+                    return node_text(p_declarator).strip()
+
+            # Export default fallback: export default class / export default function
+            if parent.type in {"export_statement", "export_default_declaration"}:
+                return "default"
+
+            return None
 
         def traverse(node: Any, current_parent_id: str) -> None:
             node_type = node.type
@@ -194,60 +261,64 @@ class CodeExtractor:
 
             # --- Python ---
             if language == "python":
-                if node_type in {"function_definition", "async_function_definition"}:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "anonymous_func"
-                    kind = (
-                        CodeSymbolKind.METHOD
-                        if current_parent_id != file_entity_id
-                        else CodeSymbolKind.FUNCTION
-                    )
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
-
-                    # Docstring
-                    docstring = None
-                    body_node = node.child_by_field_name("body")
-                    if body_node and body_node.children:
-                        first_stmt = body_node.children[0]
-                        if first_stmt.type == "expression_statement" and first_stmt.children:
-                            str_node = first_stmt.children[0]
-                            if str_node.type == "string":
-                                docstring = node_text(str_node).strip("'\" \n\t")
-
-                    params_node = node.child_by_field_name("parameters")
-                    sig = f"def {name}{node_text(params_node)}" if params_node else f"def {name}()"
-
-                    entity = CodeEntity(
-                        id=sym_id,
-                        file_path=file_path,
-                        name=name,
-                        kind=kind,
-                        language=language,
-                        start_line=node.start_point[0] + 1,
-                        end_line=node.end_point[0] + 1,
-                        start_byte=node.start_byte,
-                        end_byte=node.end_byte,
-                        signature=sig,
-                        docstring=docstring,
-                        parent_id=current_parent_id,
-                    )
-                    entities.append(entity)
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                if node_type in {"function_definition", "async_function_definition", "lambda"}:
+                    name = infer_symbol_name(node)
+                    if name:
+                        kind = (
+                            CodeSymbolKind.METHOD
+                            if current_parent_id != file_entity_id
+                            else CodeSymbolKind.FUNCTION
                         )
-                    )
-                    next_parent_id = sym_id
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+
+                        # Docstring
+                        docstring = None
+                        body_node = node.child_by_field_name("body")
+                        if body_node and body_node.children:
+                            first_stmt = body_node.children[0]
+                            if first_stmt.type == "expression_statement" and first_stmt.children:
+                                str_node = first_stmt.children[0]
+                                if str_node.type == "string":
+                                    docstring = node_text(str_node).strip("'\" \n\t")
+
+                        params_node = node.child_by_field_name("parameters")
+                        sig = (
+                            f"def {name}{node_text(params_node)}"
+                            if params_node
+                            else f"def {name}()"
+                        )
+
+                        entity = CodeEntity(
+                            id=sym_id,
+                            file_path=file_path,
+                            name=name,
+                            kind=kind,
+                            language=language,
+                            start_line=node.start_point[0] + 1,
+                            end_line=node.end_point[0] + 1,
+                            start_byte=node.start_byte,
+                            end_byte=node.end_byte,
+                            signature=sig,
+                            docstring=docstring,
+                            parent_id=current_parent_id,
+                        )
+                        entities.append(entity)
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
+                        )
+                        next_parent_id = sym_id
 
                 elif node_type == "class_definition":
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "AnonymousClass"
-                    sym_id = canonical_symbol_id(language, file_path, name, "class")
+                    name = infer_symbol_name(node)
+                    if name:
+                        sym_id = canonical_symbol_id(language, file_path, name, "class")
 
                     superclasses = []
                     super_node = node.child_by_field_name(
@@ -353,58 +424,67 @@ class CodeExtractor:
 
             # --- TypeScript / JavaScript ---
             elif language in {"typescript", "javascript"}:
-                if node_type in {"function_declaration", "method_definition", "arrow_function"}:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "anonymous"
-                    is_method = node_type == "method_definition"
-                    kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                if node_type in {
+                    "function_declaration",
+                    "function_expression",
+                    "method_definition",
+                    "arrow_function",
+                }:
+                    name = infer_symbol_name(node)
+                    if name:
+                        is_method = node_type == "method_definition"
+                        kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
-                    params = node.child_by_field_name("parameters")
-                    sig = f"function {name}{node_text(params)}" if params else f"function {name}()"
+                        params = node.child_by_field_name("parameters")
+                        sig = (
+                            f"function {name}{node_text(params)}"
+                            if params
+                            else f"function {name}()"
+                        )
 
-                    entities.append(
-                        CodeEntity(
-                            id=sym_id,
-                            file_path=file_path,
-                            name=name,
-                            kind=kind,
-                            language=language,
-                            start_line=node.start_point[0] + 1,
-                            end_line=node.end_point[0] + 1,
-                            start_byte=node.start_byte,
-                            end_byte=node.end_byte,
-                            signature=sig,
-                            parent_id=current_parent_id,
+                        entities.append(
+                            CodeEntity(
+                                id=sym_id,
+                                file_path=file_path,
+                                name=name,
+                                kind=kind,
+                                language=language,
+                                start_line=node.start_point[0] + 1,
+                                end_line=node.end_point[0] + 1,
+                                start_byte=node.start_byte,
+                                end_byte=node.end_byte,
+                                signature=sig,
+                                parent_id=current_parent_id,
+                            )
                         )
-                    )
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
                         )
-                    )
-                    next_parent_id = sym_id
+                        next_parent_id = sym_id
 
                 elif node_type in {
                     "class_declaration",
                     "interface_declaration",
                     "type_alias_declaration",
                 }:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "AnonymousType"
-                    kind = (
-                        CodeSymbolKind.INTERFACE
-                        if node_type == "interface_declaration"
-                        else CodeSymbolKind.TYPE_ALIAS
-                        if node_type == "type_alias_declaration"
-                        else CodeSymbolKind.CLASS
-                    )
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                    name = infer_symbol_name(node)
+                    if name:
+                        kind = (
+                            CodeSymbolKind.INTERFACE
+                            if node_type == "interface_declaration"
+                            else CodeSymbolKind.TYPE_ALIAS
+                            if node_type == "type_alias_declaration"
+                            else CodeSymbolKind.CLASS
+                        )
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
                     entities.append(
                         CodeEntity(
@@ -515,80 +595,80 @@ class CodeExtractor:
                                     )
                                 )
             elif language == "go":
-                if node_type in {"function_declaration", "method_declaration"}:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "anonymous"
-                    is_method = node_type == "method_declaration"
-                    kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                if node_type in {"function_declaration", "method_declaration", "func_literal"}:
+                    name = infer_symbol_name(node)
+                    if name:
+                        is_method = node_type == "method_declaration"
+                        kind = CodeSymbolKind.METHOD if is_method else CodeSymbolKind.FUNCTION
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
-                    entities.append(
-                        CodeEntity(
-                            id=sym_id,
-                            file_path=file_path,
-                            name=name,
-                            kind=kind,
-                            language=language,
-                            start_line=node.start_point[0] + 1,
-                            end_line=node.end_point[0] + 1,
-                            start_byte=node.start_byte,
-                            end_byte=node.end_byte,
-                            signature=node_text(node).split("{")[0].strip(),
-                            parent_id=current_parent_id,
+                        entities.append(
+                            CodeEntity(
+                                id=sym_id,
+                                file_path=file_path,
+                                name=name,
+                                kind=kind,
+                                language=language,
+                                start_line=node.start_point[0] + 1,
+                                end_line=node.end_point[0] + 1,
+                                start_byte=node.start_byte,
+                                end_byte=node.end_byte,
+                                signature=node_text(node).split("{")[0].strip(),
+                                parent_id=current_parent_id,
+                            )
                         )
-                    )
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
                         )
-                    )
-                    next_parent_id = sym_id
+                        next_parent_id = sym_id
 
                 elif node_type == "type_spec":
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "AnonymousType"
-                    type_node = node.child_by_field_name("type")
-                    is_struct = type_node and type_node.type == "struct_type"
-                    is_iface = type_node and type_node.type == "interface_type"
-                    kind = (
-                        CodeSymbolKind.STRUCT
-                        if is_struct
-                        else CodeSymbolKind.INTERFACE
-                        if is_iface
-                        else CodeSymbolKind.TYPE_ALIAS
-                    )
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                    name = infer_symbol_name(node)
+                    if name:
+                        type_node = node.child_by_field_name("type")
+                        is_struct = type_node and type_node.type == "struct_type"
+                        is_iface = type_node and type_node.type == "interface_type"
+                        kind = (
+                            CodeSymbolKind.STRUCT
+                            if is_struct
+                            else CodeSymbolKind.INTERFACE
+                            if is_iface
+                            else CodeSymbolKind.TYPE_ALIAS
+                        )
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
-                    entities.append(
-                        CodeEntity(
-                            id=sym_id,
-                            file_path=file_path,
-                            name=name,
-                            kind=kind,
-                            language=language,
-                            start_line=node.start_point[0] + 1,
-                            end_line=node.end_point[0] + 1,
-                            start_byte=node.start_byte,
-                            end_byte=node.end_byte,
-                            signature=f"type {name}",
-                            parent_id=current_parent_id,
+                        entities.append(
+                            CodeEntity(
+                                id=sym_id,
+                                file_path=file_path,
+                                name=name,
+                                kind=kind,
+                                language=language,
+                                start_line=node.start_point[0] + 1,
+                                end_line=node.end_point[0] + 1,
+                                start_byte=node.start_byte,
+                                end_byte=node.end_byte,
+                                signature=f"type {name}",
+                                parent_id=current_parent_id,
+                            )
                         )
-                    )
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
                         )
-                    )
 
                 elif node_type == "import_spec":
                     imp_text = node_text(node).strip()
@@ -644,46 +724,52 @@ class CodeExtractor:
 
             # --- Rust ---
             elif language == "rust":
-                if node_type in {"function_item", "struct_item", "enum_item", "trait_item"}:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "anonymous"
-                    kind = (
-                        CodeSymbolKind.FUNCTION
-                        if node_type == "function_item"
-                        else CodeSymbolKind.STRUCT
-                        if node_type == "struct_item"
-                        else CodeSymbolKind.ENUM
-                        if node_type == "enum_item"
-                        else CodeSymbolKind.INTERFACE
-                    )
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                if node_type in {
+                    "function_item",
+                    "struct_item",
+                    "enum_item",
+                    "trait_item",
+                    "closure_expression",
+                }:
+                    name = infer_symbol_name(node)
+                    if name:
+                        kind = (
+                            CodeSymbolKind.FUNCTION
+                            if node_type in {"function_item", "closure_expression"}
+                            else CodeSymbolKind.STRUCT
+                            if node_type == "struct_item"
+                            else CodeSymbolKind.ENUM
+                            if node_type == "enum_item"
+                            else CodeSymbolKind.INTERFACE
+                        )
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
-                    entities.append(
-                        CodeEntity(
-                            id=sym_id,
-                            file_path=file_path,
-                            name=name,
-                            kind=kind,
-                            language=language,
-                            start_line=node.start_point[0] + 1,
-                            end_line=node.end_point[0] + 1,
-                            start_byte=node.start_byte,
-                            end_byte=node.end_byte,
-                            signature=node_text(node).split("{")[0].strip(),
-                            parent_id=current_parent_id,
+                        entities.append(
+                            CodeEntity(
+                                id=sym_id,
+                                file_path=file_path,
+                                name=name,
+                                kind=kind,
+                                language=language,
+                                start_line=node.start_point[0] + 1,
+                                end_line=node.end_point[0] + 1,
+                                start_byte=node.start_byte,
+                                end_byte=node.end_byte,
+                                signature=node_text(node).split("{")[0].strip(),
+                                parent_id=current_parent_id,
+                            )
                         )
-                    )
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
                         )
-                    )
-                    next_parent_id = sym_id
+                        next_parent_id = sym_id
 
             # --- C / C++ ---
             elif language in {"c", "cpp"}:
@@ -721,37 +807,37 @@ class CodeExtractor:
                     next_parent_id = sym_id
 
                 elif node_type in {"struct_specifier", "class_specifier"}:
-                    name_node = node.child_by_field_name("name")
-                    name = node_text(name_node) if name_node else "anonymous"
-                    is_class = node_type == "class_specifier"
-                    kind = CodeSymbolKind.CLASS if is_class else CodeSymbolKind.STRUCT
-                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                    name = infer_symbol_name(node)
+                    if name:
+                        is_class = node_type == "class_specifier"
+                        kind = CodeSymbolKind.CLASS if is_class else CodeSymbolKind.STRUCT
+                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
-                    entities.append(
-                        CodeEntity(
-                            id=sym_id,
-                            file_path=file_path,
-                            name=name,
-                            kind=kind,
-                            language=language,
-                            start_line=node.start_point[0] + 1,
-                            end_line=node.end_point[0] + 1,
-                            start_byte=node.start_byte,
-                            end_byte=node.end_byte,
-                            signature=f"{kind.value} {name}",
-                            parent_id=current_parent_id,
+                        entities.append(
+                            CodeEntity(
+                                id=sym_id,
+                                file_path=file_path,
+                                name=name,
+                                kind=kind,
+                                language=language,
+                                start_line=node.start_point[0] + 1,
+                                end_line=node.end_point[0] + 1,
+                                start_byte=node.start_byte,
+                                end_byte=node.end_byte,
+                                signature=f"{kind.value} {name}",
+                                parent_id=current_parent_id,
+                            )
                         )
-                    )
-                    relations.append(
-                        CodeRelation(
-                            id=f"rel_contains_{current_parent_id}_{sym_id}",
-                            source_id=current_parent_id,
-                            target_id=sym_id,
-                            kind=CodeRelationKind.CONTAINS,
-                            file_path=file_path,
-                            line_number=node.start_point[0] + 1,
+                        relations.append(
+                            CodeRelation(
+                                id=f"rel_contains_{current_parent_id}_{sym_id}",
+                                source_id=current_parent_id,
+                                target_id=sym_id,
+                                kind=CodeRelationKind.CONTAINS,
+                                file_path=file_path,
+                                line_number=node.start_point[0] + 1,
+                            )
                         )
-                    )
                     next_parent_id = sym_id
 
             for child in node.children:
