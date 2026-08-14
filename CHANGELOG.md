@@ -2,6 +2,28 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-08-14
+
+### Added
+
+- **Rainbow Neon Color Palette**:
+  - Electric, high-contrast 100% saturation Rainbow Neon color engine with Golden Ratio angle stepping ($137.5077^\circ$) to eliminate hue collisions.
+- **AST Symbol Name Inference**:
+  - Inferred symbol names for parent declarator nodes in code extractor, resolving dummy `"anonymous"` entities.
+
+### Changed
+
+- **UI & Dark Mode Refresh**:
+  - Restyled `GraphPage.tsx` toolbars, dropdowns, and form fields to seamlessly adapt to Dark Mode tokens (`bg-surface/95`, `border-mac`, `text-foreground`).
+  - Updated default Web dev server port to `5000`.
+
+### Fixed
+
+- **Type Safety**:
+  - Fixed `mypy` type check errors for AST code entity generation.
+
+---
+
 ## [0.2.0] - 2026-08-11
 
 ### Added
