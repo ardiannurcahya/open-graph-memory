@@ -316,9 +316,8 @@ class CodeExtractor:
                         next_parent_id = sym_id
 
                 elif node_type == "class_definition":
-                    name = infer_symbol_name(node)
-                    if name:
-                        sym_id = canonical_symbol_id(language, file_path, name, "class")
+                    name = infer_symbol_name(node) or "anonymous"
+                    sym_id = canonical_symbol_id(language, file_path, name, "class")
 
                     superclasses = []
                     super_node = node.child_by_field_name(
@@ -475,16 +474,15 @@ class CodeExtractor:
                     "interface_declaration",
                     "type_alias_declaration",
                 }:
-                    name = infer_symbol_name(node)
-                    if name:
-                        kind = (
-                            CodeSymbolKind.INTERFACE
-                            if node_type == "interface_declaration"
-                            else CodeSymbolKind.TYPE_ALIAS
-                            if node_type == "type_alias_declaration"
-                            else CodeSymbolKind.CLASS
-                        )
-                        sym_id = canonical_symbol_id(language, file_path, name, kind.value)
+                    name = infer_symbol_name(node) or "anonymous"
+                    kind = (
+                        CodeSymbolKind.INTERFACE
+                        if node_type == "interface_declaration"
+                        else CodeSymbolKind.TYPE_ALIAS
+                        if node_type == "type_alias_declaration"
+                        else CodeSymbolKind.CLASS
+                    )
+                    sym_id = canonical_symbol_id(language, file_path, name, kind.value)
 
                     entities.append(
                         CodeEntity(

@@ -3,7 +3,7 @@
 from open_graph_core.code_extractor import CodeExtractor, CodeRelationKind
 
 
-def test_python_extraction():
+def test_python_extraction() -> None:
     extractor = CodeExtractor()
     code = '''
 import os
@@ -31,7 +31,7 @@ class UserAuth(BaseManager):
     # Check relation
     inherits = [r for r in result.relations if r.kind == CodeRelationKind.INHERITS]
     assert len(inherits) >= 1
-    assert "BaseManager" in inherits[0].quote
+    assert inherits[0].quote is not None and "BaseManager" in inherits[0].quote
 
     # Check chunks
     assert len(result.chunks) > 0
@@ -39,7 +39,7 @@ class UserAuth(BaseManager):
     assert "UserAuth" in chunk_names or "login" in chunk_names
 
 
-def test_typescript_extraction():
+def test_typescript_extraction() -> None:
     extractor = CodeExtractor()
     code = """
 import { useState } from 'react';
@@ -70,7 +70,7 @@ export const handleAutoFill = () => {
     assert "anonymous" not in names
 
 
-def test_go_extraction():
+def test_go_extraction() -> None:
     extractor = CodeExtractor()
     code = """
 package main
@@ -93,7 +93,7 @@ func (s *Server) Start() error {
     assert "Start" in names
 
 
-def test_rust_extraction():
+def test_rust_extraction() -> None:
     extractor = CodeExtractor()
     code = """
 use std::sync::Arc;
@@ -113,7 +113,7 @@ pub fn run_server(config: Config) {
     assert "run_server" in names
 
 
-def test_fallback_extraction():
+def test_fallback_extraction() -> None:
     extractor = CodeExtractor()
     code = """
 def unknown_func():
