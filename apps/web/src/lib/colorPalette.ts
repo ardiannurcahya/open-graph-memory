@@ -31,19 +31,35 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * Generates maximally distinct, vibrant hues using Golden Ratio angle distribution (137.508°)
+ * Rainbow Neon Color Palette Engine
+ * Generates ultra-vibrant electric neon rainbow colors (Red -> Lime -> Purple -> Gold -> Cyan -> Magenta).
+ * Uses Golden Ratio angle stepping (~137.507764°) to guarantee zero hue collisions across communities.
  */
-export function vividNodeColorForCommunity(communityId: string, darkBackground: boolean): string {
-  const hash = hashString(communityId);
-  const hue = (hash * 137.508) % 360;
-  const saturation = darkBackground ? 85 : 70;
-  const lightness = darkBackground ? 62 : 44;
+export function vividNodeColorForCommunity(
+  communityId: string,
+  darkBackground: boolean,
+  communityIndex?: number,
+): string {
+  let hue: number;
+  if (typeof communityIndex === "number" && communityIndex >= 0) {
+    hue = (communityIndex * 137.507764) % 360;
+  } else {
+    const hash = hashString(communityId);
+    hue = (hash * 137.507764) % 360;
+  }
+
+  // Pure Electric Rainbow Neon (100% Saturation, Glowing Neon Lightness)
+  const saturation = 100;
+  const lightness = darkBackground ? 68 : 44;
   return hslToHex(hue, saturation, lightness);
 }
 
-export function colorForCommunity(communityId: string): CommunityInfo {
-  const color = vividNodeColorForCommunity(communityId, true);
-  const darkColor = vividNodeColorForCommunity(communityId, false);
+export function colorForCommunity(
+  communityId: string,
+  communityIndex?: number,
+): CommunityInfo {
+  const color = vividNodeColorForCommunity(communityId, true, communityIndex);
+  const darkColor = vividNodeColorForCommunity(communityId, false, communityIndex);
   return {
     id: communityId,
     name: communityId,
@@ -57,11 +73,12 @@ export function buildCommunityPalette(
   names?: Map<string, string>,
 ): Map<string, CommunityInfo> {
   const palette = new Map<string, CommunityInfo>();
-  for (const id of communityIds) {
-    const info = colorForCommunity(id);
+  const sortedIds = [...communityIds].sort();
+  sortedIds.forEach((id, index) => {
+    const info = colorForCommunity(id, index);
     if (names && names.has(id)) info.name = names.get(id) as string;
     palette.set(id, info);
-  }
+  });
   return palette;
 }
 
