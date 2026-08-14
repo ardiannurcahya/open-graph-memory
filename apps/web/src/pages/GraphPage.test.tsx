@@ -252,6 +252,77 @@ describe("GraphPage", () => {
     expect(screen.queryByText("2 nodes")).not.toBeInTheDocument();
   });
 
+  it("caps merged explorer nodes and relations at their configured maximums", async () => {
+    const makeNodePage = (count: number, offset: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `ent_${offset + i}`,
+        canonical_name: `Entity ${offset + i}`,
+        entity_type: "person",
+        community_id: "c0",
+        degree: 0,
+        weighted_degree: 0,
+        importance: 0,
+      }));
+    const makeRelationPage = (count: number, offset: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `rel_${offset + i}`,
+        source: "ent_0",
+        target: "ent_1",
+        type: "knows",
+        weight: 1,
+        confidence: 1,
+      }));
+    const cappedExplorerView = {
+      ...explorerView,
+      stats: { entity_count: 6000, relation_count: 16000, density: 0 },
+      nodes: explorerView.nodes,
+      relations: explorerView.relations,
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer/nodes")) {
+        if (url.includes("cursor=page2")) {
+          // Still reports another page available; the client must stop once it hits the cap.
+          return ok({ nodes: makeNodePage(3000, 3000), next_cursor: "page3" });
+        }
+        return ok({ nodes: makeNodePage(3000, 0), next_cursor: "page2" });
+      }
+      if (url.includes("/graph/explorer/relations")) {
+        if (url.includes("cursor=page2")) {
+          return ok({ relations: makeRelationPage(8000, 8000), next_cursor: "page3" });
+        }
+        return ok({ relations: makeRelationPage(8000, 0), next_cursor: "page2" });
+      }
+      if (url.includes("/graph/explorer")) return ok(cappedExplorerView);
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset(5000);
+    expect(screen.getByText("15000 edges")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("cursor=page3"),
+      expect.anything(),
+    );
+  });
+
+  it("toggles physics button styling between active and inactive states", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer")) return ok(explorerView);
+      return ok([]);
+    }));
+    renderPage();
+    await selectDataset();
+    const physicsOn = screen.getByRole("button", { name: /Physics on/ });
+    expect(physicsOn).toHaveClass("bg-mac-accent");
+    expect(physicsOn).not.toHaveClass("text-foreground-muted");
+    await userEvent.click(physicsOn);
+    const physicsOff = screen.getByRole("button", { name: /Physics off/ });
+    expect(physicsOff).toHaveClass("text-foreground-muted");
+    expect(physicsOff).not.toHaveClass("bg-mac-accent");
+  });
+
   it("resets community filters when explorer level replaces graph", async () => {
     const initial = {
       ...explorerView,
