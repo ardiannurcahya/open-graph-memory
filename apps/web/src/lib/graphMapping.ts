@@ -9,13 +9,20 @@ function isExpired(validUntil: string | null | undefined): boolean {
 }
 
 export function explorerToGraphState(view: ExplorerView): GraphState {
-  const communityIds = view.communities.map((c) => c.id);
+  const communitySet = new Set<string>();
+  for (const c of view.communities) communitySet.add(c.id);
+  for (const n of view.nodes) communitySet.add(n.community_id ?? "default");
+
+  const communityIds = Array.from(communitySet);
   const communityNames = new Map<string, string>();
   for (const c of view.communities) {
     communityNames.set(c.id, c.id);
   }
 
-  const palette = buildCommunityPalette(communityIds.length > 0 ? communityIds : ["default"], communityNames);
+  const palette = buildCommunityPalette(
+    communityIds.length > 0 ? communityIds : ["default"],
+    communityNames,
+  );
 
   const rawNodes = view.nodes.map((n) => ({
     id: n.id,

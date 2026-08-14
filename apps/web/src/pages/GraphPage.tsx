@@ -488,6 +488,9 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.detail : fallback;
 }
 
+const MAX_EXPLORER_NODES = 5000;
+const MAX_EXPLORER_RELATIONS = 15000;
+
 async function loadAllExplorerNodes(datasetId: string, communityLevel: number, signal: AbortSignal) {
   const nodes: ExplorerView["nodes"] = [];
   let cursor: string | undefined;
@@ -499,6 +502,10 @@ async function loadAllExplorerNodes(datasetId: string, communityLevel: number, s
     }, signal);
     nodes.push(...page.nodes);
     cursor = page.next_cursor ?? undefined;
+    if (nodes.length >= MAX_EXPLORER_NODES) {
+      nodes.length = MAX_EXPLORER_NODES;
+      break;
+    }
   } while (cursor);
   return nodes;
 }
@@ -510,6 +517,10 @@ async function loadAllExplorerRelations(datasetId: string, signal: AbortSignal) 
     const page = await graphApi.getExplorerRelations(datasetId, { cursor, limit: 5000 }, signal);
     relations.push(...page.relations);
     cursor = page.next_cursor ?? undefined;
+    if (relations.length >= MAX_EXPLORER_RELATIONS) {
+      relations.length = MAX_EXPLORER_RELATIONS;
+      break;
+    }
   } while (cursor);
   return relations;
 }
