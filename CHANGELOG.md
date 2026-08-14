@@ -2,7 +2,7 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.1] - 2026-08-14
+## [0.2.2] - 2026-08-14
 
 ### Added
 
