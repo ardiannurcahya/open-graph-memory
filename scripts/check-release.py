@@ -10,7 +10,8 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.0"
+data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+VERSION = data["project"]["version"]
 TAG = f"v{VERSION}"
 
 errors: list[str] = []
