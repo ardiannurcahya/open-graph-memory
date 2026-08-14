@@ -222,6 +222,90 @@ describe("GraphPage", () => {
     );
   });
 
+  it("caps paginated node loading at the 5000 node safety limit", async () => {
+    const batch1 = Array.from({ length: 3000 }, (_, index) => ({
+      id: `ent_${index}`,
+      canonical_name: `Entity ${index}`,
+      entity_type: "person",
+      community_id: "c0",
+      degree: 0,
+      weighted_degree: 0,
+      importance: 0,
+    }));
+    const batch2 = Array.from({ length: 3000 }, (_, index) => ({
+      id: `ent_${3000 + index}`,
+      canonical_name: `Entity ${3000 + index}`,
+      entity_type: "person",
+      community_id: "c0",
+      degree: 0,
+      weighted_degree: 0,
+      importance: 0,
+    }));
+    const truncated = {
+      ...explorerView,
+      stats: { entity_count: 6000, relation_count: 1, density: 0 },
+      nodes: [],
+    };
+    let nodeCallCount = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer/nodes")) {
+        nodeCallCount += 1;
+        if (url.includes("cursor=page2")) return ok({ nodes: batch2, next_cursor: "page3" });
+        return ok({ nodes: batch1, next_cursor: "page2" });
+      }
+      if (url.includes("/graph/explorer")) return ok(truncated);
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset(5000);
+    expect(screen.getByText("5000 nodes")).toBeInTheDocument();
+    expect(nodeCallCount).toBe(2);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("cursor=page3"),
+      expect.anything(),
+    );
+  });
+
+  it("caps paginated relation loading at the 15000 relation safety limit", async () => {
+    const makeRelationBatch = (offset: number) =>
+      Array.from({ length: 5000 }, (_, index) => ({
+        id: `rel_${offset + index}`,
+        source: "ent_a",
+        target: "ent_b",
+        type: "knows",
+        weight: 1,
+        confidence: 1,
+      }));
+    const truncated = {
+      ...explorerView,
+      stats: { entity_count: 2, relation_count: 16000, density: 0 },
+      relations: [],
+    };
+    let relationCallCount = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/v1/datasets") return ok([dataset]);
+      if (url.includes("/graph/explorer/relations")) {
+        relationCallCount += 1;
+        if (url.includes("cursor=p3")) return ok({ relations: makeRelationBatch(10000), next_cursor: "p4" });
+        if (url.includes("cursor=p2")) return ok({ relations: makeRelationBatch(5000), next_cursor: "p3" });
+        return ok({ relations: makeRelationBatch(0), next_cursor: "p2" });
+      }
+      if (url.includes("/graph/explorer")) return ok(truncated);
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await selectDataset(2);
+    await waitFor(() => expect(screen.getByText("15000 edges")).toBeInTheDocument());
+    expect(relationCallCount).toBe(3);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("cursor=p4"),
+      expect.anything(),
+    );
+  });
+
   it("keeps latest explorer response when deferred requests resolve out of order", async () => {
     let resolveFirst: ((response: Response) => void) | undefined;
     let resolveSecond: ((response: Response) => void) | undefined;
