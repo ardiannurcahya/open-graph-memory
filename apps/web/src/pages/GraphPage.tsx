@@ -243,18 +243,18 @@ export default function GraphPage() {
           onCameraChange={setZoom}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center p-8 text-sm text-stone-400">
+        <div className="absolute inset-0 flex items-center justify-center p-8 text-sm text-foreground-muted">
           {loading ? "Loading..." : "Select dataset to open graph playground."}
         </div>
       )}
 
-      <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
-        <span className="text-sm font-semibold text-stone-900">Graph Playground</span>
+      <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-mac bg-surface/95 px-3.5 py-2 shadow-lg backdrop-blur-md text-foreground">
+        <span className="text-sm font-bold text-foreground">Graph Playground</span>
         <select
           aria-label="Dataset"
           value={datasetId}
           onChange={(event) => setDatasetId(event.target.value)}
-          className="min-w-36 rounded-md border border-stone-300 px-2 py-1 text-sm"
+          className="min-w-36 rounded-lg border border-mac bg-muted text-foreground px-2.5 py-1 text-sm focus:outline-none"
         >
           <option value="">Select dataset...</option>
           {datasets.map((dataset) => (
@@ -266,7 +266,7 @@ export default function GraphPage() {
             aria-label="Community level"
             value={level}
             onChange={(event) => setLevel(Number(event.target.value))}
-            className="rounded-md border border-stone-300 px-2 py-1 text-sm"
+            className="rounded-lg border border-mac bg-muted text-foreground px-2.5 py-1 text-sm focus:outline-none"
           >
             {view.available_levels.map((item) => <option key={item} value={item}>L{item}</option>)}
           </select>
@@ -380,22 +380,26 @@ export default function GraphPage() {
       )}
 
       {graphState && (
-        <div className="absolute bottom-3 left-3 z-10 flex flex-wrap gap-1 rounded-lg border border-stone-200 bg-white/95 p-1.5 shadow-sm">
+        <div className="absolute bottom-3 left-3 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-mac bg-surface/95 p-1.5 shadow-lg backdrop-blur-md text-foreground">
           <Stat value={`${graphState.nodes.length} nodes`} />
           <Stat value={`${graphState.edges.length} edges`} />
           <Stat value={`${graphState.communities.size} groups`} />
           <Stat value={`${zoom.toFixed(1)}x`} />
-          <button type="button" onClick={() => triggerCanvasEvent("graph:fit")} className="px-2 py-1 text-xs text-stone-600">Fit</button>
-          <button type="button" onClick={() => triggerCanvasEvent("graph:reset")} className="px-2 py-1 text-xs text-stone-600">Reset layout</button>
+          <button type="button" onClick={() => triggerCanvasEvent("graph:fit")} className="rounded px-2 py-1 text-xs text-foreground-muted hover:text-foreground hover:bg-surface-subtle transition-colors">Fit</button>
+          <button type="button" onClick={() => triggerCanvasEvent("graph:reset")} className="rounded px-2 py-1 text-xs text-foreground-muted hover:text-foreground hover:bg-surface-subtle transition-colors">Reset layout</button>
           <button
             type="button"
             aria-pressed={physicsEnabled}
             onClick={() => setPhysicsEnabled((value) => !value)}
-            className={`rounded px-2 py-1 text-xs ${physicsEnabled ? "bg-stone-900 text-ui-inverse" : "text-stone-600"}`}
+            className={`rounded px-2 py-1 text-xs font-medium transition-all ${
+              physicsEnabled
+                ? "bg-mac-accent !text-white font-semibold shadow-sm"
+                : "text-foreground-muted hover:text-foreground hover:bg-surface-subtle"
+            }`}
           >
             Physics {physicsEnabled ? "on" : "off"}
           </button>
-          <button type="button" onClick={() => setShowLabels((value) => !value)} className="px-2 py-1 text-xs text-stone-600">Labels {showLabels ? "on" : "off"}</button>
+          <button type="button" onClick={() => setShowLabels((value) => !value)} className="rounded px-2 py-1 text-xs text-foreground-muted hover:text-foreground hover:bg-surface-subtle transition-colors">Labels {showLabels ? "on" : "off"}</button>
         </div>
       )}
 
@@ -544,7 +548,7 @@ function ToolbarButton({ active, onClick, children }: { active: boolean; onClick
 }
 
 function Stat({ value }: { value: string }) {
-  return <span className="px-2 py-1 font-mono text-[10px] text-stone-500">{value}</span>;
+  return <span className="px-2 py-1 font-mono text-[10px] font-medium text-foreground-muted">{value}</span>;
 }
 
 interface ToolFieldsProps extends ToolValues {
@@ -576,23 +580,35 @@ function ToolFields(props: ToolFieldsProps) {
     </div>
   );
   if (props.tool === "evidence") return <TextField label="Relation ID" value={props.relationId} onChange={props.setRelationId} placeholder="rel_..." />;
-  return <p className="text-sm text-stone-500">Latest graph response and evidence payload.</p>;
+  return <p className="text-sm text-foreground-muted">Latest graph response and evidence payload.</p>;
 }
 
 function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
   return (
-    <label className="block text-xs font-medium text-stone-600">
+    <label className="block text-xs font-medium text-foreground-muted">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="mt-1 block w-full rounded-lg border border-mac bg-muted text-foreground placeholder:text-foreground-muted/60 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-mac-accent"
+      />
     </label>
   );
 }
 
 function DepthField({ value, onChange, max = 4 }: { value: number; onChange: (value: number) => void; max?: number }) {
   return (
-    <label className="block text-xs font-medium text-stone-600">
+    <label className="block text-xs font-medium text-foreground-muted">
       Max depth
-      <input type="number" min={1} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 block w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+      <input
+        type="number"
+        min={1}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-1 block w-full rounded-lg border border-mac bg-muted text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-mac-accent"
+      />
     </label>
   );
 }
