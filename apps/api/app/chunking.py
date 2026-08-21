@@ -46,7 +46,7 @@ class RecursiveTextChunker:
         drafts: list[tuple[str, int, int, dict[str, object]]] = []
         for segment in segments:
             text = segment.text
-            if isinstance(segment.metadata.get("page_number"), int):
+            if isinstance(segment.metadata.get("page_number"), int) and len(text) <= self.size:
                 if len(drafts) >= self.maximum:
                     raise ValueError("document exceeds maximum chunk count")
                 left, right = 0, len(text)

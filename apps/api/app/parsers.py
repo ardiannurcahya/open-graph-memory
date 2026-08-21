@@ -56,8 +56,6 @@ class CsvParser:
             if previous_limit < CSV_FIELD_SIZE_LIMIT:
                 csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
             text = content.decode("utf-8-sig", errors="replace")
-            if text.count('"') % 2:
-                raise ValueError("malformed CSV: unmatched quote")
             try:
                 dialect = csv.Sniffer().sniff(
                     text[:CSV_SAMPLE_SIZE], delimiters="".join(CSV_DELIMITERS)

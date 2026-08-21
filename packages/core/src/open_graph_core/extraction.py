@@ -163,21 +163,18 @@ def _normalize_extraction_payload(payload: object) -> dict[str, list[dict[str, o
     return {"entities": entities, "relations": relations}
 
 
-def _parse_extraction_content(content: str, source_text: str) -> Extraction:
-    deterministic = DeterministicExtractor().extract(source_text)
+def _parse_extraction_content(
+    content: str, source_text: str = "", allow_fallback: bool = False
+) -> Extraction:
     try:
-        extracted = Extraction.model_validate(
+        return Extraction.model_validate(
             _normalize_extraction_payload(_load_json_object(content))
         )
-    except (json.JSONDecodeError, ValueError):
-        return deterministic
-    if (
-        not extracted.entities
-        and not extracted.relations
-        and (deterministic.entities or deterministic.relations)
-    ):
-        return deterministic
-    return extracted
+    except (json.JSONDecodeError, ValueError) as exc:
+        if not allow_fallback:
+            raise ValueError(f"malformed extraction content: {exc}") from exc
+        return DeterministicExtractor().extract(source_text)
+
 
 
 def normalize_name(value: str) -> str:
@@ -449,13 +446,7 @@ class OpenAICompatibleExtractor:
                     for context in request_contexts:
                         results.extend(self.extract_batch([context]))
                 else:
-                    results.extend(
-                        BatchExtractionResult(
-                            _context_chunk_id(context),
-                            DeterministicExtractor().extract(context.target_text),
-                        )
-                        for context in request_contexts
-                    )
+                    raise
             remaining = remaining[len(request_contexts) :]
         return results
 
@@ -482,11 +473,8 @@ class OpenAICompatibleExtractor:
             timeout=self.timeout,
         )
         response.raise_for_status()
-        try:
-            content = _load_openai_content(response.text)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return DeterministicExtractor().extract(source_text)
-        return _parse_extraction_content(content, source_text)
+        content = _load_openai_content(response.text)
+        return _parse_extraction_content(content, source_text, allow_fallback=False)
 
     def _system_prompt(self) -> str:
         return (

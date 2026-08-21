@@ -488,17 +488,24 @@ def test_openai_extractor_falls_back_for_malformed_or_empty_sse(monkeypatch) -> 
     assert extractor.extract(source_text).relations[0].type == "DRIVES"
 
 
-def test_openai_parse_falls_back_to_deterministic_extractor_for_non_json() -> None:
-    result = _parse_extraction_content(
+def test_openai_parse_raises_on_non_json_in_strict_mode() -> None:
+    with pytest.raises(ValueError, match="malformed extraction content"):
+        _parse_extraction_content(
+            "I cannot return JSON.",
+            "RX1 Driver [Software] -> DRIVES -> DNP RX1 [Printer]",
+            allow_fallback=False,
+        )
+
+    fallback_result = _parse_extraction_content(
         "I cannot return JSON.",
         "RX1 Driver [Software] -> DRIVES -> DNP RX1 [Printer]",
+        allow_fallback=True,
     )
-
-    assert [(entity.name, entity.type) for entity in result.entities] == [
+    assert [(entity.name, entity.type) for entity in fallback_result.entities] == [
         ("DNP RX1", "Printer"),
         ("RX1 Driver", "Software"),
     ]
-    assert result.relations[0].type == "DRIVES"
+    assert fallback_result.relations[0].type == "DRIVES"
 
 
 def test_deterministic_extractor_falls_back_to_heuristic_entities() -> None:

@@ -31,6 +31,14 @@ def test_pdf_accepts_eof_signature_at_end_of_large_file() -> None:
     assert validate(file, head, tail) == "report.pdf"
 
 
+def test_pdf_accepts_valid_header_even_with_large_trailing_metadata() -> None:
+    head = b"%PDF-1.7\n" + b"0" * 8183
+    tail = b"1" * 8192
+    file = upload("document_with_metadata.pdf", "application/pdf", head + tail)
+
+    assert validate(file, head, tail) == "document_with_metadata.pdf"
+
+
 def test_txt_upload_is_accepted() -> None:
     file = upload("notes.txt", "text/plain", b"plain notes")
 
