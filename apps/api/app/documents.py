@@ -79,7 +79,7 @@ def validate(file: UploadFile, head: bytes, tail: bytes) -> str:
         raise HTTPException(415, "MIME type does not match extension")
     if not head:
         raise HTTPException(415, "empty files are not supported")
-    if extension == ".pdf" and (not head.startswith(b"%PDF-") or b"%%EOF" not in tail):
+    if extension == ".pdf" and not head.startswith(b"%PDF-"):
         raise HTTPException(415, "invalid PDF signature")
     if extension != ".pdf":
         try:

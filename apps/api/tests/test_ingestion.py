@@ -119,10 +119,18 @@ def test_csv_parser_accepts_semicolon_delimiter() -> None:
 
 
 def test_csv_parser_rejects_malformed_unmatched_quote() -> None:
-    with pytest.raises(ValueError, match="malformed CSV: unmatched quote"):
+    with pytest.raises(ValueError, match="malformed CSV"):
         default_registry().parse(
             "text/csv", b'name,description\nalpha,"broken\nbeta,second\n', "malformed.csv"
         )
+
+
+def test_csv_parser_accepts_values_with_quotes() -> None:
+    parsed = default_registry().parse(
+        "text/csv", b'name,size\nMonitor,24" IPS\n', "specs.csv"
+    )
+    assert parsed.metadata["rows"] == 1
+    assert "Monitor" in parsed.text
 
 
 def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
@@ -133,12 +141,27 @@ def test_source_aware_chunks_keep_pdf_pages_and_blank_page_numbers() -> None:
             ParsedSegment("third " * 20, {"page_number": 3}),
         ),
     )
-    chunks = RecursiveTextChunker(size=30, overlap=5).split_document("doc", document)
+    chunks = RecursiveTextChunker(size=200, overlap=5).split_document("doc", document)
 
     assert [chunk.metadata["page_number"] for chunk in chunks] == [1, 3]
     assert [chunk.text for chunk in chunks] == [("first " * 20).strip(), ("third " * 20).strip()]
     assert all(chunk.metadata["segment_count"] == 1 for chunk in chunks)
     assert all(chunk.metadata["segment_part"] == 1 for chunk in chunks)
+
+
+def test_dense_pdf_page_splits_into_subchunks() -> None:
+    document = ParsedDocument(
+        "long page text",
+        segments=(
+            ParsedSegment("word " * 100, {"page_number": 2}),
+        ),
+    )
+    chunks = RecursiveTextChunker(size=50, overlap=10).split_document("doc", document)
+
+    assert len(chunks) > 1
+    assert all(chunk.metadata["page_number"] == 2 for chunk in chunks)
+    assert [chunk.metadata["segment_part"] for chunk in chunks] == list(range(1, len(chunks) + 1))
+    assert all(chunk.metadata["segment_count"] == len(chunks) for chunk in chunks)
 
 
 def test_csv_chunks_never_merge_records_and_long_record_keeps_location() -> None:

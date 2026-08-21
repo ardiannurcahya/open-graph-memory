@@ -180,6 +180,7 @@ def _parse_extraction_content(content: str, source_text: str) -> Extraction:
     return extracted
 
 
+
 def normalize_name(value: str) -> str:
     """Normalize conservatively: preserve punctuation and semantic tokens."""
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
