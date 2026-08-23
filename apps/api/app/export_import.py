@@ -2,17 +2,15 @@
 
 import json
 from datetime import UTC, datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_project
-from app.dependencies import get_session
+from app.auth import Project
+from app.dependencies import Db
 from app.models import (
     AgentMemoryAttempt,
     AgentMemoryEpisode,
@@ -21,8 +19,6 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/v1/projects", tags=["export-import"])
-Project = Annotated[ProjectContext, Depends(require_project)]
-Db = Annotated[AsyncSession, Depends(get_session)]
 
 
 class ExportMetadata(BaseModel):

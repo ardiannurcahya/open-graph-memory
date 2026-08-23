@@ -7,16 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_project
-from app.dependencies import get_session
+from app.auth import Project, ProjectContext
+from app.dependencies import Db
 from app.graph.cleanup import create_dataset_cleanup, mark_cleanup_ready
 from app.graph.helpers import normalize_dataset_id
 from app.models import Dataset, DatasetStatus, Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 
 router = APIRouter(prefix="/v1/datasets", tags=["datasets"])
-Project = Annotated[ProjectContext, Depends(require_project)]
-Db = Annotated[AsyncSession, Depends(get_session)]
 
 
 class DatasetInput(BaseModel):

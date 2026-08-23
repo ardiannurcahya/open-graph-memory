@@ -3,16 +3,24 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import exists, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.elements import ColumnElement
 
-from app.auth import ProjectContext, require_project
+from app.auth import Project
 from app.datasets import owned
-from app.dependencies import get_session
-from app.graph.analytics import refresh_dataset_analytics, snapshot_hash
+from app.dependencies import Db
+from app.graph.analytics import refresh_dataset_analytics
 from app.graph.helpers import supported_entity, supported_relation
+from app.graph.limits import (
+    MAX_EXPLORER_NODES,
+    MAX_EXPLORER_RELATIONS,
+    MAX_NEIGHBORS,
+    MAX_NODES,
+    MAX_PATH_DEPTH,
+    MAX_PATH_RELATIONS,
+    MAX_SUBGRAPH_DEPTH,
+    MAX_SUBGRAPH_RELATIONS,
+)
 from app.graph.models import (
     CanonicalEntity,
     EntityAlias,
@@ -26,13 +34,8 @@ from app.graph.schemas import (
     AnalyticsRunView,
     EntityView,
     EvidenceView,
-    ExplorerAnalyticsView,
-    ExplorerCommunity,
-    ExplorerNode,
     ExplorerNodePage,
-    ExplorerRelation,
     ExplorerRelationPage,
-    ExplorerStats,
     ExplorerView,
     GraphSummary,
     JobView,
@@ -44,19 +47,13 @@ from app.graph.schemas import (
     SubgraphView,
 )
 from app.graph.service import (
-    GRAPH_CANDIDATE_LIMIT,
-    MAX_EXPLORER_NODES,
-    MAX_EXPLORER_RELATIONS,
-    MAX_NEIGHBORS,
-    MAX_NODES,
-    MAX_PATH_DEPTH,
-    MAX_PATH_RELATIONS,
-    MAX_SUBGRAPH_DEPTH,
-    MAX_SUBGRAPH_RELATIONS,
     bounded_walk,
+    build_dataset_graph,
+    build_explorer_node_page,
+    build_explorer_view,
     entity_view,
+    list_explorer_relations,
     path_ids,
-    rank_graph_entities,
     relation_view,
     scoped_dataset_entity,
     scoped_entity,
@@ -65,10 +62,6 @@ from app.graph.service import (
 )
 from app.models import (
     Chunk,
-    GraphAnalyticsCommunity,
-    GraphAnalyticsEntityMetric,
-    GraphAnalyticsMembership,
-    GraphAnalyticsRun,
 )
 
 """Bounded, PostgreSQL-authoritative graph inspection and review API with temporal tracking."""
@@ -77,10 +70,6 @@ from app.models import (
 router = APIRouter(prefix="/v1", tags=["graph"])
 
 
-Project = Annotated[ProjectContext, Depends(require_project)]
-
-
-Db = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("/entities/{entity_id}", response_model=EntityView)
@@ -280,93 +269,9 @@ async def graph(
     include_history: bool = Query(False, description="Include all temporal versions"),  # noqa: B008
 ) -> GraphSummary:
     await owned(db, project, dataset_id)
-    candidate_entities = list(
-        await db.scalars(
-            select(CanonicalEntity)
-            .where(
-                CanonicalEntity.project_id == project.project_id,
-                CanonicalEntity.dataset_id == dataset_id,
-                supported_entity(),
-                temporal_filter(as_of=as_of, include_history=include_history, entity=True),
-            )
-            .order_by(CanonicalEntity.canonical_name)
-            .limit(GRAPH_CANDIDATE_LIMIT)
-        )
-    )
-    degree_rows = await db.execute(
-        select(RelationAssertion.source_entity_id, func.count())
-        .where(
-            RelationAssertion.project_id == project.project_id,
-            RelationAssertion.dataset_id == dataset_id,
-            supported_relation(),
-            temporal_filter(as_of=as_of, include_history=include_history, entity=False),
-        )
-        .group_by(RelationAssertion.source_entity_id)
-    )
-    degree = {str(entity_id): int(count) for entity_id, count in degree_rows}
-    target_degree_rows = await db.execute(
-        select(RelationAssertion.target_entity_id, func.count())
-        .where(
-            RelationAssertion.project_id == project.project_id,
-            RelationAssertion.dataset_id == dataset_id,
-            supported_relation(),
-            temporal_filter(as_of=as_of, include_history=include_history, entity=False),
-        )
-        .group_by(RelationAssertion.target_entity_id)
-    )
-    for entity_id, count in target_degree_rows:
-        degree[str(entity_id)] = degree.get(str(entity_id), 0) + int(count)
-    entities = rank_graph_entities(candidate_entities, degree, limit)
-    entity_ids = [item.id for item in entities]
-    relations = (
-        []
-        if depth == 0 or not entity_ids
-        else list(
-            await db.scalars(
-                select(RelationAssertion)
-                .where(
-                    RelationAssertion.project_id == project.project_id,
-                    RelationAssertion.dataset_id == dataset_id,
-                    RelationAssertion.source_entity_id.in_(entity_ids),
-                    RelationAssertion.target_entity_id.in_(entity_ids),
-                    supported_relation(),
-                    temporal_filter(as_of=as_of, include_history=include_history, entity=False),
-                )
-                .order_by(RelationAssertion.id)
-                .limit(limit)
-            )
-        )
-    )
-    entity_count = (
-        await db.scalar(
-            select(func.count())
-            .select_from(CanonicalEntity)
-            .where(
-                CanonicalEntity.project_id == project.project_id,
-                CanonicalEntity.dataset_id == dataset_id,
-                supported_entity(),
-            )
-        )
-        or 0
-    )
-    relation_count = (
-        await db.scalar(
-            select(func.count())
-            .select_from(RelationAssertion)
-            .where(
-                RelationAssertion.project_id == project.project_id,
-                RelationAssertion.dataset_id == dataset_id,
-                supported_relation(),
-            )
-        )
-        or 0
-    )
-    return GraphSummary(
-        dataset_id=dataset_id,
-        entity_count=entity_count,
-        relation_count=relation_count,
-        nodes=[entity_view(item) for item in entities],
-        relations=[await relation_view(db, item) for item in relations],
+    return await build_dataset_graph(
+        db, project, dataset_id, limit=limit, depth=depth, as_of=as_of,
+        include_history=include_history,
     )
 
 
@@ -381,204 +286,9 @@ async def explorer(
 ) -> ExplorerView:
     """Bounded Postgres graph view. Analytics enriches but never gates nodes."""
     await owned(db, project, dataset_id)
-    base_entities = (
-        CanonicalEntity.project_id == project.project_id,
-        CanonicalEntity.dataset_id == dataset_id,
-        supported_entity(),
-    )
-    base_relations = (
-        RelationAssertion.project_id == project.project_id,
-        RelationAssertion.dataset_id == dataset_id,
-        supported_relation(),
-    )
-    latest = await db.scalar(
-        select(GraphAnalyticsRun)
-        .where(
-            GraphAnalyticsRun.project_id == project.project_id,
-            GraphAnalyticsRun.dataset_id == dataset_id,
-        )
-        .order_by(GraphAnalyticsRun.created_at.desc(), GraphAnalyticsRun.id.desc())
-        .limit(1)
-    )
-    entity_count = int(
-        await db.scalar(select(func.count()).select_from(CanonicalEntity).where(*base_entities))
-        or 0
-    )
-    relation_count = int(
-        await db.scalar(select(func.count()).select_from(RelationAssertion).where(*base_relations))
-        or 0
-    )
-    source_ids = list(
-        await db.scalars(
-            select(CanonicalEntity.id).where(*base_entities).order_by(CanonicalEntity.id)
-        )
-    )
-    source_relations = list(
-        await db.execute(
-            select(
-                RelationAssertion.source_entity_id,
-                RelationAssertion.target_entity_id,
-                RelationAssertion.confidence,
-            )
-            .where(*base_relations)
-            .order_by(RelationAssertion.id)
-        )
-    )
-    current_hash = snapshot_hash(
-        source_ids,
-        [(source, target, float(confidence)) for source, target, confidence in source_relations],
-    )
-    stale = latest is None or latest.snapshot_hash != current_hash
-    if latest is None:
-        node_rows = list(
-            await db.scalars(
-                select(CanonicalEntity)
-                .where(*base_entities)
-                .order_by(CanonicalEntity.canonical_name, CanonicalEntity.id)
-                .limit(node_limit)
-            )
-        )
-        nodes = [
-            ExplorerNode(
-                id=item.id,
-                canonical_name=item.canonical_name,
-                entity_type=item.entity_type,
-                community_id=None,
-                degree=0,
-                weighted_degree=0.0,
-                importance=0.0,
-            )
-            for item in node_rows
-        ]
-        communities: list[ExplorerCommunity] = []
-    else:
-        node_metric_rows = await db.execute(
-            select(
-                CanonicalEntity,
-                GraphAnalyticsMembership.community_id,
-                GraphAnalyticsEntityMetric,
-            )
-            .join(
-                GraphAnalyticsMembership,
-                (GraphAnalyticsMembership.entity_id == CanonicalEntity.id)
-                & (GraphAnalyticsMembership.run_id == latest.id)
-                & (GraphAnalyticsMembership.level == community_level),
-            )
-            .join(
-                GraphAnalyticsEntityMetric,
-                (GraphAnalyticsEntityMetric.entity_id == CanonicalEntity.id)
-                & (GraphAnalyticsEntityMetric.run_id == latest.id),
-            )
-            .where(*base_entities)
-            .order_by(
-                GraphAnalyticsEntityMetric.importance.desc(),
-                CanonicalEntity.id,
-            )
-            .limit(node_limit)
-        )
-        nodes = [
-            ExplorerNode(
-                id=item.id,
-                canonical_name=item.canonical_name,
-                entity_type=item.entity_type,
-                community_id=community_id,
-                degree=metric.degree,
-                weighted_degree=metric.weighted_degree,
-                importance=metric.importance,
-            )
-            for item, community_id, metric in node_metric_rows
-        ]
-        community_rows = list(
-            await db.scalars(
-                select(GraphAnalyticsCommunity)
-                .where(
-                    GraphAnalyticsCommunity.run_id == latest.id,
-                    GraphAnalyticsCommunity.level == community_level,
-                )
-                .order_by(GraphAnalyticsCommunity.community_id)
-            )
-        )
-        child_rows = (
-            []
-            if community_level == 0
-            else list(
-                await db.execute(
-                    select(
-                        GraphAnalyticsCommunity.parent_community_id,
-                        GraphAnalyticsCommunity.community_id,
-                    ).where(
-                        GraphAnalyticsCommunity.run_id == latest.id,
-                        GraphAnalyticsCommunity.level == community_level - 1,
-                    )
-                )
-            )
-        )
-        children: dict[str, list[str]] = {}
-        for parent_id, child_id in child_rows:
-            if parent_id is not None:
-                children.setdefault(parent_id, []).append(child_id)
-        communities = [
-            ExplorerCommunity(
-                id=item.community_id,
-                entity_count=item.entity_count,
-                parent_id=item.parent_community_id,
-                child_ids=children.get(item.community_id, []),
-                internal_edges=item.internal_edges,
-                external_edges=item.external_edges,
-                density=item.density,
-                importance=item.importance,
-            )
-            for item in community_rows
-        ]
-    node_ids = [item.id for item in nodes]
-    relation_rows = (
-        []
-        if not node_ids
-        else list(
-            await db.scalars(
-                select(RelationAssertion)
-                .where(
-                    *base_relations,
-                    RelationAssertion.source_entity_id.in_(node_ids),
-                    RelationAssertion.target_entity_id.in_(node_ids),
-                )
-                .order_by(RelationAssertion.id)
-                .limit(relation_limit)
-            )
-        )
-    )
-    return ExplorerView(
-        dataset_id=dataset_id,
-        community_level=community_level,
-        available_levels=[] if latest is None else list(range(latest.levels)),
-        analytics=None
-        if latest is None
-        else ExplorerAnalyticsView(
-            **AnalyticsRunView.model_validate(latest, from_attributes=True).model_dump(),
-            created_at=latest.created_at,
-            stale=stale,
-        ),
-        refresh_required=stale,
-        stats=ExplorerStats(
-            entity_count=entity_count,
-            relation_count=relation_count,
-            density=0.0
-            if entity_count < 2
-            else (2 * relation_count) / (entity_count * (entity_count - 1)),
-        ),
-        nodes=nodes,
-        relations=[
-            ExplorerRelation(
-                id=item.id,
-                source=item.source_entity_id,
-                target=item.target_entity_id,
-                type=item.relation_type,
-                weight=float(item.confidence),
-                confidence=item.confidence,
-            )
-            for item in relation_rows
-        ],
-        communities=communities,
+    return await build_explorer_view(
+        db, project, dataset_id, node_limit=node_limit,
+        relation_limit=relation_limit, community_level=community_level,
     )
 
 
@@ -593,86 +303,9 @@ async def explorer_nodes(
 ) -> ExplorerNodePage:
     """Keyset-paged supported nodes; analytics enriches but never gates rows."""
     await owned(db, project, dataset_id)
-    latest = await db.scalar(
-        select(GraphAnalyticsRun)
-        .where(
-            GraphAnalyticsRun.project_id == project.project_id,
-            GraphAnalyticsRun.dataset_id == dataset_id,
-        )
-        .order_by(GraphAnalyticsRun.created_at.desc(), GraphAnalyticsRun.id.desc())
-        .limit(1)
-    )
-    filters: list[ColumnElement[bool]] = [
-        CanonicalEntity.project_id == project.project_id,
-        CanonicalEntity.dataset_id == dataset_id,
-        supported_entity(),
-    ]
-    if cursor is not None:
-        filters.append(CanonicalEntity.id > cursor)
-    if latest is None:
-        rows = list(
-            await db.scalars(
-                select(CanonicalEntity)
-                .where(*filters)
-                .order_by(CanonicalEntity.id)
-                .limit(limit + 1)
-            )
-        )
-        has_more = len(rows) > limit
-        entity_page = rows[:limit]
-        nodes = [
-            ExplorerNode(
-                id=item.id,
-                canonical_name=item.canonical_name,
-                entity_type=item.entity_type,
-                community_id=None,
-                degree=0,
-                weighted_degree=0.0,
-                importance=0.0,
-            )
-            for item in entity_page
-        ]
-    else:
-        result = list(
-            await db.execute(
-                select(
-                    CanonicalEntity,
-                    GraphAnalyticsMembership.community_id,
-                    GraphAnalyticsEntityMetric,
-                )
-                .outerjoin(
-                    GraphAnalyticsMembership,
-                    (GraphAnalyticsMembership.entity_id == CanonicalEntity.id)
-                    & (GraphAnalyticsMembership.run_id == latest.id)
-                    & (GraphAnalyticsMembership.level == community_level),
-                )
-                .outerjoin(
-                    GraphAnalyticsEntityMetric,
-                    (GraphAnalyticsEntityMetric.entity_id == CanonicalEntity.id)
-                    & (GraphAnalyticsEntityMetric.run_id == latest.id),
-                )
-                .where(*filters)
-                .order_by(CanonicalEntity.id)
-                .limit(limit + 1)
-            )
-        )
-        has_more = len(result) > limit
-        metric_page = result[:limit]
-        nodes = [
-            ExplorerNode(
-                id=item.id,
-                canonical_name=item.canonical_name,
-                entity_type=item.entity_type,
-                community_id=community_id,
-                degree=0 if metric is None else metric.degree,
-                weighted_degree=0.0 if metric is None else metric.weighted_degree,
-                importance=0.0 if metric is None else metric.importance,
-            )
-            for item, community_id, metric in metric_page
-        ]
-    return ExplorerNodePage(
-        nodes=nodes,
-        next_cursor=nodes[-1].id if has_more and nodes else None,
+    return await build_explorer_node_page(
+        db, project, dataset_id, cursor=cursor, limit=limit,
+        community_level=community_level,
     )
 
 
@@ -689,38 +322,7 @@ async def explorer_relations(
 ) -> ExplorerRelationPage:
     """Keyset-paged relations independent of node pages, preserving cross-page edges."""
     await owned(db, project, dataset_id)
-    filters: list[ColumnElement[bool]] = [
-        RelationAssertion.project_id == project.project_id,
-        RelationAssertion.dataset_id == dataset_id,
-        supported_relation(),
-    ]
-    if cursor is not None:
-        filters.append(RelationAssertion.id > cursor)
-    rows = list(
-        await db.scalars(
-            select(RelationAssertion)
-            .where(*filters)
-            .order_by(RelationAssertion.id)
-            .limit(limit + 1)
-        )
-    )
-    has_more = len(rows) > limit
-    page = rows[:limit]
-    relations = [
-        ExplorerRelation(
-            id=item.id,
-            source=item.source_entity_id,
-            target=item.target_entity_id,
-            type=item.relation_type,
-            weight=float(item.confidence),
-            confidence=item.confidence,
-        )
-        for item in page
-    ]
-    return ExplorerRelationPage(
-        relations=relations,
-        next_cursor=relations[-1].id if has_more and relations else None,
-    )
+    return await list_explorer_relations(db, project, dataset_id, cursor=cursor, limit=limit)
 
 
 @router.get("/evidence/{evidence_id}", response_model=EvidenceView)
