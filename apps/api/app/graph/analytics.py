@@ -17,7 +17,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.graph_models import (
+from app.graph.models import (
     CanonicalEntity,
     GraphEvidence,
     RelationAssertion,

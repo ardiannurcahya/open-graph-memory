@@ -25,14 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import get_settings
 from app.db import engine
-from app.graph_analytics import refresh_dataset_analytics
-from app.graph_consolidation import (
+from app.graph.analytics import refresh_dataset_analytics
+from app.graph.consolidation import (
     ConsolidationOutput,
     build_input,
     consolidate_openai,
     validate_output,
 )
-from app.graph_models import (
+from app.graph.models import (
     CanonicalEntity,
     EntityAlias,
     EntityAliasEvidence,
@@ -43,7 +43,7 @@ from app.graph_models import (
     ReviewState,
     RunStatus,
 )
-from app.graph_store import (
+from app.graph.store import (
     ChunkProjection,
     DocumentProjection,
     EvidenceProjection,

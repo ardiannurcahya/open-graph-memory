@@ -203,7 +203,7 @@ def main() -> int:
         "worker",
         "python",
         "-c",
-        "import asyncio; from app.graph_dispatch import reconcile_graph_jobs; "
+        "import asyncio; from app.graph.dispatch import reconcile_graph_jobs; "
         "asyncio.run(reconcile_graph_jobs())",
     )
     assert (
@@ -296,7 +296,7 @@ def main() -> int:
         "worker",
         "python",
         "-c",
-        "import asyncio; from app.graph_dispatch import reconcile_graph_jobs; "
+        "import asyncio; from app.graph.dispatch import reconcile_graph_jobs; "
         "asyncio.run(reconcile_graph_jobs())",
     )
     assert (

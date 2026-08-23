@@ -264,7 +264,7 @@ async def execute_tool(
     from open_graph_core.ids import uuid7
 
     from app.idempotency import check_idempotency, store_idempotency
-    from app.memory_types import validate_typed_content
+    from app.memory.types import validate_typed_content
 
     if name == "memory_observe":
         idempotency_key = arguments.get("idempotency_key")

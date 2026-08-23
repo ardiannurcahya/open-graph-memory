@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import IO, TYPE_CHECKING, Protocol, runtime_checkable
 
+from open_graph_contracts.documents import ParsedDocument, TextChunk
+
 if TYPE_CHECKING:
-    from app.chunking import TextChunk
-    from app.parsers import ParsedDocument
     from open_graph_core.extraction import Extraction
 
 

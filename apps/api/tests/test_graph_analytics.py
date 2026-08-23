@@ -2,7 +2,7 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from app.graph_analytics import (
+from app.graph.analytics import (
     LOUVAIN_RESOLUTION,
     LOUVAIN_SEED,
     analyze_graph,

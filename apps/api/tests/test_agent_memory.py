@@ -5,9 +5,11 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from app.agent_memory import SupersedeInput, is_promoted, router, supersede_episode
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
+from app.memory.api import router, supersede_episode
+from app.memory.schemas import SupersedeInput
+from app.memory.service import is_promoted
 from app.models import (
     AgentMemoryAttempt,
     AgentMemoryEpisode,
@@ -119,7 +121,7 @@ async def test_episode_supersession_locks_both_rows_and_rejects_a_cycle(monkeypa
         locks.append((episode_id, lock))
         return {"source": source, "replacement": replacement}[episode_id]
 
-    monkeypatch.setattr("app.agent_memory.owned_episode", fake_owned_episode)
+    monkeypatch.setattr("app.memory.api.owned_episode", fake_owned_episode)
     with pytest.raises(Exception) as error:
         await supersede_episode(
             "source",

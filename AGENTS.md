@@ -4,6 +4,8 @@
 
 - Root Python project uses `uv` and Python 3.12+. Root `pyproject.toml` supplies import paths for `apps/api`, `packages/core/src`, `packages/contracts/src`, and `packages/sdk/src`; run Python commands from repo root.
 - FastAPI entrypoint: `apps/api/app/main.py` (`uvicorn app.main:app`). ARQ worker: `arq app.arq_worker.WorkerSettings`.
+- Graph domain lives in `apps/api/app/graph/` (api, schemas, service, pipeline, dispatch, models, store, analytics, cleanup, consolidation, gc, helpers). Agent memory domain lives in `apps/api/app/memory/` (api, schemas, service, confidence, types).
+- Shared document value objects (`ParsedDocument`, `ParsedSegment`, `TextChunk`) live in `open_graph_contracts.documents`.
 - `apps/web` is separate Vite/React project, not npm workspace. Run all npm commands there. Vite dev server proxies `/api` to `http://localhost:8000`, stripping `/api`.
 - PostgreSQL and S3-compatible storage are authoritative. Graph records and traversal queries use PostgreSQL.
 - Public plugin contracts live in `packages/contracts`; SDK in `packages/sdk`. Built-in plugins use explicit registration in `apps/api/app/plugin_registry.py`; no dynamic entry-point discovery.

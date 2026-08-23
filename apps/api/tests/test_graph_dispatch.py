@@ -2,8 +2,8 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from app.graph_dispatch import renew_graph_job_lease
-from app.graph_models import GraphExtractionJob, GraphJobStatus
+from app.graph.dispatch import renew_graph_job_lease
+from app.graph.models import GraphExtractionJob, GraphJobStatus
 
 
 class Session:
@@ -41,9 +41,9 @@ async def test_renew_graph_job_lease_extends_running_lease(monkeypatch: pytest.M
     )
     session = Session(job)  # type: ignore[arg-type]
     monkeypatch.setattr(
-        "app.graph_dispatch.async_sessionmaker", lambda *args, **kwargs: Factory(session)
+        "app.graph.dispatch.async_sessionmaker", lambda *args, **kwargs: Factory(session)
     )
-    monkeypatch.setattr("app.graph_dispatch.lease_seconds", lambda: 300)
+    monkeypatch.setattr("app.graph.dispatch.lease_seconds", lambda: 300)
 
     await renew_graph_job_lease("job")
 

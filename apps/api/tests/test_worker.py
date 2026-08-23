@@ -51,7 +51,7 @@ def test_graph_job_lease_exceeds_extractor_timeout(monkeypatch) -> None:
     from types import SimpleNamespace
 
     import app.config
-    from app.graph_dispatch import lease_seconds
+    from app.graph.dispatch import lease_seconds
 
     monkeypatch.setattr(
         app.config,

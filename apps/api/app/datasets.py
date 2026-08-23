@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
-from app.graph_cleanup import create_dataset_cleanup, mark_cleanup_ready
-from app.graph_helpers import normalize_dataset_id
+from app.graph.cleanup import create_dataset_cleanup, mark_cleanup_ready
+from app.graph.helpers import normalize_dataset_id
 from app.models import Dataset, DatasetStatus, Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store
 

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from open_graph_core.extraction import stable_id
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.graph_models import GraphCleanupOutbox, GraphCleanupTarget
+from app.graph.models import GraphCleanupOutbox, GraphCleanupTarget
 from app.models import Dataset, Document
 
 

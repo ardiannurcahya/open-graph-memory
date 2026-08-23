@@ -6,15 +6,15 @@ from uuid import uuid4
 
 import pytest
 from app.config import Settings
-from app.graph_dispatch import enqueue_graph_extraction
-from app.graph_models import (
+from app.graph.dispatch import enqueue_graph_extraction
+from app.graph.models import (
     CanonicalEntity,
     GraphEvidence,
     GraphExtractionRun,
     RelationAssertion,
     RunStatus,
 )
-from app.graph_pipeline import (
+from app.graph.pipeline import (
     ExtractorMetadata,
     _chunk_contexts,
     _extract_chunks,
@@ -22,7 +22,7 @@ from app.graph_pipeline import (
     build_extractor,
     extract_document,
 )
-from app.graph_store import (
+from app.graph.store import (
     ChunkProjection,
     DocumentProjection,
     EvidenceProjection,
@@ -183,7 +183,7 @@ def inputs(dataset_id: str = "dataset-a") -> tuple[Document, Chunk]:
 
 def test_build_extractor_defaults_to_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings",
+        "app.graph.pipeline.get_settings",
         lambda: Settings(
             graph_extractor_provider="deterministic",
             graph_extractor_model="deterministic-graph-v1",
@@ -214,7 +214,7 @@ def test_build_extractor_constructs_openai_compatible_adapter(
         openai_graph_extractor_base_url="https://extractor.example/v1",
         openai_api_key="test-secret",
     )
-    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)
+    monkeypatch.setattr("app.graph.pipeline.get_settings", lambda: settings)
 
     extractor, metadata = build_extractor()
 
@@ -294,7 +294,7 @@ async def test_enqueue_persists_selected_extractor_metadata(
         graph_extractor_prompt_version="test-prompt-v3",
         openai_api_key="test-secret",
     )
-    monkeypatch.setattr("app.graph_pipeline.get_settings", lambda: settings)
+    monkeypatch.setattr("app.graph.pipeline.get_settings", lambda: settings)
     db = FakeSession()
     document, _ = inputs()
 
@@ -502,7 +502,7 @@ async def test_extract_failure_snapshots_chunk_before_rollback_expiration(
     db = ExpiringRollbackSession(document, [chunk])
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
 
     with pytest.raises(RuntimeError, match="provider failed"):
@@ -523,13 +523,13 @@ async def test_extract_failure_before_batch_preserves_original_error(
     db = PipelineSession(document, [chunk])
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
 
     async def fail_before_batch(*args: object, **kwargs: object) -> bool:
         raise RuntimeError("missing raw_extraction column")
 
-    monkeypatch.setattr("app.graph_pipeline._chunk_run_succeeded", fail_before_batch)
+    monkeypatch.setattr("app.graph.pipeline._chunk_run_succeeded", fail_before_batch)
 
     with pytest.raises(RuntimeError, match="missing raw_extraction column"):
         await extract_document(
@@ -575,7 +575,7 @@ async def test_provider_items_without_exact_evidence_are_skipped() -> None:
 async def test_persistence_logs_artifact_loss(
     caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    caplog.set_level("INFO", logger="app.graph_pipeline")
+    caplog.set_level("INFO", logger="app.graph.pipeline")
     db = FakeSession()
     document, chunk = inputs()
     extractor = Extractor(
@@ -608,10 +608,10 @@ async def test_extract_document_refreshes_analytics_only_after_projection(
         events.append("analytics")
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
-    monkeypatch.setattr("app.graph_pipeline.project_document", project)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+    monkeypatch.setattr("app.graph.pipeline.project_document", project)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", refresh)
 
     result = await extract_document(
         document.id,
@@ -641,10 +641,10 @@ async def test_extract_document_does_not_complete_when_analytics_refresh_fails(
         raise RuntimeError("analytics unavailable")
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
-    monkeypatch.setattr("app.graph_pipeline.project_document", project)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+    monkeypatch.setattr("app.graph.pipeline.project_document", project)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", refresh)
 
     with pytest.raises(RuntimeError, match="analytics unavailable"):
         await extract_document(
@@ -673,10 +673,10 @@ async def test_extract_document_skips_analytics_when_projection_fails(
         analytics_called = True
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
-    monkeypatch.setattr("app.graph_pipeline.project_document", project)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", refresh)
+    monkeypatch.setattr("app.graph.pipeline.project_document", project)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", refresh)
 
     with pytest.raises(RuntimeError, match="projection unavailable"):
         await extract_document(
@@ -720,18 +720,18 @@ async def test_extract_document_commits_batches_and_renews_lease(
         renewals += 1
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings",
+        "app.graph.pipeline.get_settings",
         lambda: Settings(graph_extractor_parallelism=2, graph_extractor_target_batch_size=2),
     )
 
     async def no_op(*args: object) -> None:
         return None
 
-    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+    monkeypatch.setattr("app.graph.pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", no_op)
 
     await extract_document(
         document.id,
@@ -793,18 +793,18 @@ async def test_extract_document_retries_only_unfinished_batch(
             return Extraction(entities=[], relations=[])
 
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings",
+        "app.graph.pipeline.get_settings",
         lambda: Settings(graph_extractor_parallelism=2, graph_extractor_target_batch_size=2),
     )
 
     async def no_op(*args: object) -> None:
         return None
 
-    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+    monkeypatch.setattr("app.graph.pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", no_op)
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         await extract_document(document.id, FailsOnce(), object())  # type: ignore[arg-type]
@@ -871,18 +871,18 @@ async def test_batch_retry_keeps_fixed_references_and_only_unfinished_targets(
 
     extractor = BatchFailsOnce()
     monkeypatch.setattr(
-        "app.graph_pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
+        "app.graph.pipeline.async_sessionmaker", lambda *args, **kwargs: SessionFactory(db)
     )
     monkeypatch.setattr(
-        "app.graph_pipeline.get_settings",
+        "app.graph.pipeline.get_settings",
         lambda: Settings(graph_extractor_parallelism=1, graph_extractor_target_batch_size=2),
     )
 
     async def no_op(*args: object) -> None:
         return None
 
-    monkeypatch.setattr("app.graph_pipeline.project_document", no_op)
-    monkeypatch.setattr("app.graph_pipeline.refresh_dataset_analytics", no_op)
+    monkeypatch.setattr("app.graph.pipeline.project_document", no_op)
+    monkeypatch.setattr("app.graph.pipeline.refresh_dataset_analytics", no_op)
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
         await extract_document(document.id, extractor, object())  # type: ignore[arg-type]

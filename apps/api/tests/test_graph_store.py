@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from app.graph_helpers import supported_entity, supported_relation
-from app.graph_store import current_evidence_subject
+from app.graph.helpers import supported_entity, supported_relation
+from app.graph.store import current_evidence_subject
 from sqlalchemy.dialects import postgresql
 
 
@@ -23,7 +23,7 @@ def test_current_evidence_subject_requires_scoped_current_subject() -> None:
 
 
 def test_multi_frontier_traversal_uses_the_matched_endpoint_as_path_parent() -> None:
-    source = Path("apps/api/app/graph_store.py").read_text(encoding="utf-8")
+    source = Path("apps/api/app/graph/store.py").read_text(encoding="utf-8")
 
     assert "paths[entity_id] = paths[matched_id]" in source
     assert "next(iter(frontier))" not in source
@@ -48,7 +48,7 @@ def test_supported_traversal_subjects_match_graph_review_rules() -> None:
 
 
 def test_traversal_filters_seed_relations_and_frontier_endpoints() -> None:
-    source = Path("apps/api/app/graph_store.py").read_text(encoding="utf-8")
+    source = Path("apps/api/app/graph/store.py").read_text(encoding="utf-8")
 
     assert source.count("supported_relation(),") == 2
     assert "seed_entity_ids = await supported_entity_ids(" in source

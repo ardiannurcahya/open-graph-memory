@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ProjectContext, require_project
 from app.dependencies import get_session
-from app.graph_models import CanonicalEntity, RelationAssertion, ReviewState
+from app.graph.models import CanonicalEntity, RelationAssertion, ReviewState
 
 router = APIRouter(prefix="/v1/codebase", tags=["codebase"])
 extractor = CodeExtractor()
@@ -64,7 +64,7 @@ async def ingest_codebase(
     """Batch ingest codebase files into Knowledge Graph with AST parsing and Louvain analytics."""
     from sqlalchemy import select
 
-    from app.graph_analytics import refresh_dataset_analytics
+    from app.graph.analytics import refresh_dataset_analytics
     from app.models import Dataset, DatasetStatus
 
     project_id = ctx.project_id
@@ -272,7 +272,7 @@ async def index_directory(
     from fastapi import HTTPException
     from sqlalchemy import select
 
-    from app.graph_analytics import refresh_dataset_analytics
+    from app.graph.analytics import refresh_dataset_analytics
     from app.models import Dataset, DatasetStatus
 
     start_time = time.perf_counter()

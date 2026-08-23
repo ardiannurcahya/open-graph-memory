@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db import engine
-from app.graph_helpers import supported_entity, supported_relation
-from app.graph_models import CanonicalEntity, RelationAssertion
-from app.graph_models import GraphEvidence as GraphEvidenceModel
+from app.graph.helpers import supported_entity, supported_relation
+from app.graph.models import CanonicalEntity, RelationAssertion
+from app.graph.models import GraphEvidence as GraphEvidenceModel
 from app.retrieval import GraphEvidence
 
 
