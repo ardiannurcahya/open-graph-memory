@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 Domain = Literal["engineering", "trading", "research", "operations", "custom"]
 
-
 MemoryType = Literal[
     "bugfix",
     "decision",
