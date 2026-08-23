@@ -1,21 +1,17 @@
 """Retention policy API for data lifecycle management."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_project
-from app.dependencies import get_session
+from app.auth import Project
+from app.dependencies import Db
 from app.models import AgentMemoryEpisode, LegalHold, RetentionPolicy
 
 router = APIRouter(prefix="/v1/retention", tags=["retention"])
-Project = Annotated[ProjectContext, Depends(require_project)]
-Db = Annotated[AsyncSession, Depends(get_session)]
 
 
 class RetentionInput(BaseModel):
