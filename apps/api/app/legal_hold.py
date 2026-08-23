@@ -1,21 +1,18 @@
 """Legal hold API for compliance."""
 
 from datetime import datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_project
-from app.dependencies import get_session
+from app.auth import Project
+from app.dependencies import Db
 from app.models import AgentMemoryEpisode, LegalHold
 
 router = APIRouter(prefix="/v1/legal-holds", tags=["legal-holds"])
-Project = Annotated[ProjectContext, Depends(require_project)]
-Db = Annotated[AsyncSession, Depends(get_session)]
 ResourceType = str
 
 

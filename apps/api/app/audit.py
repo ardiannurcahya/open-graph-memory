@@ -1,22 +1,19 @@
 """Audit trail API for tracking all mutations."""
 
 from datetime import datetime
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ProjectContext, require_project
-from app.dependencies import get_session
+from app.auth import Project
+from app.dependencies import Db
 from app.models import AuditLog
 
 router = APIRouter(prefix="/v1/audit-logs", tags=["audit"])
-Project = Annotated[ProjectContext, Depends(require_project)]
-Db = Annotated[AsyncSession, Depends(get_session)]
 
 
 class AuditLogView(BaseModel):

@@ -3,13 +3,15 @@ from types import SimpleNamespace
 
 from app.graph.api import router
 from app.graph.helpers import supported_entity, supported_relation
-from app.graph.service import (
+from app.graph.limits import (
     MAX_EXPLORER_NODES,
     MAX_EXPLORER_RELATIONS,
     MAX_PATH_DEPTH,
     MAX_PATH_RELATIONS,
     MAX_SUBGRAPH_DEPTH,
     MAX_SUBGRAPH_RELATIONS,
+)
+from app.graph.service import (
     low_signal_entity,
     path_ids,
     rank_graph_entities,
