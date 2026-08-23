@@ -52,7 +52,7 @@ async def task_index_document(ctx: dict[str, Any], job_id: str) -> str:
 
 
 async def task_extract_graph(ctx: dict[str, Any], job_id: str) -> str:
-    from app.graph_dispatch import execute_graph_job, renew_graph_job_lease
+    from app.graph.dispatch import execute_graph_job, renew_graph_job_lease
 
     heartbeat = asyncio.create_task(
         _heartbeat(
@@ -63,7 +63,7 @@ async def task_extract_graph(ctx: dict[str, Any], job_id: str) -> str:
     try:
         return await execute_graph_job(job_id)
     except asyncio.CancelledError:
-        from app.graph_dispatch import requeue_graph_job
+        from app.graph.dispatch import requeue_graph_job
 
         await asyncio.shield(requeue_graph_job(job_id, "worker execution cancelled"))
         raise
@@ -82,13 +82,13 @@ async def task_reconcile_indexing_jobs(ctx: dict[str, Any]) -> int:
 
 
 async def task_dispatch_graph_outbox(ctx: dict[str, Any]) -> int:
-    from app.graph_dispatch import dispatch_pending_graph_jobs
+    from app.graph.dispatch import dispatch_pending_graph_jobs
 
     return await dispatch_pending_graph_jobs(ctx["redis"])
 
 
 async def task_reconcile_graph_jobs(ctx: dict[str, Any]) -> int:
-    from app.graph_dispatch import reconcile_graph_jobs
+    from app.graph.dispatch import reconcile_graph_jobs
 
     return await reconcile_graph_jobs()
 
@@ -120,7 +120,7 @@ async def _indexing_heartbeat(job_id: str) -> None:
 
 
 async def _maintenance_loop(redis: ArqRedis) -> None:
-    from app.graph_dispatch import dispatch_pending_graph_jobs, reconcile_graph_jobs
+    from app.graph.dispatch import dispatch_pending_graph_jobs, reconcile_graph_jobs
 
     while True:
         try:

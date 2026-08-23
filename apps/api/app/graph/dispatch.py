@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db import engine
-from app.graph_models import GraphExtractionJob, GraphExtractionOutbox, GraphJobStatus
-from app.graph_pipeline import extract_document, extractor_metadata
+from app.graph.models import GraphExtractionJob, GraphExtractionOutbox, GraphJobStatus
+from app.graph.pipeline import extract_document, extractor_metadata
 from app.ingestion import sanitized_error
 from app.models import Document, DocumentStatus
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.chunking import RecursiveTextChunker
 from app.config import get_settings
 from app.db import engine
-from app.graph_gc import cleanup_document_graph
+from app.graph.gc import cleanup_document_graph
 from app.models import (
     Chunk,
     Document,
@@ -179,7 +179,7 @@ async def run_ingestion(
             job.status, document.status = JobStatus.SUCCEEDED, DocumentStatus.PERSISTING
             document.error_message = None
             # Persist graph work here; the worker maintenance loop publishes only committed rows.
-            from app.graph_dispatch import enqueue_graph_extraction
+            from app.graph.dispatch import enqueue_graph_extraction
 
             await enqueue_graph_extraction(db, document)
             await db.commit()

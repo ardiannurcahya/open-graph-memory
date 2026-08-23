@@ -2,12 +2,12 @@ import csv
 import io
 import json
 import re
-from dataclasses import dataclass, field
 from typing import Protocol
 
 from bs4 import BeautifulSoup
 from liteparse import LiteParse, ParseError
 from markdown_it import MarkdownIt
+from open_graph_contracts.documents import ParsedDocument, ParsedSegment
 from pypdf import PdfReader
 
 CSV_FIELD_SIZE_LIMIT = 10 * 1024 * 1024
@@ -17,19 +17,6 @@ CSV_DELIMITERS = (",", ";", "\t", "|")
 
 def reject_json_constant(constant: str) -> object:
     raise ValueError(f"invalid JSON constant: {constant}")
-
-
-@dataclass(frozen=True)
-class ParsedSegment:
-    text: str
-    metadata: dict[str, object] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ParsedDocument:
-    text: str
-    metadata: dict[str, object] = field(default_factory=dict)
-    segments: tuple[ParsedSegment, ...] = ()
 
 
 class Parser(Protocol):

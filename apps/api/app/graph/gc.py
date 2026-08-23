@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.graph_models import (
+from app.graph.models import (
     CanonicalEntity,
     EntityAlias,
     EntityAliasEvidence,

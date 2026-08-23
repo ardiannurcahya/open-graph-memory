@@ -1,21 +1,7 @@
 import hashlib
-from dataclasses import dataclass, field
 from typing import Protocol
 
-from app.parsers import ParsedDocument, ParsedSegment
-
-
-@dataclass(frozen=True)
-class TextChunk:
-    id: str
-    index: int
-    text: str
-    token_count: int
-    start_char: int
-    end_char: int
-    metadata: dict[str, object] = field(default_factory=dict)
-    segment_part: int = 1
-    segment_count: int = 1
+from open_graph_contracts.documents import ParsedDocument, ParsedSegment, TextChunk
 
 
 class Chunker(Protocol):

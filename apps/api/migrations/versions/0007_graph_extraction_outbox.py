@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from app.graph_models import GraphExtractionJob, GraphExtractionOutbox  # noqa: E402
+from app.graph.models import GraphExtractionJob, GraphExtractionOutbox  # noqa: E402
 
 revision = "0007"
 down_revision = "0006"

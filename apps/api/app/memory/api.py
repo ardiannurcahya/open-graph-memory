@@ -1,24 +1,50 @@
-import re
 from datetime import UTC, datetime
-from typing import Annotated, Literal, cast
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from open_graph_core.ids import uuid7
-from pydantic import BaseModel, Field
 from sqlalchemy import case, desc, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth import ProjectContext, require_project
-from app.confidence import (
+from app.dependencies import get_session
+from app.idempotency import check_idempotency, store_idempotency
+from app.memory.confidence import (
     apply_confidence_feedback,
     get_version_history,
     merge_memories,
     supersede_memory,
 )
-from app.dependencies import get_session
-from app.idempotency import check_idempotency, store_idempotency
-from app.memory_types import list_memory_types, validate_typed_content
+from app.memory.schemas import (
+    AttemptInput,
+    AttemptView,
+    ConfidenceFeedbackInput,
+    EpisodeInput,
+    EpisodeStatus,
+    EpisodeView,
+    FeedbackInput,
+    MemoryGraphEdge,
+    MemoryGraphNode,
+    MemoryGraphView,
+    OutcomeInput,
+    OutcomeView,
+    PatternSupersedeInput,
+    PatternView,
+    SearchResponse,
+    SearchResult,
+    SupersedeInput,
+)
+from app.memory.service import (
+    bayesian_confidence,
+    episode_view,
+    is_promoted,
+    memory_id,
+    normalize_pattern_key,
+    owned_episode,
+    pattern_view,
+    verifier_weight,
+)
+from app.memory.types import list_memory_types, validate_typed_content
 from app.models import (
     AgentMemoryAttempt,
     AgentMemoryEpisode,
@@ -32,239 +58,12 @@ from app.models import (
 from app.redaction import sanitize_input
 
 router = APIRouter(prefix="/v1/agent-memory", tags=["agent-memory"])
+
+
 Project = Annotated[ProjectContext, Depends(require_project)]
+
+
 Db = Annotated[AsyncSession, Depends(get_session)]
-Domain = Literal["engineering", "trading", "research", "operations", "custom"]
-MemoryType = Literal[
-    "bugfix",
-    "decision",
-    "preference",
-    "procedure",
-    "research",
-    "trading",
-    "learning",
-    "fact",
-    "custom",
-]
-EpisodeStatus = Literal["open", "active", "degraded", "superseded", "rejected", "archived"]
-OutcomeStatus = Literal["success", "failed", "partial", "cancelled"]
-VerifierKind = Literal["ci", "runtime", "test", "build", "self_report", "custom"]
-
-
-class EvidenceInput(BaseModel):
-    reference: str = Field(min_length=1)
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class EpisodeInput(BaseModel):
-    domain: Domain
-    type: MemoryType = "custom"
-    title: str = Field(min_length=1, max_length=255)
-    goal: str = Field(min_length=1)
-    problem_signature: str = Field(min_length=1, max_length=512)
-    scope: dict[str, object] = Field(default_factory=dict)
-    tags: list[str] = Field(default_factory=list)
-    metadata: dict[str, object] = Field(default_factory=dict)
-    content: dict[str, object] | None = None
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    evidence: list[EvidenceInput] = Field(default_factory=list)
-    idempotency_key: str | None = Field(default=None, max_length=255)
-
-
-class AttemptInput(BaseModel):
-    hypothesis: str = Field(min_length=1)
-    actions: list[object] = Field(default_factory=list)
-    result: Literal["success", "failed", "partial"]
-    notes: str | None = None
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class VerifierInput(BaseModel):
-    kind: VerifierKind
-    name: str = Field(min_length=1, max_length=255)
-    status: str = Field(min_length=1, max_length=32)
-    command: str | None = None
-    artifact_uri: str | None = None
-    metrics: dict[str, object] = Field(default_factory=dict)
-
-
-class OutcomeInput(BaseModel):
-    status: OutcomeStatus
-    summary: str = Field(min_length=1)
-    lesson: str | None = None
-    verifiers: list[VerifierInput] = Field(default_factory=list)
-    metrics: dict[str, object] = Field(default_factory=dict)
-    metadata: dict[str, object] = Field(default_factory=dict)
-    pattern_key: str | None = Field(default=None, max_length=255)
-
-
-class FeedbackInput(BaseModel):
-    score: int = Field(ge=-1, le=1)
-
-
-class ConfidenceFeedbackInput(BaseModel):
-    kind: Literal["confirm", "reject", "correct", "supersede", "merge", "stale", "verified"]
-    content: dict[str, object] | None = None
-    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    target_id: str | None = None
-
-
-class SupersedeInput(BaseModel):
-    superseding_episode_id: str
-
-
-class PatternSupersedeInput(BaseModel):
-    superseding_pattern_key: str = Field(min_length=1, max_length=255)
-
-
-class AttemptView(AttemptInput):
-    id: str
-    sequence: int
-
-
-class EpisodeView(BaseModel):
-    id: str
-    project_id: str
-    domain: Domain
-    type: str
-    title: str
-    goal: str
-    problem_signature: str
-    scope: dict[str, object]
-    tags: list[str]
-    metadata: dict[str, object]
-    content: dict[str, object] | None
-    confidence: float
-    version: int
-    root_id: str | None
-    status: EpisodeStatus
-    feedback_score: int
-    superseded_by_id: str | None
-    attempts: list[AttemptView] = Field(default_factory=list)
-
-
-class PatternView(BaseModel):
-    pattern_key: str
-    verified_outcomes: int
-    weighted_successes: float
-    weighted_total: float
-    confidence: float
-    promoted: bool
-
-
-class OutcomeView(BaseModel):
-    id: str
-    status: OutcomeStatus
-    pattern: PatternView
-
-
-class SearchResult(BaseModel):
-    episode: EpisodeView
-    pattern: PatternView | None
-    recommended_actions: list[object]
-    lesson: str | None
-    scope_match: bool
-
-
-class SearchResponse(BaseModel):
-    query: str
-    results: list[SearchResult]
-
-
-def normalize_pattern_key(signature: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", "-", signature.lower()).strip("-")
-    return normalized[:255] or "unspecified"
-
-
-def memory_id() -> str:
-    return f"mem_{uuid7()}"
-
-
-def verifier_weight(verifiers: list[VerifierInput]) -> float:
-    weights = {
-        "ci": 1.0,
-        "runtime": 1.0,
-        "test": 0.6,
-        "build": 0.6,
-        "self_report": 0.2,
-        "custom": 0.2,
-    }
-    passing = [
-        weights[item.kind]
-        for item in verifiers
-        if item.status.lower() in {"passed", "success", "verified"}
-    ]
-    return max(passing, default=0.0)
-
-
-def bayesian_confidence(successes: float, total: float) -> float:
-    # Feedback and legacy rows can be inconsistent; confidence remains a probability.
-    bounded_total = max(0.0, total)
-    bounded_successes = min(bounded_total, max(0.0, successes))
-    return (bounded_successes + 1.0) / (bounded_total + 2.0)
-
-
-def is_promoted(verified_outcomes: int, confidence: float) -> bool:
-    return verified_outcomes >= 3 and confidence >= 0.7
-
-
-def episode_view(
-    item: AgentMemoryEpisode, attempts: list[AgentMemoryAttempt] | None = None
-) -> EpisodeView:
-    return EpisodeView(
-        id=item.id,
-        project_id=str(item.project_id),
-        domain=cast(Domain, item.domain),
-        type=item.type,
-        title=item.title,
-        goal=item.goal,
-        problem_signature=item.problem_signature,
-        scope=item.scope,
-        tags=item.tags,
-        metadata=item.metadata_,
-        content=item.content,
-        confidence=item.confidence,
-        version=item.version,
-        root_id=item.root_id,
-        status=cast(EpisodeStatus, item.status),
-        feedback_score=item.feedback_score,
-        superseded_by_id=item.superseded_by_id,
-        attempts=[
-            AttemptView(
-                id=a.id,
-                sequence=a.sequence,
-                hypothesis=a.hypothesis,
-                actions=a.actions,
-                result=cast(Literal["success", "failed", "partial"], a.result),
-                notes=a.notes,
-                metadata=a.metadata_,
-            )
-            for a in attempts or []
-        ],
-    )
-
-
-def pattern_view(item: AgentMemoryPattern) -> PatternView:
-    return PatternView(
-        pattern_key=item.pattern_key,
-        verified_outcomes=item.verified_outcomes,
-        weighted_successes=item.weighted_successes,
-        weighted_total=item.weighted_total,
-        confidence=item.confidence,
-        promoted=item.promoted,
-    )
-
-
-async def owned_episode(
-    db: AsyncSession, project: ProjectContext, episode_id: str, lock: bool = False
-) -> AgentMemoryEpisode:
-    statement = select(AgentMemoryEpisode).where(
-        AgentMemoryEpisode.id == episode_id, AgentMemoryEpisode.project_id == project.project_id
-    )
-    item = await db.scalar(statement.with_for_update() if lock else statement)
-    if item is None:
-        raise HTTPException(404, "agent memory episode not found")
-    return item
 
 
 @router.post("/episodes", response_model=EpisodeView, status_code=201)
@@ -734,33 +533,6 @@ async def supersede_pattern(
     pattern.superseded_by_key = replacement.pattern_key
     await db.commit()
     return pattern_view(replacement)
-
-
-# --- Graph visualization endpoint ---
-
-
-class MemoryGraphNode(BaseModel):
-    id: str
-    type: Literal["episode", "attempt", "outcome", "pattern", "verifier", "evidence"]
-    label: str
-    status: str | None = None
-    domain: str | None = None
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class MemoryGraphEdge(BaseModel):
-    id: str
-    source: str
-    target: str
-    type: Literal[
-        "has_attempt", "has_outcome", "matches_pattern", "verified_by", "has_evidence", "supersedes"
-    ]
-
-
-class MemoryGraphView(BaseModel):
-    nodes: list[MemoryGraphNode]
-    edges: list[MemoryGraphEdge]
-    stats: dict[str, int]
 
 
 @router.get("/graph", response_model=MemoryGraphView)

@@ -1,7 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.graph_api import (
+from app.graph.api import router
+from app.graph.helpers import supported_entity, supported_relation
+from app.graph.service import (
     MAX_EXPLORER_NODES,
     MAX_EXPLORER_RELATIONS,
     MAX_PATH_DEPTH,
@@ -11,10 +13,7 @@ from app.graph_api import (
     low_signal_entity,
     path_ids,
     rank_graph_entities,
-    router,
     source_location,
-    supported_entity,
-    supported_relation,
     temporal_filter,
 )
 from fastapi import FastAPI
@@ -103,7 +102,7 @@ def test_current_temporal_filter_excludes_superseded_entities_and_relations() ->
 
 
 def test_neighbors_other_entity_query_is_dataset_scoped() -> None:
-    source = Path("apps/api/app/graph_api.py").read_text(encoding="utf-8")
+    source = Path("apps/api/app/graph/api.py").read_text(encoding="utf-8")
     start = source.index("async def neighbors(")
     end = source.index("async def refresh_analytics")
     neighbors_source = source[start:end]

@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 import pytest
-from app.graph_consolidation import (
+from app.graph.consolidation import (
     ConsolidationOutput,
     ConsolidationRelation,
     build_input,

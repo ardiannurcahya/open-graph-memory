@@ -14,9 +14,9 @@ from app.auth import ProjectContext, require_project
 from app.config import get_settings
 from app.datasets import owned
 from app.dependencies import get_session
-from app.graph_cleanup import create_document_cleanup, mark_cleanup_ready
-from app.graph_gc import cleanup_document_graph
-from app.graph_helpers import normalize_dataset_id
+from app.graph.cleanup import create_document_cleanup, mark_cleanup_ready
+from app.graph.gc import cleanup_document_graph
+from app.graph.helpers import normalize_dataset_id
 from app.ingestion import enqueue_document
 from app.models import Document, DocumentStatus
 from app.storage import ObjectStore, get_object_store

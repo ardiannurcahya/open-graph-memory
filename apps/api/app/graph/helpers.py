@@ -3,7 +3,7 @@
 from sqlalchemy import exists, or_
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.graph_models import (
+from app.graph.models import (
     CanonicalEntity,
     GraphEvidence,
     RelationAssertion,

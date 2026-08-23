@@ -3,7 +3,8 @@ from io import BytesIO
 import pytest
 from app.chunking import RecursiveTextChunker
 from app.ingestion import PIPELINE_VERSION, deterministic_id, sanitized_error
-from app.parsers import LiteParsePdfParser, ParsedDocument, ParsedSegment, default_registry
+from app.parsers import LiteParsePdfParser, default_registry
+from open_graph_contracts.documents import ParsedDocument, ParsedSegment
 from pypdf import PdfWriter
 
 
