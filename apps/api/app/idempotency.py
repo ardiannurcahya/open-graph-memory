@@ -30,11 +30,17 @@ async def check_idempotency(
         select(IdempotencyKey).where(
             IdempotencyKey.key == key,
             IdempotencyKey.project_id == p_uuid,
+            IdempotencyKey.operation == operation,
         )
     )
     if existing:
+        created_at = (
+            existing.created_at.replace(tzinfo=UTC)
+            if existing.created_at.tzinfo is None
+            else existing.created_at
+        )
         cutoff = datetime.now(UTC) - timedelta(hours=IDEMPOTENCY_TTL_HOURS)
-        if existing.created_at >= cutoff:
+        if created_at >= cutoff:
             return existing.resource_id
         await db.delete(existing)
     return None

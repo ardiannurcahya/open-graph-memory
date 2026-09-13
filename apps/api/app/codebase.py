@@ -279,6 +279,19 @@ async def index_directory(
     project_id = ctx.project_id
     dir_path = Path(payload.directory_path).resolve()
 
+    from app.config import get_settings
+
+    settings = get_settings()
+    if settings.codebase_index_root:
+        allowed_root = Path(settings.codebase_index_root).resolve()
+        try:
+            dir_path.relative_to(allowed_root)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Directory must be within the configured codebase index root.",
+            ) from None
+
     forbidden_prefixes = (
         "/etc",
         "/proc",

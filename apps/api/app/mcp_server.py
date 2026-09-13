@@ -1,6 +1,7 @@
 """MCP Streamable HTTP server for agent integration."""
 
 import hashlib
+import math
 from typing import Any, cast
 from uuid import uuid4
 
@@ -320,6 +321,14 @@ async def execute_tool(
                 if existing:
                     return {"episode_id": existing.id, "status": "created"}
 
+        raw_confidence = arguments.get("confidence", 0.5)
+        try:
+            commit_confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            return {"error": "confidence must be a number between 0 and 1"}
+        if not math.isfinite(commit_confidence) or not (0.0 <= commit_confidence <= 1.0):
+            return {"error": "confidence must be a finite number between 0 and 1"}
+
         episode = AgentMemoryEpisode(
             id=f"mem_{uuid7()}",
             project_id=project_id,
@@ -330,7 +339,7 @@ async def execute_tool(
             problem_signature=arguments["type"],
             metadata_=metadata,
             content=content,
-            confidence=arguments.get("confidence", 0.5),
+            confidence=commit_confidence,
             version=1,
             status="open",
         )
@@ -408,14 +417,17 @@ async def execute_tool(
                 db, str(idempotency_key), project_id, "memory.feedback"
             )
             if existing_id:
-                existing = await db.get(AgentMemoryEpisode, memory_id)
-                if existing:
-                    return {
-                        "memory_id": existing.id,
-                        "status": existing.status,
-                        "confidence": existing.confidence,
-                        "version": existing.version,
-                    }
+                if existing_id != memory_id:
+                    return {"error": "idempotency key was used for a different memory"}
+                existing = await db.get(AgentMemoryEpisode, existing_id)
+                if not existing or str(existing.project_id) != project_id:
+                    return {"error": "idempotency result no longer exists"}
+                return {
+                    "memory_id": existing.id,
+                    "status": existing.status,
+                    "confidence": existing.confidence,
+                    "version": existing.version,
+                }
 
         ep_obj = await db.get(AgentMemoryEpisode, memory_id)
         if not ep_obj or str(ep_obj.project_id) != project_id:
@@ -425,9 +437,15 @@ async def execute_tool(
         feedback_content: dict[str, Any] | None = (
             sanitize_input(raw_content) if isinstance(raw_content, dict) else None
         )
-        confidence: float | None = (
-            float(arguments["confidence"]) if arguments.get("confidence") is not None else None
-        )
+        raw_confidence = arguments.get("confidence")
+        confidence: float | None = None
+        if raw_confidence is not None:
+            try:
+                confidence = float(raw_confidence)
+            except (TypeError, ValueError):
+                return {"error": "confidence must be a number between 0 and 1"}
+            if not math.isfinite(confidence) or not (0.0 <= confidence <= 1.0):
+                return {"error": "confidence must be a finite number between 0 and 1"}
         target_id: str | None = (
             str(arguments["target_id"]) if arguments.get("target_id") else None
         )
@@ -485,7 +503,9 @@ async def execute_tool(
                 db, str(idempotency_key), project_id, "memory.forget"
             )
             if existing_id:
-                return {"memory_id": memory_id, "deleted": True, "mode": mode}
+                if existing_id != memory_id:
+                    return {"error": "idempotency key was used for a different memory"}
+                return {"memory_id": existing_id, "deleted": True, "mode": mode}
 
         ep_obj = await db.get(AgentMemoryEpisode, memory_id)
         if not ep_obj or str(ep_obj.project_id) != project_id:

@@ -394,3 +394,241 @@ async def test_search_fallback_preserves_filters():
     assert "sig-test" in fallback_sql
     assert "my-repo" in fallback_sql
     assert "staging" in fallback_sql
+
+
+# 10. Export / Import preserves episode type, content, confidence, and version
+async def test_export_import_preserves_memory_fields(
+    session: AsyncSession, project: Project, api_key: ApiKey
+):
+    client = TestClient(app)
+    headers = {
+        "X-API-Key": api_key.key_prefix + "test",
+        "X-Project-ID": str(project.id),
+    }
+
+    # Create episode with custom fields
+    ep = AgentMemoryEpisode(
+        id=f"mem_{uuid.uuid4().hex[:12]}",
+        project_id=project.id,
+        domain="engineering",
+        type="bugfix",
+        title="Test Bugfix Memory",
+        goal="Preserve all fields across export/import",
+        problem_signature="sig-preserve-fields",
+        content={"solution": "fix applied", "status": "resolved"},
+        confidence=0.88,
+        version=3,
+        status="open",
+    )
+    session.add(ep)
+    await session.commit()
+
+    # Export project
+    export_res = client.get(
+        f"/v1/projects/{project.id}/export",
+        headers=headers,
+    )
+    assert export_res.status_code == 200
+    export_data = export_res.json()
+    episodes = export_data.get("episodes", [])
+    matching = [e for e in episodes if e.get("id") == ep.id]
+    assert len(matching) == 1
+    exported_ep = matching[0]
+    assert exported_ep["type"] == "bugfix"
+    assert exported_ep["content"] == {"solution": "fix applied", "status": "resolved"}
+    assert exported_ep["confidence"] == 0.88
+    assert exported_ep["version"] == 3
+
+    # Import into a new project
+    proj2 = Project(id=uuid.uuid4(), name="Project 2")
+    full_key2 = "test_prefix_1234_secret_key"
+    key2 = ApiKey(
+        id=uuid.uuid4(),
+        project_id=proj2.id,
+        name="Key 2",
+        key_prefix=full_key2[:16],
+        key_hash=hashlib.sha256(full_key2.encode()).hexdigest(),
+    )
+    session.add_all([proj2, key2])
+    await session.commit()
+
+    headers2 = {
+        "X-API-Key": full_key2,
+        "X-Project-ID": str(proj2.id),
+    }
+    import_res = client.post(
+        f"/v1/projects/{proj2.id}/import",
+        json={"data": export_data, "owner_email": "test@example.com"},
+        headers=headers2,
+    )
+    assert import_res.status_code == 200
+    assert import_res.json()["episodes_imported"] >= 1
+
+    imported_ep = await session.scalar(
+        select(AgentMemoryEpisode).where(
+            AgentMemoryEpisode.project_id == proj2.id,
+            AgentMemoryEpisode.problem_signature == "sig-preserve-fields",
+        )
+    )
+    assert imported_ep is not None
+    assert imported_ep.type == "bugfix"
+    assert imported_ep.content == {"solution": "fix applied", "status": "resolved"}
+    assert imported_ep.confidence == 0.88
+    assert imported_ep.version == 3
+
+
+# 11. Idempotency check scoped by operation
+async def test_idempotency_scoped_by_operation(session: AsyncSession, project: Project):
+    from app.idempotency import check_idempotency, store_idempotency
+
+    key = f"idem_{uuid.uuid4().hex}"
+    await store_idempotency(
+        session,
+        key=key,
+        project_id=project.id,
+        operation="memory.feedback",
+        resource_id="res_123",
+        result_data={"status": "ok"},
+    )
+    await session.commit()
+
+    # Different operation must return None
+    res_forget = await check_idempotency(session, key, project.id, "memory.forget")
+    assert res_forget is None
+
+    # Matching operation returns the resource_id
+    res_feedback = await check_idempotency(session, key, project.id, "memory.feedback")
+    assert res_feedback == "res_123"
+
+
+# 12. MCP idempotency replay and confidence validation
+async def test_mcp_idempotency_and_confidence_validation(
+    session: AsyncSession, project: Project
+):
+    ep1 = AgentMemoryEpisode(
+        id=f"mem_{uuid.uuid4().hex[:12]}",
+        project_id=project.id,
+        domain="engineering",
+        type="bugfix",
+        title="Ep 1",
+        goal="g1",
+        problem_signature="sig-1",
+        confidence=0.5,
+        version=1,
+        status="open",
+    )
+    ep2 = AgentMemoryEpisode(
+        id=f"mem_{uuid.uuid4().hex[:12]}",
+        project_id=project.id,
+        domain="engineering",
+        type="bugfix",
+        title="Ep 2",
+        goal="g2",
+        problem_signature="sig-2",
+        confidence=0.5,
+        version=1,
+        status="open",
+    )
+    session.add_all([ep1, ep2])
+    await session.commit()
+
+    # Feedback with key on ep1
+    idem_key = f"idem_{uuid.uuid4().hex}"
+    res1 = await execute_tool(
+        "memory_feedback",
+        {"memory_id": ep1.id, "kind": "confirm", "idempotency_key": idem_key},
+        str(project.id),
+        session,
+    )
+    assert res1.get("memory_id") == ep1.id
+
+    # Replay same key with DIFFERENT memory_id (ep2) -> must reject
+    res2 = await execute_tool(
+        "memory_feedback",
+        {"memory_id": ep2.id, "kind": "confirm", "idempotency_key": idem_key},
+        str(project.id),
+        session,
+    )
+    assert "error" in res2
+    assert "idempotency key was used for a different memory" in res2["error"]
+
+    # Forget with key on ep1
+    forget_key = f"forget_{uuid.uuid4().hex}"
+    fres1 = await execute_tool(
+        "memory_forget",
+        {"memory_id": ep1.id, "mode": "archive", "idempotency_key": forget_key},
+        str(project.id),
+        session,
+    )
+    assert fres1.get("deleted") is True
+
+    # Replay forget key on ep2 -> must reject
+    fres2 = await execute_tool(
+        "memory_forget",
+        {"memory_id": ep2.id, "mode": "archive", "idempotency_key": forget_key},
+        str(project.id),
+        session,
+    )
+    assert "error" in fres2
+    assert "idempotency key was used for a different memory" in fres2["error"]
+
+    # Invalid confidence validation on memory_feedback
+    err_str = await execute_tool(
+        "memory_feedback",
+        {"memory_id": ep2.id, "kind": "confirm", "confidence": "not-a-number"},
+        str(project.id),
+        session,
+    )
+    assert "error" in err_str
+    assert "confidence must be a number" in err_str["error"]
+
+    err_range = await execute_tool(
+        "memory_feedback",
+        {"memory_id": ep2.id, "kind": "confirm", "confidence": 1.5},
+        str(project.id),
+        session,
+    )
+    assert "error" in err_range
+    assert "finite number between 0 and 1" in err_range["error"]
+
+    # Invalid confidence on memory_commit
+    commit_err = await execute_tool(
+        "memory_commit",
+        {"type": "custom", "content": {"key": "val"}, "confidence": -0.1},
+        str(project.id),
+        session,
+    )
+    assert "error" in commit_err
+    assert "finite number between 0 and 1" in commit_err["error"]
+
+
+# 13. Codebase index-directory allowlist check
+async def test_codebase_index_directory_allowlist(
+    session: AsyncSession, project: Project, api_key: ApiKey, tmp_path: Path
+):
+    from app.config import get_settings
+
+    allowed_dir = tmp_path / "allowed_codebase"
+    allowed_dir.mkdir()
+    outside_dir = tmp_path / "outside_codebase"
+    outside_dir.mkdir()
+
+    settings = get_settings()
+    orig_root = settings.codebase_index_root
+    try:
+        settings.codebase_index_root = str(allowed_dir)
+        client = TestClient(app)
+        headers = {
+            "X-API-Key": api_key.key_prefix + "test",
+            "X-Project-ID": str(project.id),
+        }
+
+        res = client.post(
+            "/v1/codebase/index-directory",
+            json={"directory_path": str(outside_dir)},
+            headers=headers,
+        )
+        assert res.status_code == 400
+        assert "within the configured codebase index root" in res.json()["detail"].lower()
+    finally:
+        settings.codebase_index_root = orig_root
