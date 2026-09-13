@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     retrieval_graph_fanout: int = 10
     retrieval_graph_timeout_ms: int = 1000
     readiness_timeout_seconds: int = 2
+    codebase_index_root: str | None = None
 
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":

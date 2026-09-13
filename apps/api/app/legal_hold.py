@@ -1,11 +1,12 @@
 """Legal hold API for compliance."""
 
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Project
@@ -97,11 +98,7 @@ async def list_legal_holds(
     if resource_type:
         query = query.where(LegalHold.resource_type == resource_type)
 
-    total_query = select(LegalHold).where(LegalHold.project_id == project.project_id)
-    if resource_type:
-        total_query = total_query.where(LegalHold.resource_type == resource_type)
-
-    total = len(list(await db.scalars(total_query)))
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = list(
         await db.scalars(query.order_by(LegalHold.created_at.desc()).limit(limit).offset(offset))
     )
@@ -159,14 +156,27 @@ async def delete_legal_hold(hold_id: str, project: Project, db: Db) -> None:
 
 async def check_legal_hold(
     db: AsyncSession,
-    project_id: str,
+    project_id: str | UUID,
     resource_ids: list[str],
     resource_types: list[str] | None = None,
 ) -> None:
+    p_uuid = UUID(str(project_id))
+    project_hold = await db.scalar(
+        select(LegalHold).where(
+            LegalHold.project_id == p_uuid,
+            LegalHold.resource_type == "project",
+        )
+    )
+    if project_hold:
+        raise HTTPException(
+            423,
+            f"project is under legal hold: project:{project_id}",
+        )
+
     if not resource_ids:
         return
     query = select(LegalHold).where(
-        LegalHold.project_id == project_id,
+        LegalHold.project_id == p_uuid,
         LegalHold.resource_id.in_(resource_ids),
     )
     if resource_types:

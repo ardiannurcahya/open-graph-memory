@@ -15,7 +15,7 @@ dependencies = [
     "structlog>=24,<26",
     "boto3>=1.35,<2",
     "python-multipart>=0.0.18,<1",
-    "pypdf>=6.15.0,<7",
+    "pypdf>=6.16.1,<7",
 
     "liteparse==2.6.0",
     "markdown-it-py>=3,<4",

@@ -41,7 +41,7 @@ def backup(out: str, fmt: str) -> None:
 
     click.echo(f"Creating backup: {out_path}")
 
-    pg_dump_cmd = ["pg_dump", db_url.replace("+asyncpg", "").replace("postgresql://", "")]
+    pg_dump_cmd = ["pg_dump", db_url.replace("+asyncpg", "")]
 
     if fmt == "custom":
         pg_dump_cmd.extend(["-Fc", "-f", str(out_path.with_suffix(".dump"))])
@@ -79,14 +79,14 @@ def restore(from_file: str, apply: bool) -> None:
 
     click.echo(f"Restoring from: {from_path}")
 
-    psql_cmd = ["psql", db_url.replace("+asyncpg", "").replace("postgresql://", "")]
+    psql_cmd = ["psql", db_url.replace("+asyncpg", "")]
 
     try:
         if from_path.suffix == ".dump":
             pg_restore_cmd = [
                 "pg_restore",
                 "-d",
-                db_url.replace("+asyncpg", "").replace("postgresql://", ""),
+                db_url.replace("+asyncpg", ""),
                 str(from_path),
             ]
             subprocess.run(pg_restore_cmd, capture_output=True, text=True, check=True)
@@ -205,15 +205,6 @@ def fts_rebuild() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             click.echo("Rebuilding FTS indexes...")
-
-            await conn.execute(
-                text(
-                    "UPDATE agent_memory_episodes "
-                    "SET search_vector = to_tsvector('simple', "
-                    "title || ' ' || goal || ' ' || problem_signature) "
-                    "WHERE search_vector IS NULL;"
-                )
-            )
 
             await conn.execute(text("REINDEX INDEX ix_agent_memory_episodes_search;"))
 

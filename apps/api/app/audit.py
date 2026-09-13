@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from open_graph_core.ids import uuid7
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import Project
@@ -80,7 +80,7 @@ async def list_audit_logs(
     if operation:
         query = query.where(AuditLog.operation == operation)
 
-    total = len(list(await db.scalars(query)))
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = list(
         await db.scalars(query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset))
     )
