@@ -233,6 +233,18 @@ async def fetch_search_results(
                 fallback_stmt = fallback_stmt.where(
                     AgentMemoryEpisode.status.not_in(["superseded", "rejected"])
                 )
+            if problem_signature:
+                fallback_stmt = fallback_stmt.where(
+                    AgentMemoryEpisode.problem_signature == problem_signature
+                )
+            if repository:
+                fallback_stmt = fallback_stmt.where(
+                    AgentMemoryEpisode.scope["repository"].astext == repository
+                )
+            if environment:
+                fallback_stmt = fallback_stmt.where(
+                    AgentMemoryEpisode.scope["environment"].astext == environment
+                )
             fallback_exec = await db.execute(
                 fallback_stmt.order_by(desc(AgentMemoryEpisode.created_at)).limit(limit)
             )

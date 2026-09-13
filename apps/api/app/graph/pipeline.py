@@ -675,7 +675,8 @@ async def consolidate_document(
             run.status, run.error_message, run.completed_at = RunStatus.RUNNING, None, None
         await db.flush()
         try:
-            output = consolidate_openai(
+            output = await to_thread(
+                consolidate_openai,
                 settings.graph_extractor_base_url,
                 settings.openai_api_key.get_secret_value(),
                 settings.graph_extractor_model,

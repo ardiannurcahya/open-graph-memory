@@ -153,6 +153,17 @@ async def supersede_memory(
     if superseding.id == current.id:
         raise HTTPException(400, "cannot supersede itself")
 
+    # Traverse superseding chain to detect potential cycles
+    cursor: AgentMemoryEpisode | None = superseding
+    visited = {current.id}
+    while cursor:
+        if cursor.id in visited:
+            raise HTTPException(400, "memory supersession would create a cycle")
+        visited.add(cursor.id)
+        if not cursor.superseded_by_id:
+            break
+        cursor = await db.get(AgentMemoryEpisode, cursor.superseded_by_id)
+
     now = datetime.now(UTC)
 
     current.status = "superseded"

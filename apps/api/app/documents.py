@@ -186,7 +186,14 @@ async def upload(
                 if existing is None:
                     raise
 
-        if existing.status == DocumentStatus.UPLOADED:
+        if existing.status in {
+            DocumentStatus.UPLOADED,
+            DocumentStatus.QUEUED,
+            DocumentStatus.PARSING,
+            DocumentStatus.CHUNKING,
+            DocumentStatus.PERSISTING,
+            DocumentStatus.INDEXED,
+        }:
             result = serialize(existing, True)
             await db.commit()
             return result

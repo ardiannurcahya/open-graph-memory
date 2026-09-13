@@ -1,7 +1,7 @@
 """MCP Streamable HTTP server for agent integration."""
 
 import hashlib
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -381,6 +381,150 @@ async def execute_tool(
             "status": ep_obj.status,
             "version": ep_obj.version,
         }
+
+    if name == "memory_feedback":
+        raw_id = arguments.get("memory_id")
+        if not raw_id or not isinstance(raw_id, str):
+            return {"error": "memory_id is required"}
+        memory_id = raw_id
+
+        raw_kind = arguments.get("kind")
+        valid_kinds = {"confirm", "reject", "correct", "supersede", "merge", "stale", "verified"}
+        if raw_kind not in valid_kinds:
+            return {"error": f"invalid feedback kind: {raw_kind}"}
+
+        from app.memory.confidence import (
+            FeedbackKind,
+            apply_confidence_feedback,
+            merge_memories,
+            supersede_memory,
+        )
+
+        kind = cast(FeedbackKind, raw_kind)
+
+        idempotency_key = arguments.get("idempotency_key")
+        if idempotency_key:
+            existing_id = await check_idempotency(
+                db, str(idempotency_key), project_id, "memory.feedback"
+            )
+            if existing_id:
+                existing = await db.get(AgentMemoryEpisode, memory_id)
+                if existing:
+                    return {
+                        "memory_id": existing.id,
+                        "status": existing.status,
+                        "confidence": existing.confidence,
+                        "version": existing.version,
+                    }
+
+        ep_obj = await db.get(AgentMemoryEpisode, memory_id)
+        if not ep_obj or str(ep_obj.project_id) != project_id:
+            return {"error": "memory not found"}
+
+        raw_content = arguments.get("content")
+        feedback_content: dict[str, Any] | None = (
+            sanitize_input(raw_content) if isinstance(raw_content, dict) else None
+        )
+        confidence: float | None = (
+            float(arguments["confidence"]) if arguments.get("confidence") is not None else None
+        )
+        target_id: str | None = (
+            str(arguments["target_id"]) if arguments.get("target_id") else None
+        )
+
+        try:
+            if kind in ("correct", "merge"):
+                if kind == "merge":
+                    if not target_id:
+                        return {"error": "merge requires target_id"}
+                    ep_obj = await merge_memories(
+                        db, ep_obj, target_id, feedback_content, confidence
+                    )
+                else:
+                    ep_obj = await apply_confidence_feedback(
+                        db, ep_obj, kind, feedback_content, confidence
+                    )
+            elif kind == "supersede":
+                if not target_id:
+                    return {"error": "supersede requires target_id"}
+                ep_obj = await supersede_memory(db, ep_obj, target_id)
+            else:
+                ep_obj = await apply_confidence_feedback(db, ep_obj, kind, feedback_content)
+
+            if idempotency_key:
+                await store_idempotency(
+                    db,
+                    str(idempotency_key),
+                    project_id,
+                    "memory.feedback",
+                    ep_obj.id,
+                    {"id": ep_obj.id, "status": ep_obj.status, "confidence": ep_obj.confidence},
+                )
+
+            await db.commit()
+            return {
+                "memory_id": ep_obj.id,
+                "status": ep_obj.status,
+                "confidence": ep_obj.confidence,
+                "version": ep_obj.version,
+            }
+        except Exception as exc:
+            await db.rollback()
+            return {"error": str(exc)}
+
+    if name == "memory_forget":
+        raw_id = arguments.get("memory_id")
+        if not raw_id or not isinstance(raw_id, str):
+            return {"error": "memory_id is required"}
+        memory_id = raw_id
+
+        mode = str(arguments.get("mode", "archive"))
+        idempotency_key = arguments.get("idempotency_key")
+        if idempotency_key:
+            existing_id = await check_idempotency(
+                db, str(idempotency_key), project_id, "memory.forget"
+            )
+            if existing_id:
+                return {"memory_id": memory_id, "deleted": True, "mode": mode}
+
+        ep_obj = await db.get(AgentMemoryEpisode, memory_id)
+        if not ep_obj or str(ep_obj.project_id) != project_id:
+            return {"error": "memory not found"}
+
+        from datetime import UTC, datetime
+
+        try:
+            if mode == "archive":
+                ep_obj.status = "archived"
+                ep_obj.updated_at = datetime.now(UTC)
+            elif mode == "invalidate":
+                ep_obj.status = "rejected"
+                ep_obj.updated_at = datetime.now(UTC)
+            elif mode in ("hard", "hard_delete"):
+                from app.legal_hold import check_legal_hold
+
+                try:
+                    await check_legal_hold(db, project_id, [memory_id])
+                except Exception as err:
+                    return {"error": f"memory is under legal hold: {err}"}
+                await db.delete(ep_obj)
+            else:
+                return {"error": f"invalid mode: {mode}"}
+
+            if idempotency_key:
+                await store_idempotency(
+                    db,
+                    str(idempotency_key),
+                    project_id,
+                    "memory.forget",
+                    memory_id,
+                    {"id": memory_id, "mode": mode},
+                )
+            await db.commit()
+            return {"memory_id": memory_id, "deleted": True, "mode": mode}
+        except Exception as exc:
+            await db.rollback()
+            return {"error": str(exc)}
 
     return {"error": f"unknown tool: {name}"}
 

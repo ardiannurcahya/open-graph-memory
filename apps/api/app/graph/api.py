@@ -92,7 +92,8 @@ async def search_entities(
     as_of: Annotated[datetime | None, Query(description="Temporal snapshot timestamp")] = None,
     include_history: Annotated[bool, Query(description="Include all temporal versions")] = False,
 ) -> list[EntityView]:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     term = q.strip()
     if not term:
         raise HTTPException(422, "search query must not be blank")
@@ -140,7 +141,8 @@ async def path(
     max_depth: Annotated[int, Query(ge=1, le=MAX_PATH_DEPTH)] = 3,
     relation_limit: Annotated[int, Query(ge=1, le=MAX_PATH_RELATIONS)] = 100,
 ) -> PathView:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     source = await scoped_dataset_entity(db, project, dataset_id, source_entity_id)
     await scoped_dataset_entity(db, project, dataset_id, target_entity_id)
     entities, relations, parents = await bounded_walk(
@@ -175,7 +177,8 @@ async def subgraph(
     node_limit: Annotated[int, Query(ge=1, le=MAX_NODES)] = 100,
     relation_limit: Annotated[int, Query(ge=1, le=MAX_SUBGRAPH_RELATIONS)] = 200,
 ) -> SubgraphView:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     root = await scoped_dataset_entity(db, project, dataset_id, entity_id)
     entities, relations, _ = await bounded_walk(
         db,
@@ -248,7 +251,8 @@ async def neighbors(
 
 @router.post("/datasets/{dataset_id}/analytics/refresh", response_model=AnalyticsRunView)
 async def refresh_analytics(dataset_id: str, project: Project, db: Db) -> AnalyticsRunView:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     try:
         run = await refresh_dataset_analytics(db, project.project_id, dataset_id)
         await db.commit()
@@ -268,7 +272,8 @@ async def graph(
     as_of: datetime | None = Query(None, description="Temporal snapshot timestamp"),  # noqa: B008
     include_history: bool = Query(False, description="Include all temporal versions"),  # noqa: B008
 ) -> GraphSummary:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     return await build_dataset_graph(
         db, project, dataset_id, limit=limit, depth=depth, as_of=as_of,
         include_history=include_history,
@@ -285,7 +290,8 @@ async def explorer(
     community_level: int = Query(0, ge=0, le=2),
 ) -> ExplorerView:
     """Bounded Postgres graph view. Analytics enriches but never gates nodes."""
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     return await build_explorer_view(
         db, project, dataset_id, node_limit=node_limit,
         relation_limit=relation_limit, community_level=community_level,
@@ -302,7 +308,8 @@ async def explorer_nodes(
     community_level: int = Query(0, ge=0, le=2),
 ) -> ExplorerNodePage:
     """Keyset-paged supported nodes; analytics enriches but never gates rows."""
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     return await build_explorer_node_page(
         db, project, dataset_id, cursor=cursor, limit=limit,
         community_level=community_level,
@@ -321,7 +328,8 @@ async def explorer_relations(
     limit: int = Query(MAX_EXPLORER_RELATIONS, ge=1, le=MAX_EXPLORER_RELATIONS),
 ) -> ExplorerRelationPage:
     """Keyset-paged relations independent of node pages, preserving cross-page edges."""
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     return await list_explorer_relations(db, project, dataset_id, cursor=cursor, limit=limit)
 
 
@@ -366,7 +374,8 @@ async def relation_evidence(
     db: Db,
     limit: Annotated[int, Query(ge=1, le=MAX_NEIGHBORS)] = 25,
 ) -> list[EvidenceView]:
-    await owned(db, project, dataset_id)
+    ds = await owned(db, project, dataset_id)
+    dataset_id = ds.id
     relation = await db.scalar(
         select(RelationAssertion).where(
             RelationAssertion.id == relation_id,

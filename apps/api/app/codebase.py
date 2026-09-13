@@ -277,7 +277,24 @@ async def index_directory(
 
     start_time = time.perf_counter()
     project_id = ctx.project_id
-    dir_path = Path(payload.directory_path)
+    dir_path = Path(payload.directory_path).resolve()
+
+    forbidden_prefixes = (
+        "/etc",
+        "/proc",
+        "/sys",
+        "/dev",
+        "/boot",
+        "/root",
+        "/var/run",
+        "/var/log",
+    )
+    resolved_str = str(dir_path)
+    if resolved_str == "/" or any(
+        resolved_str == prefix or resolved_str.startswith(f"{prefix}/")
+        for prefix in forbidden_prefixes
+    ):
+        raise HTTPException(status_code=400, detail="Access to system directories is forbidden.")
 
     if not dir_path.exists() or not dir_path.is_dir():
         msg = f"Directory '{payload.directory_path}' does not exist on server."
@@ -338,6 +355,11 @@ async def index_directory(
 
     for file_path in dir_path.rglob("*"):
         if not file_path.is_file():
+            continue
+        try:
+            if not file_path.resolve().is_relative_to(dir_path):
+                continue
+        except (ValueError, RuntimeError):
             continue
         if any(ign in file_path.parts for ign in ignore_dirs):
             continue

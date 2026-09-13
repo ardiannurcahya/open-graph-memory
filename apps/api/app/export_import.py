@@ -143,33 +143,44 @@ async def import_project(
 
     imported = 0
     for ep_data in episodes_data:
-        existing = await db.scalar(
-            select(AgentMemoryEpisode).where(
-                AgentMemoryEpisode.project_id == project.project_id,
-                AgentMemoryEpisode.id == ep_data.get("id"),
-            )
-        )
-        if existing:
-            continue
+        raw_id = ep_data.get("id")
+        ep_id = raw_id or f"mem_{uuid7()}"
+        remap_ids = False
+        if raw_id:
+            existing = await db.get(AgentMemoryEpisode, raw_id)
+            if existing:
+                if str(existing.project_id) == str(project.project_id):
+                    continue
+                ep_id = f"mem_{uuid7()}"
+                remap_ids = True
 
         episode = AgentMemoryEpisode(
-            id=ep_data.get("id", f"mem_{uuid7()}"),
+            id=ep_id,
             project_id=project.project_id,
             domain=ep_data.get("domain", "custom"),
+            type=ep_data.get("type", "custom"),
             title=ep_data.get("title", "Imported episode"),
             goal=ep_data.get("goal", ""),
             problem_signature=ep_data.get("problem_signature", ""),
             scope=ep_data.get("scope", {}),
             tags=ep_data.get("tags", []),
             metadata_=ep_data.get("metadata", {}),
+            content=ep_data.get("content"),
+            confidence=ep_data.get("confidence", 0.5),
+            version=ep_data.get("version", 1),
             status=ep_data.get("status", "open"),
             feedback_score=ep_data.get("feedback_score", 0),
         )
         db.add(episode)
 
         for attempt_data in ep_data.get("attempts", []):
+            raw_att_id = attempt_data.get("id")
+            att_id = f"att_{uuid7()}" if (remap_ids or not raw_att_id) else raw_att_id
+            if not remap_ids and raw_att_id:
+                if await db.get(AgentMemoryAttempt, raw_att_id):
+                    att_id = f"att_{uuid7()}"
             attempt = AgentMemoryAttempt(
-                id=attempt_data.get("id", f"att_{uuid7()}"),
+                id=att_id,
                 episode_id=episode.id,
                 sequence=attempt_data.get("sequence", 1),
                 hypothesis=attempt_data.get("hypothesis", ""),
@@ -182,8 +193,13 @@ async def import_project(
 
         outcome_data = ep_data.get("outcome")
         if outcome_data:
+            raw_out_id = outcome_data.get("id")
+            out_id = f"out_{uuid7()}" if (remap_ids or not raw_out_id) else raw_out_id
+            if not remap_ids and raw_out_id:
+                if await db.get(AgentMemoryOutcome, raw_out_id):
+                    out_id = f"out_{uuid7()}"
             outcome = AgentMemoryOutcome(
-                id=outcome_data.get("id", f"out_{uuid7()}"),
+                id=out_id,
                 episode_id=episode.id,
                 status=outcome_data.get("status", "success"),
                 summary=outcome_data.get("summary", ""),
@@ -195,8 +211,13 @@ async def import_project(
             db.add(outcome)
 
         for evidence_data in ep_data.get("evidence", []):
+            raw_ev_id = evidence_data.get("id")
+            ev_id = f"ev_{uuid7()}" if (remap_ids or not raw_ev_id) else raw_ev_id
+            if not remap_ids and raw_ev_id:
+                if await db.get(AgentMemoryEvidence, raw_ev_id):
+                    ev_id = f"ev_{uuid7()}"
             evidence = AgentMemoryEvidence(
-                id=evidence_data.get("id", f"ev_{uuid7()}"),
+                id=ev_id,
                 episode_id=episode.id,
                 reference=evidence_data.get("reference", ""),
                 metadata_=evidence_data.get("metadata", {}),

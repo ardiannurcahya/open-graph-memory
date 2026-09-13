@@ -103,6 +103,21 @@ async def apply_retention(body: RetentionInput, project: Project, db: Db) -> Ret
     )
     db.add(policy)
 
+    project_hold = await db.scalar(
+        select(LegalHold).where(
+            LegalHold.project_id == project.project_id,
+            LegalHold.resource_type == "project",
+        )
+    )
+    if project_hold:
+        policy.status = "completed"
+        await db.commit()
+        return RetentionApplyResponse(
+            policy_id=pid,
+            affected_count=0,
+            action=body.action,
+        )
+
     held_ids = set()
     holds = list(
         await db.scalars(

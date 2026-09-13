@@ -78,7 +78,7 @@ class S3ObjectStore:
 
 class LocalObjectStore:
     def __init__(self, base_dir: str | Path) -> None:
-        self.base_dir = Path(base_dir)
+        self.base_dir = Path(base_dir).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
@@ -88,19 +88,26 @@ class LocalObjectStore:
             raise TypeError("base_dir must be a string")
         return cls(base_dir=base_dir)
 
+    def _safe_path(self, key: str) -> Path:
+        clean_key = key.lstrip("/\\")
+        file_path = (self.base_dir / clean_key).resolve()
+        if not file_path.is_relative_to(self.base_dir):
+            raise ValueError(f"Path traversal detected in object store key: {key}")
+        return file_path
+
     async def upload(self, key: str, stream: IO[bytes], content_type: str) -> None:
-        file_path = self.base_dir / key
+        file_path = self._safe_path(key)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         content = stream.read()
         await asyncio.to_thread(file_path.write_bytes, content)
 
     async def delete(self, key: str) -> None:
-        file_path = self.base_dir / key
+        file_path = self._safe_path(key)
         if file_path.exists():
             await asyncio.to_thread(file_path.unlink)
 
     async def download(self, key: str) -> bytes:
-        file_path = self.base_dir / key
+        file_path = self._safe_path(key)
         if not file_path.exists():
             raise FileNotFoundError(f"Key not found in local object store: {key}")
         return await asyncio.to_thread(file_path.read_bytes)
