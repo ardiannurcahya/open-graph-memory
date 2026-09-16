@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -136,6 +137,7 @@ class Chunk(Base):
     chunk_index: Mapped[int]
     text: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int]
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -300,6 +302,7 @@ class AgentMemoryEpisode(Base):
     superseded_by_id: Mapped[str | None] = mapped_column(
         ForeignKey("agent_memory_episodes.id", ondelete="SET NULL")
     )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     search_vector: Mapped[object] = mapped_column(
         TSVECTOR,
         Computed(

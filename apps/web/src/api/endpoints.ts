@@ -22,6 +22,8 @@ import type {
   NeighborView,
   ProjectCreated,
   RelationView,
+  RetrievalQueryInput,
+  RetrievalResponse,
 } from "./types";
 
 export const projectsApi = {
@@ -115,3 +117,9 @@ export const agentMemoryApi = {
   getGraph: (params?: { status?: string; domain?: string; limit?: number }) =>
     api.get<MemoryGraphView>("/v1/agent-memory/graph", { params }),
 };
+
+export const retrievalApi = {
+  query: (body: RetrievalQueryInput) =>
+    api.post<RetrievalResponse>("/v1/retrieval/query", { json: body }),
+};
+

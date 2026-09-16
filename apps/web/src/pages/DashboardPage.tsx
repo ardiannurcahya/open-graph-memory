@@ -8,7 +8,8 @@ import {
   Server, 
   Activity, 
   FileCode2, 
-  GitFork
+  GitFork,
+  Sparkles
 } from "lucide-react";
 import { useAuthStore } from "../store/auth";
 
@@ -68,7 +69,14 @@ export default function DashboardPage() {
         <h2 className="text-xs font-bold uppercase tracking-wider text-subdued mb-3 flex items-center gap-2">
           <Cpu className="h-4 w-4 text-mac-accent" /> Workspaces
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <FeatureCard
+            title="RAG Playground"
+            desc="Test and compare Vector RAG (pgvector), GraphRAG traversal, and Hybrid RRF fusion."
+            to="/retrieval"
+            icon={Sparkles}
+            badge="Comparison"
+          />
           <FeatureCard
             title="Graph Playground"
             desc="Search symbols, inspect call paths, subgraphs, and relation evidence in 2D/3D graph."

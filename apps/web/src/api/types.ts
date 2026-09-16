@@ -339,3 +339,51 @@ export interface MemoryGraphView {
     evidence: number;
   };
 }
+
+export type RetrievalMode = "vector" | "graph" | "hybrid";
+
+export interface RetrievalQueryInput {
+  query: string;
+  dataset_id: string;
+  mode?: RetrievalMode;
+  top_k?: number;
+  vector_weight?: number;
+  graph_weight?: number;
+  compare?: boolean;
+}
+
+export interface ChunkEvidenceView {
+  chunk_id: string;
+  document_id: string;
+  content: string;
+  score: number;
+  source: "vector" | "graph" | "hybrid";
+  vector_score?: number | null;
+  graph_score?: number | null;
+  entities: string[];
+  relations: string[];
+  source_location?: Record<string, number> | null;
+}
+
+export interface ModeRetrievalResult {
+  mode: string;
+  chunks: ChunkEvidenceView[];
+  latency_ms: number;
+  total_chunks: number;
+  entities_found: string[];
+  relations_found: string[];
+}
+
+export interface RetrievalResponse {
+  query: string;
+  dataset_id: string;
+  mode: string;
+  result: ModeRetrievalResult;
+  comparison?: {
+    vector: ModeRetrievalResult;
+    graph: ModeRetrievalResult;
+    hybrid: ModeRetrievalResult;
+  } | null;
+  latency_ms: number;
+}
+

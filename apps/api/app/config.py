@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     retrieval_graph_timeout_ms: int = 1000
     readiness_timeout_seconds: int = 2
     codebase_index_root: str | None = None
+    vector_search_enabled: bool = True
+    vector_embedding_provider: str = "deterministic"
+    vector_embedding_model: str = "text-embedding-3-small"
+    vector_dimensions: int = 1536
+    vector_similarity_top_k: int = 10
+    hybrid_rrf_k: int = 60
+    hybrid_vector_weight: float = 0.5
+    hybrid_graph_weight: float = 0.5
 
     @model_validator(mode="after")
     def validate_settings(self) -> "Settings":

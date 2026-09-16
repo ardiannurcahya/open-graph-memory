@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.chunking import RecursiveTextChunker
 from app.config import get_settings
 from app.db import engine
+from app.embedding import get_embedding_provider
 from app.graph.gc import cleanup_document_graph
 from app.models import (
     Chunk,
@@ -143,7 +144,15 @@ async def run_ingestion(
             )
             await db.flush()
             await cleanup_document_graph(db, document.project_id, document.dataset_id, document.id)
-            for item in chunks:
+
+            embedding_provider = get_embedding_provider()
+            chunk_texts = [item.text for item in chunks]
+            chunk_embeddings = (
+                await embedding_provider.embed_texts(chunk_texts) if chunk_texts else []
+            )
+
+            for i, item in enumerate(chunks):
+                emb = chunk_embeddings[i] if i < len(chunk_embeddings) else None
                 db.add(
                     Chunk(
                         id=deterministic_id(
@@ -160,6 +169,7 @@ async def run_ingestion(
                         chunk_index=item.index,
                         text=item.text,
                         token_count=item.token_count,
+                        embedding=emb,
                         metadata_={
                             "chunker": chunker.version,
                             **parsed.metadata,

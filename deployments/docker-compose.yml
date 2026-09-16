@@ -1,7 +1,7 @@
 name: opengraphrag
 services:
   postgres:
-    image: postgres:16.8-alpine
+    image: pgvector/pgvector:pg16
     environment: {POSTGRES_DB: "${POSTGRES_DB:-opengraphrag}", POSTGRES_USER: "${POSTGRES_USER:-opengraphrag}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-me}"}
     healthcheck: {test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"], interval: 10s, timeout: 5s, retries: 5}
     volumes: [postgres-data:/var/lib/postgresql/data]

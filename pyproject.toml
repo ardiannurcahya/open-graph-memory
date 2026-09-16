@@ -24,6 +24,7 @@ dependencies = [
     "networkx>=3.4,<4",
     "tree-sitter>=0.21.0,<0.22.0",
     "tree-sitter-languages>=1.10.2,<2",
+    "pgvector>=0.3.6,<1",
 ]
 
 
