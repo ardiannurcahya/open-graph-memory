@@ -17,6 +17,7 @@ from app.memory.api import router as agent_memory_router
 from app.observability import MetricsMiddleware
 from app.projects import router as projects_router
 from app.retention import router as retention_router
+from app.retrieval_api import router as retrieval_router
 
 
 @asynccontextmanager
@@ -39,3 +40,4 @@ app.include_router(audit_router)
 app.include_router(export_import_router)
 app.include_router(mcp_router)
 app.include_router(codebase_router)
+app.include_router(retrieval_router)
