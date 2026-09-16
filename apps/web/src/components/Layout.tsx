@@ -5,7 +5,8 @@ import {
   Network, 
   Brain, 
   LogOut, 
-  Layers
+  Layers,
+  Sparkles
 } from "lucide-react";
 import { useAuthStore } from "../store/auth";
 import { ThemeControl } from "./ThemeControl";
@@ -14,6 +15,7 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/datasets", label: "Datasets", icon: Database },
   { to: "/graph", label: "Graph Playground", icon: Network },
+  { to: "/retrieval", label: "RAG Playground", icon: Sparkles },
   { to: "/memory", label: "Agent Memory", icon: Brain },
 ];
 
