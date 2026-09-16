@@ -7,6 +7,7 @@ import pytest_asyncio
 from app.dependencies import get_session
 from app.main import app
 from app.models import ApiKey, Base, Project
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import event
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -23,6 +24,11 @@ def compile_jsonb_sqlite(type_, compiler, **kw):
 @compiles(TSVECTOR, "sqlite")
 def compile_tsvector_sqlite(type_, compiler, **kw):
     return "TEXT"
+
+
+@compiles(Vector, "sqlite")
+def compile_vector_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 
 @pytest_asyncio.fixture
