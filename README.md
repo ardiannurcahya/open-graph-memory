@@ -222,7 +222,7 @@ POST   /v1/agent-memory/patterns/{pattern_key}/supersede  # Supersede pattern
 
 ### MCP Integration
 
-OpenGraphMemory exposes Agent Memory through the [OGM MCP Skills](https://github.com/ardiannurcahya/ogm-mcp-skills) MCP server for Claude Code, OpenCode, and Hermes:
+OpenGraphMemory exposes Agent Memory through the [OGM MCP Skills](https://github.com/ardiannurcahya/ogm-mcp-skills) MCP server for Google Antigravity, Cursor, Claude Code, OpenCode, Hermes Agent, OpenClaw, and OpenAI Codex:
 
 ```json
 {
@@ -309,7 +309,7 @@ curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode
   -d '{"score": 1}'
 ```
 
-See [OGM Agent Bridge documentation](https://github.com/ardiannurcahya/ogm-agent-bridge) for MCP tool reference.
+See [OGM MCP Skills documentation](https://github.com/ardiannurcahya/ogm-mcp-skills) for MCP tool reference.
 
 ## Graph Playground
 
