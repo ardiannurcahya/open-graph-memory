@@ -59,7 +59,19 @@ docker compose \
 
 Do not enable `local-storage` profile with external storage.
 
-## Graph Extraction
+## Vector Embeddings
+
+OpenGraphMemory uses dense vector embeddings stored in PostgreSQL via `pgvector`:
+
+```dotenv
+VECTOR_EMBEDDING_PROVIDER=deterministic # deterministic or openai
+VECTOR_EMBEDDING_MODEL=text-embedding-3-small
+VECTOR_DIMENSIONS=1536
+OPENAI_BASE_URL=https://api.openai.com/v1 # configurable for Ollama/vLLM endpoints
+```
+
+- `deterministic`: Zero-dependency, offline hashing-based embedding generator. Ideal for local development, CI/CD, and air-gapped environments without external API keys.
+- `openai`: Uses OpenAI `/v1/embeddings` format. Compatible with OpenAI `text-embedding-3-small` or third-party compatible servers (Ollama, vLLM, LiteLLM) via `OPENAI_BASE_URL`.
 
 ## PDF Parsing
 
@@ -86,6 +98,7 @@ LITEPARSE_IMAGE_MODE=off
 fail ingestion explicitly; no silent pypdf fallback occurs. Initial implementation stores page
 and spatial text-item bounding boxes. LiteParse does not expose semantic PDF sections in Python
 2.6.0, so section labels are not fabricated.
+## Graph Extraction
 
 Offline deterministic mode:
 

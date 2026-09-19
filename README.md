@@ -391,10 +391,12 @@ Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Ex
 
 - [Local quickstart](docs/quickstart.md)
 - [Architecture](docs/architecture.md)
+- [Agent Memory (Failure-Driven & Episodic)](docs/agent-memory.md)
+- [Codebase Knowledge Graph (Tree-sitter & AST)](docs/codebase-knowledge-graph.md)
+- [Hybrid RAG & Retrieval](docs/retrieval-rag.md)
 - [Dataset upload](docs/dataset-upload.md)
 - [Graph extraction](docs/graph-extraction.md)
 - [Hierarchical community analytics](docs/community-graphrag.md)
-- [Agent Memory](#agent-memory-api) (see above)
 - [Dashboard and Graph Playground](docs/dashboard.md)
 - [Structured Graph Python SDK](docs/sdk-python.md)
 - [Plugin system](docs/plugin-system.md)

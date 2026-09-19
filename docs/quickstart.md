@@ -12,4 +12,4 @@ Requirements: Docker Compose v2, or Python 3.12 with `uv` and Node 22 for host d
 
 Host checks: `scripts/lint.sh`, `scripts/test.sh`, and `scripts/build.sh`.
 
-See [dataset upload](dataset-upload.md), [graph extraction](graph-extraction.md), [Graph Playground](dashboard.md), [Python SDK](sdk-python.md), and [plugin contracts](plugin-system.md). Production operations live in [deployment](deployment.md) and [operations runbook](runbooks/operations.md).
+See [dataset upload](dataset-upload.md), [graph extraction](graph-extraction.md), [Agent Memory](agent-memory.md), [Codebase Knowledge Graph](codebase-knowledge-graph.md), [Hybrid RAG](retrieval-rag.md), [Graph Playground](dashboard.md), [Python SDK](sdk-python.md), and [plugin contracts](plugin-system.md). Production operations live in [deployment](deployment.md) and [operations runbook](runbooks/operations.md).
