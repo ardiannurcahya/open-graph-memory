@@ -61,7 +61,7 @@ Agent Memory -> episodes, attempts, outcomes, patterns
 
 Local stack: Docker Engine, Docker Compose v2, and at least 4 GB free RAM.
 
-Host development: Python 3.12+, `uv`, Node.js 22+, and npm.
+Host development: Python 3.12 (strictly required; Python 3.13+ is not yet supported due to native Tree-Sitter wheel constraints), `uv`, Node.js 22+, and npm.
 
 ## Quick Start
 
@@ -153,6 +153,7 @@ POST /v1/datasets/{dataset_id}/analytics/refresh
 GET  /v1/datasets/{dataset_id}/graph/explorer
 POST /v1/codebase/ingest                          # Batch AST codebase ingestion
 POST /v1/codebase/sync-file                       # Real-time single file AST sync
+POST /v1/retrieval/query                          # Hybrid RAG retrieval (Vector + Graph via RRF)
 ```
 
 Use OpenAPI at `/api/docs` for complete schemas, bounds, and parameters. See [Graph extraction](docs/graph-extraction.md) and [Hierarchical community analytics](docs/community-graphrag.md).
@@ -195,6 +196,14 @@ Agent Memory provides project-scoped persistent memory for AI agents to record, 
 - **Outcomes:** final verified results with optional verifiers (CI, runtime, test, build) and metrics.
 - **Patterns:** aggregated experience keys derived from problem signatures, with confidence scoring and promotion.
 - **Temporal supersession:** episodes and patterns can be superseded by newer versions while preserving history.
+
+### Why Failure-Driven Memory?
+
+Unlike conventional agent memory implementations that hoard every conversation turn ("Memory Landfill"), OpenGraphMemory selectively captures:
+- **Problem Signatures**: Fingerprints of specific errors, bug incidents, or user friction points.
+- **Failed Hypotheses**: Attempts that didn't work (preventing agents from repeating the same mistakes).
+- **Verified Outcomes**: Solutions proven by unit tests, build verifiers, runtime checks, or human feedback.
+- **Closed-Loop Calibration**: Allows user and admin feedback (upvotes/downvotes) to dynamically calibrate RAG accuracy, promote high-confidence patterns, and supersede outdated solutions.
 
 ### Endpoints
 
@@ -291,6 +300,13 @@ curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode
 curl "https://your-instance.example.com/v1/agent-memory/search?q=deployment+S3" \
   -H "X-Project-Id: <project-id>" \
   -H "X-Api-Key: <api-key>"
+
+# Send feedback to calibrate memory (Upvote / Downvote)
+curl -X POST https://your-instance.example.com/v1/agent-memory/episodes/<episode_id>/feedback \
+  -H "X-Project-Id: <project-id>" \
+  -H "X-Api-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"score": 1}'
 ```
 
 See [OGM Agent Bridge documentation](https://github.com/ardiannurcahya/ogm-agent-bridge) for MCP tool reference.
@@ -375,10 +391,12 @@ Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Ex
 
 - [Local quickstart](docs/quickstart.md)
 - [Architecture](docs/architecture.md)
+- [Agent Memory (Failure-Driven & Episodic)](docs/agent-memory.md)
+- [Codebase Knowledge Graph (Tree-sitter & AST)](docs/codebase-knowledge-graph.md)
+- [Hybrid RAG & Retrieval](docs/retrieval-rag.md)
 - [Dataset upload](docs/dataset-upload.md)
 - [Graph extraction](docs/graph-extraction.md)
 - [Hierarchical community analytics](docs/community-graphrag.md)
-- [Agent Memory](#agent-memory-api) (see above)
 - [Dashboard and Graph Playground](docs/dashboard.md)
 - [Structured Graph Python SDK](docs/sdk-python.md)
 - [Plugin system](docs/plugin-system.md)
@@ -387,6 +405,14 @@ Inspect PostgreSQL job/outbox state and dependency readiness before retrying. Ex
 - [Operations runbook](docs/runbooks/operations.md)
 - [Backup/restore runbook](docs/runbooks/backup-restore.md)
 - [Security audit](docs/security-final-audit.md)
+
+## Academic Foundations
+
+OpenGraphMemory synthesizes core principles from leading agentic and retrieval research:
+- **Reflexion (Shinn et al., NeurIPS 2023)**: Verbal reinforcement learning and failure-driven episodic reflection to prevent repeating errors without fine-tuning.
+- **Self-RAG (Asai et al., ICLR 2024)**: Evaluative retrieval and self-critique to filter irrelevant chunks and eliminate hallucinations.
+- **Corrective RAG / CRAG (Yan et al., 2024)**: Dynamic retrieval evaluation and corrective fallback mechanisms for robust knowledge retrieval.
+- **GraphRAG (Microsoft, 2024)**: Hierarchical community detection (Leiden/Louvain) for comprehensive, macro-level dataset reasoning.
 
 ## Current Limitations
 
