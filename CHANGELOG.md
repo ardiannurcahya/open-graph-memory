@@ -2,6 +2,37 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-09-19
+
+### Added
+
+- **pgvector & Dense Vector Embeddings**:
+  - PostgreSQL-native cosine similarity search using `pgvector`.
+  - Offline deterministic embedding provider and OpenAI-compatible embedding provider (`VECTOR_EMBEDDING_PROVIDER`).
+- **Hybrid RAG Retrieval Engine**:
+  - `POST /v1/retrieval/query` endpoint combining dense vector similarity and multi-hop knowledge graph traversal via Reciprocal Rank Fusion (RRF).
+  - Configurable retrieval modes (`hybrid`, `vector_only`, `graph_only`) with verbatim evidence citations and spatial bounding boxes.
+- **Interactive RAG Comparison Playground**:
+  - Web UI comparison page for evaluating Vector vs. Graph vs. Hybrid retrieval results side-by-side with evidence drill-down.
+- **Technical Documentation & Guides**:
+  - Comprehensive guide on Failure-Driven Agent Memory (`docs/agent-memory.md`).
+  - Codebase AST Knowledge Graph and Tree-sitter architecture guide (`docs/codebase-knowledge-graph.md`).
+  - Hybrid RAG architecture and retrieval API guide (`docs/retrieval-rag.md`).
+
+### Changed
+
+- **Python SDK (`open_graph_sdk`)**:
+  - Full async SDK client methods for Agent Memory episodes, attempts, outcomes, and Bayesian confidence feedback.
+- **Academic Foundations**:
+  - Added academic citations and theoretical frameworks (Reflexion, Self-RAG, CRAG, GraphRAG) in `README.md`.
+
+### Security
+
+- **Dependency Updates**:
+  - Upgraded `anyio` to `4.15.1` and `soupsieve` to `2.9.2` to resolve pip-audit security advisories.
+
+---
+
 ## [0.2.2] - 2026-08-14
 
 ### Added
